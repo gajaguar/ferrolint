@@ -1,0 +1,72 @@
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: mixed-line-ending
+
+  - repo: local
+    hooks:
+      - id: md-lint
+        name: markdownlint-cli2
+        entry: make md-lint
+        language: system
+        files: \.md$
+        pass_filenames: false
+
+      - id: spell
+        name: cspell
+        entry: make spell
+        language: system
+        pass_filenames: false
+
+      - id: docs-lint
+        name: okflint
+        entry: make docs-lint
+        language: system
+        files: ^(docs/.*\.md|okf-base\.yaml)$
+        pass_filenames: false
+
+      - id: conventional-commit-msg
+        name: conventional-git commit message
+        entry: uvx conventional-git@latest check commit --file
+        language: system
+        stages: [commit-msg]
+        types: [text]
+        pass_filenames: true
+
+      - id: conventional-branch-name
+        name: conventional-git branch name
+        entry: uvx conventional-git@latest check branch
+        language: system
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
+  - repo: https://github.com/checkmake/checkmake
+    rev: v0.3.2
+    hooks:
+      - id: checkmake-system
+
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: rustfmt
+        entry: make fmt
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: clippy
+        name: clippy
+        entry: make clippy
+        language: system
+        types: [rust]
+        pass_filenames: false

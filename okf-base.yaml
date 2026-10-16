@@ -1,0 +1,42 @@
+# okflint manifest for the docs/ OKF bundle.
+# Encodes the frontmatter fields every docs/ note carries.
+# Run with: make docs-lint
+
+okf_version: "0.2"
+
+base:
+  name: ferrolint docs
+  roots:
+    - path: docs
+  reserved_files:
+    index: index.md
+    log: log.md
+
+# Every type takes the same fields: title and description are required,
+# and `generated` is deliberately absent (authorship lives in git history).
+# `tags` stays open: any label is accepted.
+profile:
+  types:
+    guide: &note
+      required: [title, description]
+      optional: [tags, status, verified, sources, stale_after, resource]
+      status_values: [draft, stable, deprecated]
+    rule: *note
+    guideline: *note
+    convention: *note
+    decision: *note
+    tool: *note
+    playbook: *note
+    reference: *note
+
+hygiene:
+  broken_links: error
+  reserved_files: error
+  unknown_fields: error
+  okf_v02_shapes: error
+  legacy_forms: error
+  stale_content: warn
+  split_candidates: off
+  split:
+    # A guide orients across several notes, so it spans topics by design.
+    exempt_types: [guide]

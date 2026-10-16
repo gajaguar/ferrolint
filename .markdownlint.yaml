@@ -1,0 +1,28 @@
+# Allow ordered list inconsistencies (sometimes intentional)
+MD029: false
+
+# Allow fenced code blocks without language (sometimes appropriate)
+MD040: false
+
+# Allow duplicate headings in sibling sections
+MD024:
+  siblings_only: true
+
+# Require aligned table columns with aligned delimiter rows
+MD060:
+  style: aligned
+  aligned_delimiter: true
+
+# Allow longer lines for tables and code blocks
+MD013:
+  line_length: 80
+  heading_line_length: 80
+  code_block_line_length: 80
+  tables: false
+
+# A YAML frontmatter `title` and the body's H1 are allowed to coexist and to
+# repeat the same text — OKF concept notes (docs/) carry both.
+MD025:
+  front_matter_title: ""
+MD041:
+  front_matter_title: ""

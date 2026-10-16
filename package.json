@@ -1,0 +1,8 @@
+{
+	"name": "ferrolint-tools",
+	"private": true,
+	"devDependencies": {
+		"cspell": "^10.3.3",
+		"markdownlint-cli2": "^0.23.3"
+	}
+}

@@ -1,0 +1,20 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - uses: jdx/mise-action@v5
+      - run: pnpm install --frozen-lockfile
+      - run: make makefile-lint
+      - run: make md-lint
+      - run: make spell
+      - run: make commits-check
+      - run: pre-commit run --all-files

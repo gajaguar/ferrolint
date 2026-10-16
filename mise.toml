@@ -1,0 +1,17 @@
+[tools]
+node = "24"
+pnpm = "12"
+pre-commit = "4"
+checkmake = "0.3.2"
+uv = "0.12"
+
+[settings.npm]
+package_manager = "pnpm"
+
+[tools.rust]
+# mise's rust backend reads this section; it does not read
+# rust-toolchain.toml, so this is the one place a target or component is
+# declared. wasm32-wasip2 is what a Zed extension builds to.
+version = "1.99"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-wasip2"]
