@@ -2,6 +2,10 @@
 
 ## 2026-10-16
 
+* **usage/**: New directory with `configuration-file.md` and
+  `host-rules.md`: the keys a configuration takes and the `FL` codes the
+  host reports.
+
 * **Backlog**: Added `docs/backlog.md` - the eight implementation epics with
   their acceptance criteria.
 * **Requirements bundle**: Added `docs/requirements/` - atomic FR and NFR

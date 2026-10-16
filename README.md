@@ -26,38 +26,42 @@ x86_64 and aarch64 plus macOS aarch64.
 
 ## Status
 
-Scaffold only: nothing is implemented yet. The repository pins the
-conventions and the plan, and the linter, the plugin contract and the plugin
-SDK do not exist yet.
+In progress, epic by epic (see [docs/backlog.md](docs/backlog.md)). A run
+discovers the Python files under its targets, honouring `.gitignore` and the
+configured excludes, parses them in parallel with Ruff's parser, reports the
+host's own rules and exits `0` when clean, `1` with findings and `2` on a
+usage, configuration or plugin error.
 
 The requirements and the design decisions live in the `docs/` OKF bundle:
 [docs/requirements/index.md](docs/requirements/index.md) and
-[docs/decisions/](docs/decisions/). Those directories land slightly after
-this README; until then, the plan is summarized in this repository's issues.
+[docs/decisions/](docs/decisions/).
 
-## Planned usage
+## Usage
 
-Once implemented, ferrolint will take files or directories as arguments,
-honoring `.gitignore` and exclude configuration, and read its options from
-`ferrolint.toml` or the `[tool.ferrolint]` table of `pyproject.toml`. A
-configuration names the plugins with a path and a SHA-256 hash, and selects
-or ignores rule codes, including per-file-ignores:
+```bash
+ferrolint [PATHS]...            # default: the current directory
+ferrolint --config ci.toml src  # an explicit configuration file
+ferrolint --threads 4           # 0, the default, uses every core
+```
+
+Configuration lives in `ferrolint.toml` or the `[tool.ferrolint]` table of
+`pyproject.toml`; see
+[docs/usage/configuration-file.md](docs/usage/configuration-file.md):
 
 ```toml
-# ferrolint.toml — planned, not final
-[plugins.my_checker]
+select = ["FL002"]
+ignore = ["FL003"]
+exclude = ["vendor/"]
+
+[[plugins]]
 path = "plugins/my_checker.wasm"
 sha256 = "…"
 
-select = ["W1"]
-ignore = ["W2"]
-per-file-ignores = { "tests/**" = ["W1"] }
+[per-file-ignores]
+"tests/*.py" = ["FL002"]
 ```
 
-Inline suppressions are planned as `# ferrolint:disable=CODE`, while staying
-compatible with existing `# pylint:disable=CODE` and `# noqa: CODE` comments.
-Exit codes follow a simple contract: `0` when clean, `1` when findings exist,
-`2` for usage, configuration or plugin errors.
+## Development
 
 Run the project's wiring from `make` targets:
 
