@@ -1,13 +1,10 @@
-//! The WASM plugin host: compile each plugin once, keep one instance per
-//! worker thread, and run every check under an empty WASI environment
-//! with a fuel budget and an epoch deadline per file.
+//! The WASM plugin host: compile and link each plugin once, then check
+//! every file in a fresh instance under an empty WASI environment with a
+//! fuel budget, an epoch deadline and a memory cap.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -145,8 +142,6 @@ pub struct LoadedPlugin {
     pub name: String,
     pub rules: Vec<RuleInfo>,
     pre: PluginPre<State>,
-    /// Keys this plugin's instances in each worker's cache.
-    key: u64,
 }
 
 /// How a check call ended.
@@ -156,17 +151,11 @@ pub enum Outcome {
     Aborted(String),
 }
 
-/// One live instance of a plugin, owned by one worker thread.
+/// One instance of a plugin, for one call.
 struct Live {
     store: Store<State>,
     plugin: Plugin,
 }
-
-thread_local! {
-    static LIVE: RefCell<HashMap<u64, Live>> = RefCell::new(HashMap::new());
-}
-
-static NEXT_KEY: AtomicU64 = AtomicU64::new(0);
 
 pub struct Host {
     engine: Engine,
@@ -218,36 +207,27 @@ impl Host {
         })
     }
 
-    /// Run one plugin's check on one file on the current thread.
+    /// Run one plugin's check on one file in a fresh instance, so nothing a
+    /// plugin keeps between calls can make a file's result depend on which
+    /// files the same thread checked before it.
     pub fn check(&self, plugin: usize, file: &File, data: &Arc<FileData>) -> Outcome {
         let loaded = &self.plugins[plugin];
-        LIVE.with(|live| {
-            let mut live = live.borrow_mut();
-            let instance = match live.entry(loaded.key) {
-                Entry::Occupied(entry) => entry.into_mut(),
-                Entry::Vacant(entry) => match instantiate(&self.engine, &loaded.pre) {
-                    Ok(instance) => entry.insert(instance),
-                    Err(err) => return Outcome::Aborted(describe(&err)),
-                },
-            };
-            instance.store.data_mut().file = Some(Arc::clone(data));
-            let result = arm(&mut instance.store).and_then(|()| {
-                instance.plugin.ferrolint_plugin_checker().call_check(
-                    &mut instance.store,
-                    file,
-                    &data.nodes,
-                )
-            });
-            instance.store.data_mut().file = None;
-            match result {
-                Ok(diagnostics) => Outcome::Diagnostics(diagnostics),
-                Err(err) => {
-                    // A trapped instance cannot be entered again.
-                    live.remove(&loaded.key);
-                    Outcome::Aborted(describe(&err))
-                }
-            }
-        })
+        let mut instance = match instantiate(&self.engine, &loaded.pre) {
+            Ok(instance) => instance,
+            Err(err) => return Outcome::Aborted(describe(&err)),
+        };
+        instance.store.data_mut().file = Some(Arc::clone(data));
+        let result = arm(&mut instance.store).and_then(|()| {
+            instance.plugin.ferrolint_plugin_checker().call_check(
+                &mut instance.store,
+                file,
+                &data.nodes,
+            )
+        });
+        match result {
+            Ok(diagnostics) => Outcome::Diagnostics(diagnostics),
+            Err(err) => Outcome::Aborted(describe(&err)),
+        }
     }
 }
 
@@ -289,7 +269,6 @@ fn load_one(
         name: info.name,
         rules,
         pre,
-        key: NEXT_KEY.fetch_add(1, Ordering::Relaxed),
     })
 }
 

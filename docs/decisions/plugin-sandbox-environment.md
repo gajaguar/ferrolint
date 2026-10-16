@@ -1,7 +1,7 @@
 ---
 type: decision
 title: Plugin sandbox environment
-description: How the host meets the empty-WASI requirement - WASI linked but emptied, frozen clocks, fixed randomness, exit disabled - and how caps and instances work per file and per thread.
+description: How the host meets the empty-WASI requirement - WASI linked but emptied, frozen clocks, fixed randomness, exit disabled - and why every file gets a fresh instance under its own caps.
 tags: [plugins, wasi]
 status: stable
 ---
@@ -32,10 +32,15 @@ The host links WASI preview 2 and empties it:
 
 ## Caps and instances
 
-* Each plugin compiles once per run. Every worker thread instantiates it
-  once and reuses that instance file after file; a trap discards the
-  instance and the next file gets a fresh one.
-* Every check call gets a fresh budget: 2 billion units of fuel, a
+* Each plugin compiles and links once per run, and every check call runs
+  in a fresh instance of that pre-linked component. Reusing an instance
+  would carry a plugin's globals, heap and random stream from one file to
+  the next, so a file's result would depend on which files its thread
+  checked first and on `--threads`; that breaks
+  [output determinism](../requirements/output-determinism.md), which wins
+  over the contract's wording of one instance per run. Instantiating costs
+  under 0.1 ms per file and plugin.
+* Every check call gets its own budget: 2 billion units of fuel, a
   ten-second epoch deadline and 512 MiB of linear memory. The plugin
   cannot change them.
 * A trap, a cap or a diagnostic carrying a code the plugin did not declare

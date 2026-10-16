@@ -170,8 +170,9 @@ interface types {
         /// keyword's argument, a parameter's name.
         name: option<string>,
         /// A second string: an alias's `as` name, an `import-from`'s
-        /// module (with its leading dots), an operator's spelling, a
-        /// literal's source text.
+        /// module (with its leading dots), an operator's spelling, a number
+        /// or boolean literal's source text. Other literals carry none:
+        /// slice `file.source` by the node's range.
         detail: option<string>,
     }
 }

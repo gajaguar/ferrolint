@@ -106,10 +106,12 @@ fn normalize(path: &Path) -> PathBuf {
 /// The path as a report shows it: relative to `cwd` when under it, with
 /// `/` separators.
 pub fn display_path(cwd: &Path, path: &Path) -> String {
-    let relative = path.strip_prefix(cwd).unwrap_or(path);
-    relative
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
+    match path.strip_prefix(cwd) {
+        Ok(relative) => relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+        Err(_) => path.to_string_lossy().replace('\\', "/"),
+    }
 }

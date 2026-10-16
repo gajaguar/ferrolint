@@ -129,7 +129,7 @@ impl Linter<'_> {
         let enabled = self.selection.for_file(path);
         let display = discover::display_path(self.cwd, path);
         let diagnostics = match String::from_utf8(bytes) {
-            Ok(source) => self.check_source(&display, &source, &enabled),
+            Ok(source) => self.check_source(path, &display, &source, &enabled),
             Err(_) => vec![checks::not_utf8()],
         };
         Ok(self.place(&display, diagnostics, &enabled))
@@ -137,6 +137,7 @@ impl Linter<'_> {
 
     fn check_source(
         &self,
+        path: &Path,
         display: &str,
         source: &str,
         enabled: &BTreeSet<String>,
@@ -145,7 +146,7 @@ impl Linter<'_> {
         let index = LineIndex::new(source);
         let mut diagnostics = checks::check(source, &parsed, &index);
         if parsed.has_no_syntax_errors() {
-            diagnostics.extend(self.run_plugins(display, source, &index, &parsed, enabled));
+            diagnostics.extend(self.run_plugins(path, display, source, &index, &parsed, enabled));
         }
         diagnostics
     }
@@ -154,6 +155,7 @@ impl Linter<'_> {
     /// for this file.
     fn run_plugins(
         &self,
+        path: &Path,
         display: &str,
         source: &str,
         index: &LineIndex,
@@ -172,11 +174,11 @@ impl Linter<'_> {
             return Vec::new();
         }
         let nodes = ast::flatten(source, index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &nodes);
+        let model = Model::build(parsed.syntax(), &nodes, source, index);
         let data = Arc::new(FileData { nodes, model });
         let file = wit::File {
             path: display.to_owned(),
-            module: module_name(display),
+            module: module_name(path),
             source: source.to_owned(),
         };
         let mut diagnostics = Vec::new();
@@ -219,12 +221,22 @@ impl Linter<'_> {
     }
 }
 
-/// The dotted module name of a path: `pkg/mod.py` is `pkg.mod`, and a
-/// package's `__init__.py` is the package.
-fn module_name(display: &str) -> String {
-    let stem = display.strip_suffix(".py").unwrap_or(display);
-    let stem = stem.strip_suffix("/__init__").unwrap_or(stem);
-    stem.trim_start_matches("../").replace('/', ".")
+/// The dotted module name Python imports a file under: its stem, prefixed
+/// by every enclosing directory that is a package (holds `__init__.py`).
+/// A package's own `__init__.py` is named after the package.
+fn module_name(path: &Path) -> String {
+    let mut parts = Vec::new();
+    if let Some(stem) = path.file_stem().filter(|stem| *stem != "__init__") {
+        parts.push(stem.to_string_lossy().into_owned());
+    }
+    let mut directory = path.parent();
+    while let Some(dir) = directory.filter(|dir| dir.join("__init__.py").is_file()) {
+        let Some(name) = dir.file_name() else { break };
+        parts.push(name.to_string_lossy().into_owned());
+        directory = dir.parent();
+    }
+    parts.reverse();
+    parts.join(".")
 }
 
 /// Check a plugin's diagnostics against its declared rules and recompute
@@ -295,9 +307,15 @@ mod tests {
     use super::module_name;
 
     #[test]
-    fn module_names_follow_the_path() {
-        assert_eq!(module_name("pkg/mod.py"), "pkg.mod");
-        assert_eq!(module_name("pkg/__init__.py"), "pkg");
-        assert_eq!(module_name("top.py"), "top");
+    fn module_names_follow_the_packages() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(src.join("pkg/sub")).unwrap();
+        for init in ["pkg/__init__.py", "pkg/sub/__init__.py"] {
+            std::fs::write(src.join(init), "").unwrap();
+        }
+        assert_eq!(module_name(&src.join("pkg/sub/mod.py")), "pkg.sub.mod");
+        assert_eq!(module_name(&src.join("pkg/__init__.py")), "pkg");
+        assert_eq!(module_name(&src.join("top.py")), "top");
     }
 }

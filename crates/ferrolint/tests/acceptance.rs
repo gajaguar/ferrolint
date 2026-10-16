@@ -166,11 +166,12 @@ fn ac_06_named_files_bypass_discovery() {
 #[test]
 fn ac_07_plugin_receives_visitor_events() {
     let project = probe_project(&["PRB001"]);
+    project.write("pkg/__init__.py", "");
     project.write(
         "pkg/shapes.py",
         "import os\n\nclass Shape:\n    def area(self):\n        if self:\n            return 1\n        return 0\n\ndef main():\n    for item in [Shape()]:\n        print(item.area(), os.sep)\n",
     );
-    let run = project.run(&["--format", "json"]);
+    let run = project.run(&["pkg/shapes.py", "--format", "json"]);
     assert_eq!(run.code, 1, "{run:?}");
     let mut events: Vec<(String, u64)> = json_diagnostics(&run.stdout)
         .iter()

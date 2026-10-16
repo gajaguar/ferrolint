@@ -8,6 +8,8 @@ use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{self as ast, Expr, ExprContext as Ctx, HasNodeIndex, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 
+use ferrolint_core::LineIndex;
+
 use crate::wit::{Binding, BindingKind, Node, Range, Scope, ScopeKind};
 
 /// The Python minor version builtins are taken from.
@@ -42,7 +44,7 @@ struct BindingData {
     kind: BindingKind,
     scope: u32,
     node: Option<u32>,
-    range: TextRange,
+    range: Range,
     origin: Option<String>,
     /// Where the binding takes effect: a use before it sees an older one.
     effective: u32,
@@ -56,8 +58,10 @@ enum Resolved {
 }
 
 impl Model {
-    pub fn build(module: &ast::ModModule, nodes: &[Node]) -> Self {
+    pub fn build(module: &ast::ModModule, nodes: &[Node], source: &str, index: &LineIndex) -> Self {
         let mut builder = Builder {
+            source,
+            index,
             model: Model {
                 scopes: Vec::new(),
                 bindings: Vec::new(),
@@ -101,13 +105,13 @@ impl Model {
 
     pub fn resolve(&self, nodes: &[Node], node: u32) -> Option<Binding> {
         if let Some(&binding) = self.node_binding.get(&node) {
-            return Some(self.binding(nodes, binding));
+            return Some(self.binding(binding));
         }
         let target = nodes.get(node as usize)?;
         let name = target.name.as_deref()?;
         let scope = self.scope_of_node(node)?;
         self.resolve_name(name, scope, target.range.start.offset)
-            .map(|resolved| self.output(nodes, resolved))
+            .map(|resolved| self.output(resolved))
     }
 
     pub fn visible_bindings(&self, nodes: &[Node], node: u32) -> Vec<Binding> {
@@ -127,7 +131,7 @@ impl Model {
                         && let Some(Resolved::Binding(binding)) =
                             self.resolve_name(name, scope, offset)
                     {
-                        visible.push(self.binding(nodes, binding));
+                        visible.push(self.binding(binding));
                     }
                 }
             }
@@ -188,12 +192,19 @@ impl Model {
                 )
             })
             .collect();
+        // A bare annotation (`x: int`) gives the name no value, so a use
+        // sees the binding before it; it still makes a function's name local.
+        let valued = |id: &u32| self.bindings[*id as usize].kind != BindingKind::Annotation;
         if deferred {
-            return candidates.last().copied().map(Resolved::Binding);
+            let last = candidates.iter().copied().rfind(valued);
+            return last
+                .or_else(|| candidates.last().copied())
+                .map(Resolved::Binding);
         }
         let before = candidates
             .iter()
             .copied()
+            .filter(valued)
             .rfind(|&id| self.bindings[id as usize].effective <= offset);
         if before.is_some() {
             return before.map(Resolved::Binding);
@@ -209,9 +220,9 @@ impl Model {
             .map(Resolved::Binding)
     }
 
-    fn output(&self, nodes: &[Node], resolved: Resolved) -> Binding {
+    fn output(&self, resolved: Resolved) -> Binding {
         match resolved {
-            Resolved::Binding(id) => self.binding(nodes, id),
+            Resolved::Binding(id) => self.binding(id),
             Resolved::Builtin(id) => Binding {
                 id,
                 name: builtins()[(id - BUILTIN_BASE) as usize].to_owned(),
@@ -224,7 +235,7 @@ impl Model {
         }
     }
 
-    fn binding(&self, nodes: &[Node], id: u32) -> Binding {
+    fn binding(&self, id: u32) -> Binding {
         let data = &self.bindings[id as usize];
         Binding {
             id,
@@ -232,32 +243,9 @@ impl Model {
             kind: data.kind,
             scope: data.scope,
             node: data.node,
-            range: data.node.map(|node| range_within(nodes, node, data.range)),
+            range: data.node.map(|_| data.range),
             origin: data.origin.clone(),
         }
-    }
-}
-
-/// The binding's text range expressed as a contract range, using the
-/// positions already computed for its node when they match.
-fn range_within(nodes: &[Node], node: u32, range: TextRange) -> Range {
-    let node_range = nodes[node as usize].range;
-    if node_range.start.offset == range.start().to_u32()
-        && node_range.end.offset == range.end().to_u32()
-    {
-        return node_range;
-    }
-    // The binding names part of its node (a definition's name, an alias's
-    // `as` name): count the columns from the node's own start.
-    let shift = |offset: u32| {
-        let mut position = node_range.start;
-        position.column += offset.saturating_sub(position.offset);
-        position.offset = offset;
-        position
-    };
-    Range {
-        start: shift(range.start().to_u32()),
-        end: shift(range.end().to_u32()),
     }
 }
 
@@ -277,18 +265,28 @@ fn builtin(name: &str) -> Option<Resolved> {
     Some(Resolved::Builtin(BUILTIN_BASE + u32::try_from(index).ok()?))
 }
 
+fn position(position: ferrolint_core::Position) -> crate::wit::Position {
+    crate::wit::Position {
+        offset: position.offset,
+        line: position.line,
+        column: position.column,
+    }
+}
+
 fn id_of(node: &impl HasNodeIndex) -> Option<u32> {
     node.node_index().load().as_u32()
 }
 
-struct Builder {
+struct Builder<'s> {
+    source: &'s str,
+    index: &'s LineIndex,
     model: Model,
     current: u32,
     store_kind: BindingKind,
     statement_end: u32,
 }
 
-impl Builder {
+impl Builder<'_> {
     fn push_scope(&mut self, kind: ScopeKind, name: Option<String>, node: u32) -> u32 {
         let id = u32::try_from(self.model.scopes.len()).unwrap_or(UNSET);
         let parent = (!self.model.scopes.is_empty()).then_some(self.current);
@@ -359,12 +357,18 @@ impl Builder {
     ) {
         let scope = self.target_scope(name, kind);
         let id = u32::try_from(self.model.bindings.len()).unwrap_or(UNSET);
+        let range = self
+            .index
+            .range(self.source, range.start().to_u32(), range.end().to_u32());
         self.model.bindings.push(BindingData {
             name: name.to_owned(),
             kind,
             scope,
             node,
-            range,
+            range: Range {
+                start: position(range.start),
+                end: position(range.end),
+            },
             origin,
             effective,
         });
@@ -423,6 +427,7 @@ impl Builder {
         };
         self.push_scope(ScopeKind::TypeParams, None, node);
         for param in &type_params.type_params {
+            self.mark(param);
             let name = param.name();
             let range = name.range();
             self.bind(
@@ -500,13 +505,6 @@ impl Builder {
         for decorator in &def.decorator_list {
             self.visit_decorator(decorator);
         }
-        let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
-        if let Some(arguments) = &def.arguments {
-            self.visit_arguments(arguments);
-        }
-        if typed {
-            self.pop_scope();
-        }
         let range = def.name.range();
         self.bind(
             &def.name,
@@ -516,9 +514,17 @@ impl Builder {
             None,
             range.end().to_u32(),
         );
+        // PEP 695 type parameters are visible in the bases and the body.
+        let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
+        if let Some(arguments) = &def.arguments {
+            self.visit_arguments(arguments);
+        }
         self.push_scope(ScopeKind::Class, Some(def.name.to_string()), id);
         self.visit_body(&def.body);
         self.pop_scope();
+        if typed {
+            self.pop_scope();
+        }
     }
 
     fn visit_import(&mut self, aliases: &[ast::Alias], module: Option<&str>) {
@@ -593,7 +599,7 @@ impl Builder {
     }
 }
 
-impl<'a> Visitor<'a> for Builder {
+impl<'a> Visitor<'a> for Builder<'_> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         self.mark(stmt);
         let outer_end = std::mem::replace(&mut self.statement_end, stmt.range().end().to_u32());
@@ -608,6 +614,15 @@ impl<'a> Visitor<'a> for Builder {
                     import.module.as_ref().map_or("", |module| module.as_str())
                 );
                 self.visit_import(&import.names, Some(&module));
+            }
+            Stmt::TypeAlias(alias) => {
+                self.visit_expr(&alias.name);
+                let id = id_of(alias).unwrap_or(0);
+                let typed = self.visit_type_params_in_scope(alias.type_params.as_deref(), id);
+                self.visit_expr(&alias.value);
+                if typed {
+                    self.pop_scope();
+                }
             }
             Stmt::Global(global) => self.declare(&global.names, BindingKind::Global),
             Stmt::Nonlocal(nonlocal) => self.declare(&nonlocal.names, BindingKind::Nonlocal),
@@ -798,7 +813,7 @@ mod tests {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = LineIndex::new(source);
         let nodes = flatten(source, &index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &nodes);
+        let model = Model::build(parsed.syntax(), &nodes, source, &index);
         Fixture {
             source,
             nodes,
@@ -875,6 +890,31 @@ mod tests {
         let f = fixture("x = 0\nys = [x for x in range(3)]\nz = x\n");
         assert_eq!(f.resolve("x", 0), Some((BindingKind::ComprehensionVar, 2)));
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn decorated_definitions_report_the_name_position() {
+        let f =
+            fixture("import functools\n\n@functools.cache\ndef handler():\n    return handler\n");
+        let binding = f.model.resolve(&f.nodes, f.loads("handler")[0]).unwrap();
+        let start = binding.range.unwrap().start;
+        assert_eq!((start.line, start.column), (4, 5));
+    }
+
+    #[test]
+    fn type_parameters_reach_the_class_body_and_aliases() {
+        let f = fixture(
+            "class Box[T]:\n    item: T\n    def get(self) -> T: ...\n\ntype Pairs[K] = dict[K, int]\n",
+        );
+        assert_eq!(f.resolve("T", 0), Some((BindingKind::TypeParam, 1)));
+        assert_eq!(f.resolve("T", 1), Some((BindingKind::TypeParam, 1)));
+        assert_eq!(f.resolve("K", 0), Some((BindingKind::TypeParam, 5)));
+    }
+
+    #[test]
+    fn a_bare_annotation_does_not_hide_the_value() {
+        let f = fixture("x = 1\nx: int\nprint(x)\n");
+        assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 1)));
     }
 
     #[test]

@@ -52,8 +52,8 @@ fn main() -> ExitCode {
         }
     };
     let options = engine::Options {
-        paths: args.paths.clone(),
-        config: args.config.clone(),
+        paths: args.paths,
+        config: args.config,
         threads: args.threads,
     };
     match engine::run(&cwd, &options) {
