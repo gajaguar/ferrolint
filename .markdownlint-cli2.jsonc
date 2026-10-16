@@ -4,6 +4,7 @@
   "ignores": [
     "node_modules/",
     ".venv/",
-    ".git/"
+    ".git/",
+    ".claude/skills/"
   ]
 }

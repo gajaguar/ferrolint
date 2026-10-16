@@ -19,3 +19,4 @@ ignorePaths:
   - ".gitignore" # vendored toptal.com boilerplate, not authored here
   - "scripts/templates/gitignore/snapshot" # same toptal.com boilerplate, vendored as a fallback
   - "**/target/**"
+  - ".claude/skills/**" # vendored third-party skill, not authored here

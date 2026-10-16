@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "conventional-git@conventional-git-skills": true,
+    "ponytail@ponytail": true
+  },
+  "extraKnownMarketplaces": {
+    "conventional-git-skills": {
+      "source": { "source": "github", "repo": "gajaguar/conventional-git" }
+    },
+    "ponytail": {
+      "source": { "source": "github", "repo": "DietrichGebert/ponytail" }
+    }
+  }
+}
