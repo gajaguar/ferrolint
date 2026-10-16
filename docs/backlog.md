@@ -26,6 +26,3 @@ beside it; remove an `#[ignore]` only when its criterion passes.
   to AC-34.
 - **E8** Phase 2: type-inference query API (design first). Closes FR-11, none
   yet.
-
-The WIT contract in `wit/plugin.wit` is a stub: it has no scope or binding
-queries yet, which E2 adds together with the AST visitor events.

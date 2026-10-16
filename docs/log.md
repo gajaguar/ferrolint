@@ -2,6 +2,10 @@
 
 ## 2026-10-16
 
+* **Plugin sandbox environment**: Added
+  `decisions/plugin-sandbox-environment.md` - how the host empties WASI,
+  caps each check and reuses instances per thread.
+
 * **usage/**: New directory with `configuration-file.md` and
   `host-rules.md`: the keys a configuration takes and the `FL` codes the
   host reports.
