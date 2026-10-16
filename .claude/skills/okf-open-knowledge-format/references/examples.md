@@ -65,10 +65,10 @@ sources:
 # Definition
 
 The income statement reports [revenue](../computations/revenue.md) and
-[gross profit](../computations/gross-profit.md) for a fiscal year, per the 
+[gross profit](../computations/gross-profit.md) for a fiscal year, per the
 FP&A reporting handbook.[^fpa-handbook]
 
-Each figure is produced by a sanctioned, attestable computation; this 
+Each figure is produced by a sanctioned, attestable computation; this
 concept only narrates them.
 
 ## Key Figures
@@ -285,7 +285,7 @@ sources:
 
 # Privacy Note
 
-PII fields are hashed in production. See [internal ERD](/references/sales-erd.md) 
+PII fields are hashed in production. See [internal ERD](/references/sales-erd.md)
 for the full privacy classification.[^internal-erd]
 
 [^internal-erd]: Sales domain ERD
@@ -386,7 +386,7 @@ Users experience timeouts. Downstream services may cascade-fail.
 
 # SLA Context
 
-Per the SLA definition,[^sla-doc] P99 latency must stay under 2s during 
+Per the SLA definition,[^sla-doc] P99 latency must stay under 2s during
 business hours. Violations trigger PagerDuty.
 
 [^sla-doc]: API Latency SLA Definition

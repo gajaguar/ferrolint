@@ -370,7 +370,7 @@ title: Revenue
 
 # Definition
 
-Recognized revenue for a fiscal year, computed by 
+Recognized revenue for a fiscal year, computed by
 [the revenue computation](../computations/revenue.md).
 ```
 
@@ -532,7 +532,7 @@ The official enrichment agent follows this pattern — apply the same logic manu
    ```yaml
    # v0.1
    timestamp: 2026-05-28T22:53:05Z
-   
+
    # v0.2
    generated: { by: human:author, at: 2026-05-28T22:53:05Z }
    ```
@@ -542,7 +542,7 @@ The official enrichment agent follows this pattern — apply the same logic manu
    # v0.1 body
    # Citations
    [1] https://example.com/docs
-   
+
    # v0.2 frontmatter
    sources:
      - id: docs
