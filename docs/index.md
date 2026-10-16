@@ -14,6 +14,11 @@ out under this directory.
   they're enforced.
 * [Toolchain](toolchain/index.md) - which layer (mise or an ecosystem
   package manager) installs which tool, and why.
+* [Requirements](requirements/index.md) - the product's functional and
+  non-functional requirements, with acceptance criteria per area.
+* [Backlog](backlog.md) - the implementation epics and the criteria each closes.
+* [Decisions](decisions/index.md) - the architectural decisions and what
+  they put on future us.
 
 See [`log.md`](log.md) for the bundle's change history.
 

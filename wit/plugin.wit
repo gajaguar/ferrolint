@@ -1,0 +1,50 @@
+package ferrolint:plugin;
+
+/// Diagnostic severity.
+enum severity {
+    error,
+    warning,
+    info,
+    hint,
+}
+
+/// Source range.
+record range {
+    start-line: u32,
+    start-column: u32,
+    end-line: u32,
+    end-column: u32,
+}
+
+/// Optional fix.
+record fix {
+    description: string,
+    replacement: string,
+    range: range,
+}
+
+/// Diagnostic emitted by a plugin.
+record diagnostic {
+    code: string,
+    message: string,
+    range: range,
+    severity: severity,
+    fix: option<fix>,
+}
+
+/// Source unit being linted.
+record source {
+    path: string,
+    text: string,
+}
+
+/// Visitor events exposed by the host.
+interface visitor {
+    /// Visit a module.
+    visit-module: func(source: source) -> list<diagnostic>;
+}
+
+/// World contract for a ferrolint plugin.
+world plugin {
+    export visitor;
+}

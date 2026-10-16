@@ -1,0 +1,9 @@
+[package]
+name = "ferrolint-core"
+version.workspace = true
+edition.workspace = true
+description = "Core types for ferrolint"
+license.workspace = true
+
+[lints]
+workspace = true

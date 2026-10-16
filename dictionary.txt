@@ -55,3 +55,4 @@ clippy
 rustfmt
 wasi
 wasip2
+sarif

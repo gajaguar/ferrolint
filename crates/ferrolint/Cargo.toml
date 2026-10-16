@@ -1,0 +1,17 @@
+[package]
+name = "ferrolint"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrolint-core = { path = "../ferrolint-core" }
+clap = { workspace = true }
+wasmtime = { workspace = true }
+ruff_python_parser = { workspace = true }
+ruff_python_ast = { workspace = true }
+ruff_python_semantic = { workspace = true }
+
+[lints]
+workspace = true

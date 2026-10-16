@@ -1,0 +1,9 @@
+[package]
+name = "ferrolint-plugin-sdk"
+version.workspace = true
+edition.workspace = true
+description = "Guest-side SDK for ferrolint WASM plugins"
+license.workspace = true
+
+[lints]
+workspace = true

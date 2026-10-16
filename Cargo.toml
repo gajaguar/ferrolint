@@ -1,13 +1,24 @@
-[package]
-name = "ferrolint"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 description = "Extensible Python linter in Rust that runs custom rules as WASM plugins next to Ruff"
+license = "MIT"
 
-[lints.rust]
+[workspace.dependencies]
+clap = { version = "4.5", features = ["derive"] }
+wasmtime = "=49.0.3"
+ruff_python_parser = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
+ruff_python_ast = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
+ruff_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
+
+[workspace.lints.rust]
 unsafe_code = "forbid"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
