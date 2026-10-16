@@ -1,63 +1,141 @@
-//! Acceptance criteria stubs, one test per row of `docs/requirements/ac-index.md`.
+//! Acceptance criteria, one test per row of `docs/requirements/ac-index.md`.
 //!
-//! Each test is ignored until its criterion is implemented; the body is a
-//! single `unimplemented!` marker so the suite compiles before the feature
-//! work lands.
+//! A test still marked `#[ignore]` is a criterion whose feature has not
+//! landed; its body is a single `unimplemented!` marker.
+
+mod support;
+
+use support::{BARE_NOQA, CLEAN, Project, SYNTAX_ERROR};
 
 // Configuration (AC-01..AC-06, FR-01, FR-02)
 
 #[test]
-#[ignore = "AC-01: configuration loads from pyproject.toml"]
 fn ac_01_config_loads_from_pyproject() {
-    // Given a repository with a `[tool.ferrolint]` section in `pyproject.toml`,
-    // when a run starts in that directory,
-    // then it uses that section's settings and exits 0 or 1, not a config error.
-    unimplemented!("AC-01");
+    let project = Project::new();
+    project
+        .write(
+            "pyproject.toml",
+            "[project]\nname = \"demo\"\n\n[tool.ferrolint]\nselect = [\"FL002\"]\n",
+        )
+        .write("bare.py", BARE_NOQA)
+        .write("broken.py", SYNTAX_ERROR);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("FL002"), "{run:?}");
+    assert!(
+        !run.stdout.contains("FL003"),
+        "the section's select applies: {run:?}"
+    );
 }
 
 #[test]
-#[ignore = "AC-02: ferrolint.toml wins over pyproject.toml"]
 fn ac_02_ferrolint_toml_wins_over_pyproject() {
-    // Given both a `ferrolint.toml` and a `[tool.ferrolint]` table with differing settings,
-    // when a run starts,
-    // then the effective configuration is `ferrolint.toml`'s and nothing from pyproject applies.
-    unimplemented!("AC-02");
+    let project = Project::new();
+    project
+        .write(
+            "pyproject.toml",
+            "[tool.ferrolint]\nselect = [\"FL002\"]\nnot-a-key = true\n",
+        )
+        .write("ferrolint.toml", "select = [\"FL003\"]\n")
+        .write("bare.py", BARE_NOQA)
+        .write("broken.py", SYNTAX_ERROR);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "pyproject's bad key must not be read: {run:?}");
+    assert!(run.stdout.contains("FL003"), "{run:?}");
+    assert!(!run.stdout.contains("FL002"), "{run:?}");
 }
 
 #[test]
-#[ignore = "AC-03: plugin SHA mismatch is a configuration error"]
 fn ac_03_plugin_sha_mismatch_is_config_error() {
-    // Given a configuration whose plugin entry's `sha256` does not match the file at `path`,
-    // when a run starts,
-    // then no file is linted, the mismatch is on stderr, and the exit code is 2.
-    unimplemented!("AC-03");
+    let project = Project::new();
+    project
+        .write("plugin.wasm", b"\0asm not really")
+        .write(
+            "ferrolint.toml",
+            format!(
+                "plugins = [{{ path = \"plugin.wasm\", sha256 = \"{}\" }}]\n",
+                "0".repeat(64)
+            ),
+        )
+        .write("bare.py", BARE_NOQA);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 2, "{run:?}");
+    assert!(run.stderr.contains("sha256 mismatch"), "{run:?}");
+    assert!(run.stdout.is_empty(), "no file is linted: {run:?}");
 }
 
 #[test]
-#[ignore = "AC-04: select and ignore filter findings"]
 fn ac_04_select_and_ignore_filter_findings() {
-    // Given selected and ignored codes firing on the same file plus a per-file-ignores glob,
-    // when the file is linted inside and outside the glob,
-    // then the ignored code never appears, the selected code only outside the glob, in every format.
-    unimplemented!("AC-04");
+    // Both host rules fire on one file: it does not parse and it has a bare noqa.
+    let both = format!("{SYNTAX_ERROR}y = 2  # noqa\n");
+    let project = Project::new();
+    project
+        .write(
+            "ferrolint.toml",
+            "select = [\"FL002\", \"FL003\"]\nignore = [\"FL003\"]\n\n[per-file-ignores]\n\"inside/*.py\" = [\"FL002\"]\n",
+        )
+        .write("inside/both.py", &both)
+        .write("outside/both.py", &both);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(
+        !run.stdout.contains("FL003"),
+        "ignored code never reports: {run:?}"
+    );
+    let lines = run.finding_lines();
+    assert_eq!(lines.len(), 1, "{run:?}");
+    assert!(
+        lines[0].starts_with("outside/both.py:") && lines[0].contains("FL002"),
+        "{run:?}"
+    );
 }
 
 #[test]
-#[ignore = "AC-05: a run honours gitignore and configured excludes"]
 fn ac_05_honours_gitignore_and_excludes() {
-    // Given a target directory whose files are matched by `.gitignore` and by configured `exclude`,
-    // when the directory is linted,
-    // then ignored files are absent from report and count, byte-identical to removing them from the tree.
-    unimplemented!("AC-05");
+    let project = Project::git();
+    project
+        .write(".gitignore", ".home/\nignored.py\nbuild/\n")
+        .write("ferrolint.toml", "exclude = [\"vendor/\", \"*_gen.py\"]\n")
+        .write("kept.py", BARE_NOQA)
+        .write("pkg/kept.py", BARE_NOQA)
+        .write("ignored.py", BARE_NOQA)
+        .write("build/out.py", BARE_NOQA)
+        .write("vendor/lib.py", BARE_NOQA)
+        .write("pkg/schema_gen.py", BARE_NOQA);
+    let filtered = project.run(&[]);
+    assert_eq!(filtered.code, 1, "{filtered:?}");
+    assert_eq!(
+        filtered.summary(),
+        "2 files linted, 2 findings.",
+        "{filtered:?}"
+    );
+
+    for path in [
+        "ignored.py",
+        "build/out.py",
+        "vendor/lib.py",
+        "pkg/schema_gen.py",
+    ] {
+        project.remove(path);
+    }
+    let removed = project.run(&[]);
+    assert_eq!(filtered.stdout, removed.stdout);
 }
 
 #[test]
-#[ignore = "AC-06: explicitly named files bypass discovery filters"]
 fn ac_06_named_files_bypass_discovery() {
-    // Given a `.gitignore`-covered Python file named explicitly on the command line,
-    // when a run starts,
-    // then the file is linted and its findings report normally.
-    unimplemented!("AC-06");
+    let project = Project::git();
+    project
+        .write(".gitignore", ".home/\nignored.py\n")
+        .write("ferrolint.toml", "exclude = [\"excluded.py\"]\n")
+        .write("ignored.py", BARE_NOQA)
+        .write("excluded.py", BARE_NOQA);
+    assert_eq!(project.run(&[]).summary(), "0 files linted, 0 findings.");
+    let run = project.run(&["ignored.py", "excluded.py"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("ignored.py:1:"), "{run:?}");
+    assert!(run.stdout.contains("excluded.py:1:"), "{run:?}");
+    assert_eq!(run.summary(), "2 files linted, 2 findings.");
 }
 
 // Plugins (AC-07..AC-10, FR-03, FR-04)
@@ -177,30 +255,70 @@ fn ac_18_pylint_aliases_resolve() {
 // Exit codes (AC-19..AC-21, FR-07)
 
 #[test]
-#[ignore = "AC-19: a clean run exits 0"]
 fn ac_19_clean_run_exits_zero() {
-    // Given a run over files with no findings under the active configuration,
-    // when it completes,
-    // then the exit code is 0 and the report carries the file count and zero findings.
-    unimplemented!("AC-19");
+    let project = Project::new();
+    project.write("a.py", CLEAN).write("pkg/b.py", CLEAN);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 0, "{run:?}");
+    assert_eq!(run.stdout, "2 files linted, 0 findings.\n");
 }
 
 #[test]
-#[ignore = "AC-20: a run with findings exits 1"]
 fn ac_20_findings_run_exits_one() {
-    // Given a run over files with un-suppressed findings,
-    // when it completes,
-    // then the exit code is 1, findings are on stdout in the chosen format, count matches.
-    unimplemented!("AC-20");
+    let project = Project::new();
+    project
+        .write("a.py", BARE_NOQA)
+        .write("b.py", SYNTAX_ERROR)
+        .write("c.py", CLEAN);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let lines = run.finding_lines();
+    assert_eq!(lines.len(), 2, "{run:?}");
+    assert!(lines[0].starts_with("a.py:1:8: warning FL002 "), "{run:?}");
+    assert!(
+        lines[1].starts_with("b.py:1:12: error FL003 (E0001, syntax-error) "),
+        "{run:?}"
+    );
+    assert_eq!(run.summary(), "3 files linted, 2 findings.");
 }
 
 #[test]
-#[ignore = "AC-21: a broken run exits 2"]
 fn ac_21_broken_run_exits_two() {
-    // Given a run whose startup fails (bad flag, malformed config, missing plugin, SHA mismatch),
-    // when it fails,
-    // then exit code 2, cause on stderr, stdout empty of the report, regardless of prior runnable files.
-    unimplemented!("AC-21");
+    let project = Project::new();
+    project.write("clean.py", CLEAN);
+    let assert_broken = |run: support::Run, cause: &str| {
+        assert_eq!(run.code, 2, "{cause}: {run:?}");
+        assert!(run.stdout.is_empty(), "{cause}: {run:?}");
+        assert!(run.stderr.contains(cause), "{cause}: {run:?}");
+    };
+
+    assert_broken(project.run(&["--threads", "many"]), "invalid value");
+    assert_broken(project.run(&["missing.py"]), "no such file");
+
+    project.write("ferrolint.toml", "select = [\n");
+    assert_broken(project.run(&[]), "config error");
+    project.write("ferrolint.toml", "select = [\"NOPE1\"]\n");
+    assert_broken(project.run(&[]), "no rule is named");
+
+    project.write(
+        "ferrolint.toml",
+        "plugins = [{ path = \"gone.wasm\", sha256 = \"00\" }]\n",
+    );
+    assert_broken(project.run(&[]), "gone.wasm");
+
+    project.write("plugin.wasm", b"not wasm");
+    project.write(
+        "ferrolint.toml",
+        "plugins = [{ path = \"plugin.wasm\", sha256 = \"00\" }]\n",
+    );
+    assert_broken(project.run(&[]), "sha256 mismatch");
+
+    let digest = support::sha256(b"not wasm");
+    project.write(
+        "ferrolint.toml",
+        format!("plugins = [{{ path = \"plugin.wasm\", sha256 = \"{digest}\" }}]\n"),
+    );
+    assert_broken(project.run(&[]), "plugin error");
 }
 
 // Diff mode (AC-22..AC-23, FR-08)

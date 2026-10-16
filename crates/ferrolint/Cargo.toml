@@ -8,10 +8,21 @@ license.workspace = true
 [dependencies]
 ferrolint-core = { path = "../ferrolint-core" }
 clap = { workspace = true }
+globset = { workspace = true }
+ignore = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
 wasmtime = { workspace = true }
 ruff_python_parser = { workspace = true }
 ruff_python_ast = { workspace = true }
 ruff_python_semantic = { workspace = true }
+ruff_text_size = { workspace = true }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

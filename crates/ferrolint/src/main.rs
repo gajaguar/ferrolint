@@ -1,6 +1,17 @@
-use clap::Parser;
-use std::path::{Path, PathBuf};
+mod checks;
+mod config;
+mod discover;
+mod engine;
+mod error;
+mod report;
+mod selection;
+mod suppress;
+
+use std::io::Write;
+use std::path::PathBuf;
 use std::process::ExitCode;
+
+use clap::Parser;
 
 #[derive(Parser)]
 #[command(
@@ -9,36 +20,51 @@ use std::process::ExitCode;
     about = "Extensible Python linter in Rust"
 )]
 struct Args {
-    /// Path to a file or directory to lint.
+    /// Files or directories to lint.
     #[arg(default_value = ".")]
-    path: PathBuf,
+    paths: Vec<PathBuf>,
 
-    /// Path to a configuration file.
+    /// Path to a configuration file (ferrolint.toml or pyproject.toml).
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    /// Worker threads; 0 uses every available core.
+    #[arg(long, default_value_t = 0)]
+    threads: usize,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
-
-    if let Some(config_path) = args.config {
-        let _config = match load_config(&config_path) {
-            Ok(config) => config,
-            Err(err) => {
-                eprintln!("ferrolint: config error: {err}");
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            return fail(&format!(
+                "i/o error: cannot read the working directory: {err}"
+            ));
+        }
+    };
+    let options = engine::Options {
+        paths: args.paths,
+        config: args.config,
+        threads: args.threads,
+    };
+    match engine::run(&cwd, &options) {
+        Ok(report) => {
+            let out = report::text(&report);
+            if std::io::stdout().lock().write_all(out.as_bytes()).is_err() {
                 return ExitCode::from(2);
             }
-        };
+            if report.findings.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }
+        Err(err) => fail(&err.to_string()),
     }
-
-    eprintln!("ferrolint: not implemented: {}", args.path.display());
-    ExitCode::from(2)
 }
 
-#[derive(Debug, Default)]
-struct Config {}
-
-#[allow(clippy::unnecessary_wraps)]
-fn load_config(_path: &Path) -> Result<Config, String> {
-    Ok(Config::default())
+fn fail(message: &str) -> ExitCode {
+    eprintln!("ferrolint: {message}");
+    ExitCode::from(2)
 }
