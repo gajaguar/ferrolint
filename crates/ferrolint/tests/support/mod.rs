@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use tempfile::TempDir;
 
@@ -28,6 +29,53 @@ pub fn sha256(bytes: &[u8]) -> String {
             write!(out, "{byte:02x}").unwrap();
             out
         })
+}
+
+/// The workspace's plugin packages the tests load.
+const PLUGIN_PACKAGES: &[&str] = &[
+    "ferrolint-test-probe",
+    "ferrolint-test-sandbox",
+    "ferrolint-test-runaway",
+];
+
+/// The directory holding the plugins built for `wasm32-wasip2`, building
+/// them once per test process. A separate target directory keeps this
+/// build from waiting on the lock of the build running the tests.
+fn plugin_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let target = workspace.join("target/test-plugins");
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+        let mut command = Command::new(cargo);
+        command
+            .args([
+                "build",
+                "--locked",
+                "--release",
+                "--target",
+                "wasm32-wasip2",
+            ])
+            .arg("--target-dir")
+            .arg(&target)
+            .current_dir(&workspace);
+        for package in PLUGIN_PACKAGES {
+            command.args(["-p", package]);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "building the test plugins failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        target.join("wasm32-wasip2/release")
+    })
+}
+
+/// The built component of the plugin package `name`.
+pub fn plugin_bytes(name: &str) -> Vec<u8> {
+    let file = format!("{}.wasm", name.replace('-', "_"));
+    fs::read(plugin_dir().join(file)).unwrap()
 }
 
 /// The outcome of one run of the binary.
@@ -85,6 +133,15 @@ impl Project {
         }
         fs::write(path, contents).unwrap();
         self
+    }
+
+    /// Copy the built plugin `package` into the project as `file` and
+    /// return its `[[plugins]]` table.
+    pub fn plugin(&self, package: &str, file: &str) -> String {
+        let bytes = plugin_bytes(package);
+        let digest = sha256(&bytes);
+        self.write(file, bytes);
+        format!("[[plugins]]\npath = \"{file}\"\nsha256 = \"{digest}\"\n")
     }
 
     pub fn remove(&self, relative: &str) -> &Self {

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "plugins/*"]
 resolver = "3"
 
 [workspace.package]
@@ -19,6 +19,8 @@ sha2 = "0.11"
 tempfile = "3.27"
 toml = "1.1"
 wasmtime = "=49.0.3"
+wasmtime-wasi = "=49.0.3"
+wit-bindgen = "0.63"
 ruff_python_parser = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
 ruff_python_ast = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
 ruff_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }

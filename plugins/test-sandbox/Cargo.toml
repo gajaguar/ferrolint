@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-test-sandbox"
+version.workspace = true
+edition.workspace = true
+description = "Test plugin that tries to reach the filesystem, the network and the environment"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk" }
+
+[lints]
+workspace = true

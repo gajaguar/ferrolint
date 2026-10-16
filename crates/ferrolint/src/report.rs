@@ -2,7 +2,25 @@
 
 use std::fmt::Write;
 
+use ferrolint_core::{Finding, Fix, Position, Range};
+use serde_json::{Value, json};
+
 use crate::engine::Report;
+
+/// The report formats `--format` selects.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, clap::ValueEnum)]
+pub enum Format {
+    #[default]
+    Text,
+    Json,
+}
+
+pub fn render(report: &Report, format: Format) -> String {
+    match format {
+        Format::Text => text(report),
+        Format::Json => json(report),
+    }
+}
 
 /// The default format: one line per diagnostic, then a summary line.
 pub fn text(report: &Report) -> String {
@@ -44,4 +62,52 @@ fn plural(count: usize, noun: &str) -> String {
     } else {
         format!("{count} {noun}s")
     }
+}
+
+/// One JSON document: the diagnostics in report order and a summary. Keys
+/// are sorted and the output is compact, so it is canonical JSON.
+pub fn json(report: &Report) -> String {
+    let diagnostics: Vec<Value> = report.findings.iter().map(json_finding).collect();
+    let document = json!({
+        "diagnostics": diagnostics,
+        "summary": {
+            "files": report.files,
+            "findings": report.findings.len(),
+        },
+    });
+    let mut out = document.to_string();
+    out.push('\n');
+    out
+}
+
+fn json_finding(finding: &Finding) -> Value {
+    let d = &finding.diagnostic;
+    let mut object = json!({
+        "aliases": finding.aliases,
+        "code": d.code,
+        "message": d.message,
+        "path": finding.path,
+        "range": json_range(&d.range),
+        "severity": d.severity.as_str(),
+    });
+    if let (Some(fix), Some(map)) = (&d.fix, object.as_object_mut()) {
+        map.insert("fix".into(), json_fix(fix));
+    }
+    object
+}
+
+fn json_fix(fix: &Fix) -> Value {
+    json!({
+        "description": fix.description,
+        "range": json_range(&fix.range),
+        "replacement": fix.replacement,
+    })
+}
+
+fn json_range(range: &Range) -> Value {
+    json!({ "end": json_position(range.end), "start": json_position(range.start) })
+}
+
+fn json_position(position: Position) -> Value {
+    json!({ "column": position.column, "line": position.line, "offset": position.offset })
 }

@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-test-runaway"
+version.workspace = true
+edition.workspace = true
+description = "Test plugin that loops forever on a marked file"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk" }
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-test-probe"
+version.workspace = true
+edition.workspace = true
+description = "Test plugin that reports the visitor events and semantic answers it receives"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk" }
+
+[lints]
+workspace = true

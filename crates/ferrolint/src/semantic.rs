@@ -1,0 +1,898 @@
+//! Scopes and bindings of one file, and the queries the contract's
+//! `semantic` interface answers from them.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::OnceLock;
+
+use ruff_python_ast::visitor::{self, Visitor};
+use ruff_python_ast::{self as ast, Expr, ExprContext as Ctx, HasNodeIndex, Stmt};
+use ruff_text_size::{Ranged, TextRange};
+
+use crate::wit::{Binding, BindingKind, Node, Range, Scope, ScopeKind};
+
+/// The Python minor version builtins are taken from.
+const PYTHON_MINOR: u8 = 14;
+/// Builtin bindings get ids from here up, one per builtin name.
+const BUILTIN_BASE: u32 = 0x8000_0000;
+const UNSET: u32 = u32::MAX;
+
+/// The semantic model of one file.
+pub struct Model {
+    scopes: Vec<ScopeData>,
+    bindings: Vec<BindingData>,
+    /// The scope of each node, by node id.
+    node_scope: Vec<u32>,
+    /// The binding each binding site creates, by node id.
+    node_binding: HashMap<u32, u32>,
+}
+
+struct ScopeData {
+    kind: ScopeKind,
+    name: Option<String>,
+    node: u32,
+    parent: Option<u32>,
+    /// The bindings of each name, in source order.
+    names: BTreeMap<String, Vec<u32>>,
+    globals: HashSet<String>,
+    nonlocals: HashSet<String>,
+}
+
+struct BindingData {
+    name: String,
+    kind: BindingKind,
+    scope: u32,
+    node: Option<u32>,
+    range: TextRange,
+    origin: Option<String>,
+    /// Where the binding takes effect: a use before it sees an older one.
+    effective: u32,
+}
+
+/// The answer to a resolution: a binding of the file, or a builtin.
+#[derive(Clone, Copy)]
+enum Resolved {
+    Binding(u32),
+    Builtin(u32),
+}
+
+impl Model {
+    pub fn build(module: &ast::ModModule, nodes: &[Node]) -> Self {
+        let mut builder = Builder {
+            model: Model {
+                scopes: Vec::new(),
+                bindings: Vec::new(),
+                node_scope: vec![UNSET; nodes.len()],
+                node_binding: HashMap::new(),
+            },
+            current: 0,
+            store_kind: BindingKind::Assignment,
+            statement_end: 0,
+        };
+        builder.push_scope(ScopeKind::Module, None, 0);
+        builder.model.node_scope[0] = 0;
+        builder.visit_body(&module.body);
+        let mut model = builder.model;
+        for node in nodes {
+            let id = node.id as usize;
+            if model.node_scope[id] == UNSET {
+                model.node_scope[id] = node
+                    .parent
+                    .map_or(0, |parent| model.node_scope[parent as usize]);
+            }
+        }
+        model
+    }
+
+    fn scope_of_node(&self, node: u32) -> Option<u32> {
+        self.node_scope.get(node as usize).copied()
+    }
+
+    pub fn scope(&self, node: u32) -> Option<Scope> {
+        let id = self.scope_of_node(node)?;
+        let scope = &self.scopes[id as usize];
+        Some(Scope {
+            id,
+            kind: scope.kind,
+            name: scope.name.clone(),
+            node: scope.node,
+            parent: scope.parent,
+        })
+    }
+
+    pub fn resolve(&self, nodes: &[Node], node: u32) -> Option<Binding> {
+        if let Some(&binding) = self.node_binding.get(&node) {
+            return Some(self.binding(nodes, binding));
+        }
+        let target = nodes.get(node as usize)?;
+        let name = target.name.as_deref()?;
+        let scope = self.scope_of_node(node)?;
+        self.resolve_name(name, scope, target.range.start.offset)
+            .map(|resolved| self.output(nodes, resolved))
+    }
+
+    pub fn visible_bindings(&self, nodes: &[Node], node: u32) -> Vec<Binding> {
+        let (Some(scope), Some(target)) = (self.scope_of_node(node), nodes.get(node as usize))
+        else {
+            return Vec::new();
+        };
+        let offset = target.range.start.offset;
+        let mut seen = HashSet::new();
+        let mut visible = Vec::new();
+        let mut current = Some(scope);
+        while let Some(id) = current {
+            let data = &self.scopes[id as usize];
+            if id == scope || data.kind != ScopeKind::Class {
+                for name in data.names.keys() {
+                    if seen.insert(name.as_str())
+                        && let Some(Resolved::Binding(binding)) =
+                            self.resolve_name(name, scope, offset)
+                    {
+                        visible.push(self.binding(nodes, binding));
+                    }
+                }
+            }
+            current = data.parent;
+        }
+        visible.sort_by(|a, b| a.name.cmp(&b.name));
+        visible
+    }
+
+    /// Python's lookup for `name` used at `offset` inside `scope`.
+    fn resolve_name(&self, name: &str, scope: u32, offset: u32) -> Option<Resolved> {
+        let mut current = scope;
+        let mut deferred = false;
+        loop {
+            let data = &self.scopes[current as usize];
+            if data.globals.contains(name) && current != 0 {
+                return self
+                    .pick(0, name, offset, true, false)
+                    .or_else(|| builtin(name));
+            }
+            let skip = data.nonlocals.contains(name)
+                || (current != scope && data.kind == ScopeKind::Class);
+            if !skip
+                && let Some(binding) = self.pick(current, name, offset, deferred, current == scope)
+            {
+                return Some(binding);
+            }
+            if matches!(data.kind, ScopeKind::Function | ScopeKind::Lambda) {
+                deferred = true;
+            }
+            match data.parent {
+                Some(parent) => current = parent,
+                None => return builtin(name),
+            }
+        }
+    }
+
+    /// The binding of `name` in `scope` a use at `offset` sees. A deferred
+    /// use (from inside a nested function) sees the scope's last binding.
+    fn pick(
+        &self,
+        scope: u32,
+        name: &str,
+        offset: u32,
+        deferred: bool,
+        own: bool,
+    ) -> Option<Resolved> {
+        let data = &self.scopes[scope as usize];
+        let candidates: Vec<u32> = data
+            .names
+            .get(name)?
+            .iter()
+            .copied()
+            .filter(|&id| {
+                !matches!(
+                    self.bindings[id as usize].kind,
+                    BindingKind::Global | BindingKind::Nonlocal
+                )
+            })
+            .collect();
+        if deferred {
+            return candidates.last().copied().map(Resolved::Binding);
+        }
+        let before = candidates
+            .iter()
+            .copied()
+            .rfind(|&id| self.bindings[id as usize].effective <= offset);
+        if before.is_some() {
+            return before.map(Resolved::Binding);
+        }
+        // A function's names are local wherever they are bound in it.
+        let local_scope = matches!(
+            data.kind,
+            ScopeKind::Function | ScopeKind::Lambda | ScopeKind::Comprehension
+        );
+        (own && local_scope)
+            .then(|| candidates.first().copied())
+            .flatten()
+            .map(Resolved::Binding)
+    }
+
+    fn output(&self, nodes: &[Node], resolved: Resolved) -> Binding {
+        match resolved {
+            Resolved::Binding(id) => self.binding(nodes, id),
+            Resolved::Builtin(id) => Binding {
+                id,
+                name: builtins()[(id - BUILTIN_BASE) as usize].to_owned(),
+                kind: BindingKind::Builtin,
+                scope: 0,
+                node: None,
+                range: None,
+                origin: None,
+            },
+        }
+    }
+
+    fn binding(&self, nodes: &[Node], id: u32) -> Binding {
+        let data = &self.bindings[id as usize];
+        Binding {
+            id,
+            name: data.name.clone(),
+            kind: data.kind,
+            scope: data.scope,
+            node: data.node,
+            range: data.node.map(|node| range_within(nodes, node, data.range)),
+            origin: data.origin.clone(),
+        }
+    }
+}
+
+/// The binding's text range expressed as a contract range, using the
+/// positions already computed for its node when they match.
+fn range_within(nodes: &[Node], node: u32, range: TextRange) -> Range {
+    let node_range = nodes[node as usize].range;
+    if node_range.start.offset == range.start().to_u32()
+        && node_range.end.offset == range.end().to_u32()
+    {
+        return node_range;
+    }
+    // The binding names part of its node (a definition's name, an alias's
+    // `as` name): count the columns from the node's own start.
+    let shift = |offset: u32| {
+        let mut position = node_range.start;
+        position.column += offset.saturating_sub(position.offset);
+        position.offset = offset;
+        position
+    };
+    Range {
+        start: shift(range.start().to_u32()),
+        end: shift(range.end().to_u32()),
+    }
+}
+
+fn builtins() -> &'static [&'static str] {
+    static BUILTINS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    BUILTINS.get_or_init(|| {
+        let mut names: Vec<&'static str> =
+            ruff_python_stdlib::builtins::python_builtins(PYTHON_MINOR, false).collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    })
+}
+
+fn builtin(name: &str) -> Option<Resolved> {
+    let index = builtins().binary_search(&name).ok()?;
+    Some(Resolved::Builtin(BUILTIN_BASE + u32::try_from(index).ok()?))
+}
+
+fn id_of(node: &impl HasNodeIndex) -> Option<u32> {
+    node.node_index().load().as_u32()
+}
+
+struct Builder {
+    model: Model,
+    current: u32,
+    store_kind: BindingKind,
+    statement_end: u32,
+}
+
+impl Builder {
+    fn push_scope(&mut self, kind: ScopeKind, name: Option<String>, node: u32) -> u32 {
+        let id = u32::try_from(self.model.scopes.len()).unwrap_or(UNSET);
+        let parent = (!self.model.scopes.is_empty()).then_some(self.current);
+        self.model.scopes.push(ScopeData {
+            kind,
+            name,
+            node,
+            parent,
+            names: BTreeMap::new(),
+            globals: HashSet::new(),
+            nonlocals: HashSet::new(),
+        });
+        self.current = id;
+        id
+    }
+
+    fn pop_scope(&mut self) {
+        if let Some(parent) = self.model.scopes[self.current as usize].parent {
+            self.current = parent;
+        }
+    }
+
+    fn mark(&mut self, node: &impl HasNodeIndex) {
+        if let Some(id) = id_of(node)
+            && let Some(slot) = self.model.node_scope.get_mut(id as usize)
+        {
+            *slot = self.current;
+        }
+    }
+
+    /// The scope a new binding of `name` lands in, following `global` and
+    /// `nonlocal` declarations.
+    fn target_scope(&self, name: &str, kind: BindingKind) -> u32 {
+        let mut scope = self.current;
+        if kind == BindingKind::NamedExpr {
+            while self.model.scopes[scope as usize].kind == ScopeKind::Comprehension {
+                scope = self.model.scopes[scope as usize].parent.unwrap_or(0);
+            }
+        }
+        let data = &self.model.scopes[scope as usize];
+        if matches!(kind, BindingKind::Global | BindingKind::Nonlocal) {
+            return scope;
+        }
+        if data.globals.contains(name) {
+            return 0;
+        }
+        if data.nonlocals.contains(name) {
+            let mut outer = data.parent;
+            while let Some(id) = outer {
+                let candidate = &self.model.scopes[id as usize];
+                if matches!(candidate.kind, ScopeKind::Function | ScopeKind::Lambda) {
+                    return id;
+                }
+                outer = candidate.parent;
+            }
+        }
+        scope
+    }
+
+    fn bind(
+        &mut self,
+        name: &str,
+        kind: BindingKind,
+        node: Option<u32>,
+        range: TextRange,
+        origin: Option<String>,
+        effective: u32,
+    ) {
+        let scope = self.target_scope(name, kind);
+        let id = u32::try_from(self.model.bindings.len()).unwrap_or(UNSET);
+        self.model.bindings.push(BindingData {
+            name: name.to_owned(),
+            kind,
+            scope,
+            node,
+            range,
+            origin,
+            effective,
+        });
+        self.model.scopes[scope as usize]
+            .names
+            .entry(name.to_owned())
+            .or_default()
+            .push(id);
+        if let Some(node) = node {
+            self.model.node_binding.entry(node).or_insert(id);
+        }
+    }
+
+    fn with_store_kind(&mut self, kind: BindingKind, visit: impl FnOnce(&mut Self)) {
+        let previous = std::mem::replace(&mut self.store_kind, kind);
+        visit(self);
+        self.store_kind = previous;
+    }
+
+    fn bind_parameters(&mut self, parameters: &ast::Parameters) {
+        self.mark(parameters);
+        for parameter in parameters {
+            let parameter = parameter.as_parameter();
+            self.mark(parameter);
+            let range = parameter.name.range();
+            self.bind(
+                &parameter.name,
+                BindingKind::Parameter,
+                id_of(parameter),
+                range,
+                None,
+                range.end().to_u32(),
+            );
+        }
+    }
+
+    /// Visit the parts of a parameter list the enclosing scope evaluates.
+    fn visit_parameter_values(&mut self, parameters: &ast::Parameters) {
+        for parameter in parameters {
+            if let Some(default) = parameter.default() {
+                self.visit_expr(default);
+            }
+            if let Some(annotation) = parameter.annotation() {
+                self.visit_expr(annotation);
+            }
+        }
+    }
+
+    fn visit_type_params_in_scope(
+        &mut self,
+        type_params: Option<&ast::TypeParams>,
+        node: u32,
+    ) -> bool {
+        let Some(type_params) = type_params else {
+            return false;
+        };
+        self.push_scope(ScopeKind::TypeParams, None, node);
+        for param in &type_params.type_params {
+            let name = param.name();
+            let range = name.range();
+            self.bind(
+                name,
+                BindingKind::TypeParam,
+                id_of(param),
+                range,
+                None,
+                range.end().to_u32(),
+            );
+            visitor::walk_type_param(self, param);
+        }
+        true
+    }
+
+    fn visit_comprehension_scope(
+        &mut self,
+        node: u32,
+        generators: &[ast::Comprehension],
+        elements: &[&Expr],
+    ) {
+        let Some((first, _)) = generators.split_first() else {
+            return;
+        };
+        self.visit_expr(&first.iter);
+        self.push_scope(ScopeKind::Comprehension, None, node);
+        for (index, generator) in generators.iter().enumerate() {
+            self.mark(generator);
+            self.with_store_kind(BindingKind::ComprehensionVar, |this| {
+                this.visit_expr(&generator.target);
+            });
+            if index > 0 {
+                self.visit_expr(&generator.iter);
+            }
+            for condition in &generator.ifs {
+                self.visit_expr(condition);
+            }
+        }
+        for element in elements {
+            self.visit_expr(element);
+        }
+        self.pop_scope();
+    }
+
+    fn visit_function(&mut self, def: &ast::StmtFunctionDef) {
+        let id = id_of(def).unwrap_or(0);
+        for decorator in &def.decorator_list {
+            self.visit_decorator(decorator);
+        }
+        let range = def.name.range();
+        self.bind(
+            &def.name,
+            BindingKind::FunctionDef,
+            Some(id),
+            range,
+            None,
+            range.end().to_u32(),
+        );
+        let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
+        self.visit_parameter_values(&def.parameters);
+        if let Some(returns) = &def.returns {
+            self.visit_expr(returns);
+        }
+        self.push_scope(ScopeKind::Function, Some(def.name.to_string()), id);
+        self.bind_parameters(&def.parameters);
+        self.visit_body(&def.body);
+        self.pop_scope();
+        if typed {
+            self.pop_scope();
+        }
+    }
+
+    fn visit_class(&mut self, def: &ast::StmtClassDef) {
+        let id = id_of(def).unwrap_or(0);
+        for decorator in &def.decorator_list {
+            self.visit_decorator(decorator);
+        }
+        let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
+        if let Some(arguments) = &def.arguments {
+            self.visit_arguments(arguments);
+        }
+        if typed {
+            self.pop_scope();
+        }
+        let range = def.name.range();
+        self.bind(
+            &def.name,
+            BindingKind::ClassDef,
+            Some(id),
+            range,
+            None,
+            range.end().to_u32(),
+        );
+        self.push_scope(ScopeKind::Class, Some(def.name.to_string()), id);
+        self.visit_body(&def.body);
+        self.pop_scope();
+    }
+
+    fn visit_import(&mut self, aliases: &[ast::Alias], module: Option<&str>) {
+        for alias in aliases {
+            self.mark(alias);
+            let node = id_of(alias);
+            let end = alias.range().end().to_u32();
+            match module {
+                None => {
+                    let dotted = alias.name.as_str();
+                    let (name, range) = match &alias.asname {
+                        Some(asname) => (asname.as_str(), asname.range()),
+                        None => (
+                            dotted.split('.').next().unwrap_or(dotted),
+                            alias.name.range(),
+                        ),
+                    };
+                    self.bind(
+                        name,
+                        BindingKind::Import,
+                        node,
+                        range,
+                        Some(dotted.to_owned()),
+                        end,
+                    );
+                }
+                Some(module) if alias.name.as_str() == "*" => {
+                    self.bind(
+                        "*",
+                        BindingKind::StarImport,
+                        node,
+                        alias.range(),
+                        Some(module.to_owned()),
+                        end,
+                    );
+                }
+                Some(module) => {
+                    let (name, range) = match &alias.asname {
+                        Some(asname) => (asname.as_str(), asname.range()),
+                        None => (alias.name.as_str(), alias.name.range()),
+                    };
+                    let separator = if module.ends_with('.') || module.is_empty() {
+                        ""
+                    } else {
+                        "."
+                    };
+                    let origin = format!("{module}{separator}{}", alias.name);
+                    self.bind(
+                        name,
+                        BindingKind::FromImport,
+                        node,
+                        range,
+                        Some(origin),
+                        end,
+                    );
+                }
+            }
+        }
+    }
+
+    fn declare(&mut self, names: &[ast::Identifier], kind: BindingKind) {
+        for name in names {
+            let scope = &mut self.model.scopes[self.current as usize];
+            if kind == BindingKind::Global {
+                scope.globals.insert(name.to_string());
+            } else {
+                scope.nonlocals.insert(name.to_string());
+            }
+            let range = name.range();
+            self.bind(name, kind, id_of(name), range, None, range.end().to_u32());
+        }
+    }
+}
+
+impl<'a> Visitor<'a> for Builder {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        self.mark(stmt);
+        let outer_end = std::mem::replace(&mut self.statement_end, stmt.range().end().to_u32());
+        match stmt {
+            Stmt::FunctionDef(def) => self.visit_function(def),
+            Stmt::ClassDef(def) => self.visit_class(def),
+            Stmt::Import(import) => self.visit_import(&import.names, None),
+            Stmt::ImportFrom(import) => {
+                let module = format!(
+                    "{}{}",
+                    ".".repeat(import.level as usize),
+                    import.module.as_ref().map_or("", |module| module.as_str())
+                );
+                self.visit_import(&import.names, Some(&module));
+            }
+            Stmt::Global(global) => self.declare(&global.names, BindingKind::Global),
+            Stmt::Nonlocal(nonlocal) => self.declare(&nonlocal.names, BindingKind::Nonlocal),
+            Stmt::AnnAssign(assign) => {
+                self.visit_expr(&assign.annotation);
+                if let Some(value) = &assign.value {
+                    self.visit_expr(value);
+                }
+                let kind = if assign.value.is_some() {
+                    BindingKind::Assignment
+                } else {
+                    BindingKind::Annotation
+                };
+                self.with_store_kind(kind, |this| this.visit_expr(&assign.target));
+            }
+            Stmt::For(stmt) => {
+                self.visit_expr(&stmt.iter);
+                self.statement_end = stmt.target.range().end().to_u32();
+                self.with_store_kind(BindingKind::LoopVar, |this| this.visit_expr(&stmt.target));
+                self.visit_body(&stmt.body);
+                self.visit_body(&stmt.orelse);
+            }
+            Stmt::With(stmt) => {
+                for item in &stmt.items {
+                    self.mark(item);
+                    self.visit_expr(&item.context_expr);
+                    if let Some(vars) = &item.optional_vars {
+                        self.statement_end = vars.range().end().to_u32();
+                        self.with_store_kind(BindingKind::WithItem, |this| this.visit_expr(vars));
+                    }
+                }
+                self.visit_body(&stmt.body);
+            }
+            _ => visitor::walk_stmt(self, stmt),
+        }
+        self.statement_end = outer_end;
+    }
+
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        self.mark(expr);
+        match expr {
+            Expr::Name(name) => match name.ctx {
+                Ctx::Store => {
+                    let effective = self.statement_end.max(name.range.end().to_u32());
+                    self.bind(
+                        &name.id,
+                        self.store_kind,
+                        id_of(name),
+                        name.range,
+                        None,
+                        effective,
+                    );
+                }
+                Ctx::Del => {
+                    let end = name.range.end().to_u32();
+                    self.bind(
+                        &name.id,
+                        BindingKind::Deletion,
+                        id_of(name),
+                        name.range,
+                        None,
+                        end,
+                    );
+                }
+                Ctx::Load | Ctx::Invalid => {}
+            },
+            Expr::Named(named) => {
+                self.visit_expr(&named.value);
+                if let Expr::Name(target) = named.target.as_ref() {
+                    self.mark(target);
+                    let end = named.range.end().to_u32();
+                    self.bind(
+                        &target.id,
+                        BindingKind::NamedExpr,
+                        id_of(target),
+                        target.range,
+                        None,
+                        end,
+                    );
+                }
+            }
+            Expr::Lambda(lambda) => {
+                let id = id_of(lambda).unwrap_or(0);
+                if let Some(parameters) = &lambda.parameters {
+                    self.visit_parameter_values(parameters);
+                }
+                self.push_scope(ScopeKind::Lambda, None, id);
+                if let Some(parameters) = &lambda.parameters {
+                    self.bind_parameters(parameters);
+                }
+                self.visit_expr(&lambda.body);
+                self.pop_scope();
+            }
+            Expr::ListComp(comp) => {
+                self.visit_comprehension_scope(
+                    id_of(comp).unwrap_or(0),
+                    &comp.generators,
+                    &[&comp.elt],
+                );
+            }
+            Expr::SetComp(comp) => {
+                self.visit_comprehension_scope(
+                    id_of(comp).unwrap_or(0),
+                    &comp.generators,
+                    &[&comp.elt],
+                );
+            }
+            Expr::Generator(comp) => {
+                self.visit_comprehension_scope(
+                    id_of(comp).unwrap_or(0),
+                    &comp.generators,
+                    &[&comp.elt],
+                );
+            }
+            Expr::DictComp(comp) => {
+                let elements: Vec<&Expr> = comp
+                    .key
+                    .as_deref()
+                    .into_iter()
+                    .chain([comp.value.as_ref()])
+                    .collect();
+                self.visit_comprehension_scope(
+                    id_of(comp).unwrap_or(0),
+                    &comp.generators,
+                    &elements,
+                );
+            }
+            _ => visitor::walk_expr(self, expr),
+        }
+    }
+
+    fn visit_except_handler(&mut self, handler: &'a ast::ExceptHandler) {
+        let ast::ExceptHandler::ExceptHandler(inner) = handler;
+        self.mark(inner);
+        if let Some(type_) = &inner.type_ {
+            self.visit_expr(type_);
+        }
+        if let Some(name) = &inner.name {
+            let range = name.range();
+            self.bind(
+                name,
+                BindingKind::ExceptHandler,
+                id_of(inner),
+                range,
+                None,
+                range.end().to_u32(),
+            );
+        }
+        self.visit_body(&inner.body);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'a ast::Pattern) {
+        self.mark(pattern);
+        let name = match pattern {
+            ast::Pattern::MatchAs(pattern) => pattern.name.as_ref(),
+            ast::Pattern::MatchStar(pattern) => pattern.name.as_ref(),
+            ast::Pattern::MatchMapping(pattern) => pattern.rest.as_ref(),
+            _ => None,
+        };
+        if let Some(name) = name {
+            let range = name.range();
+            self.bind(
+                name,
+                BindingKind::MatchCapture,
+                id_of(pattern),
+                range,
+                None,
+                range.end().to_u32(),
+            );
+        }
+        visitor::walk_pattern(self, pattern);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::flatten;
+    use ferrolint_core::LineIndex;
+
+    struct Fixture {
+        source: &'static str,
+        nodes: Vec<Node>,
+        model: Model,
+    }
+
+    fn fixture(source: &'static str) -> Fixture {
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let index = LineIndex::new(source);
+        let nodes = flatten(source, &index, parsed.syntax());
+        let model = Model::build(parsed.syntax(), &nodes);
+        Fixture {
+            source,
+            nodes,
+            model,
+        }
+    }
+
+    impl Fixture {
+        /// The name load nodes spelled `name`, in source order.
+        fn loads(&self, name: &str) -> Vec<u32> {
+            self.nodes
+                .iter()
+                .filter(|node| {
+                    node.kind == crate::wit::NodeKind::Name
+                        && node.name.as_deref() == Some(name)
+                        && node.context == crate::wit::ExprContext::Load
+                })
+                .map(|node| node.id)
+                .collect()
+        }
+
+        /// What the `nth` load of `name` resolves to: kind and line.
+        fn resolve(&self, name: &str, nth: usize) -> Option<(BindingKind, u32)> {
+            let node = self.loads(name)[nth];
+            self.model.resolve(&self.nodes, node).map(|binding| {
+                (
+                    binding.kind,
+                    binding.range.map_or(0, |range| range.start.line),
+                )
+            })
+        }
+    }
+
+    #[test]
+    fn locals_shadow_globals_and_imports_resolve_to_their_origin() {
+        let f = fixture(
+            "counter = 0\n\ndef local():\n    counter = 1\n    return counter\n\ndef outer():\n    return counter\n\ndef importer():\n    import json.decoder as jd\n    return jd\n",
+        );
+        assert_eq!(f.resolve("counter", 0), Some((BindingKind::Assignment, 4)));
+        assert_eq!(f.resolve("counter", 1), Some((BindingKind::Assignment, 1)));
+        let jd = f.model.resolve(&f.nodes, f.loads("jd")[0]).unwrap();
+        assert_eq!(jd.kind, BindingKind::Import);
+        assert_eq!(jd.origin.as_deref(), Some("json.decoder"));
+        let _ = f.source;
+    }
+
+    #[test]
+    fn class_scopes_are_invisible_to_nested_functions() {
+        let f =
+            fixture("x = 1\nclass C:\n    x = 2\n    y = x\n    def m(self):\n        return x\n");
+        assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 3)));
+        assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn global_declarations_redirect_bindings() {
+        let f = fixture("def f():\n    global g\n    g = 1\n\ndef h():\n    return g\n");
+        let binding = f.model.resolve(&f.nodes, f.loads("g")[0]).unwrap();
+        assert_eq!(binding.kind, BindingKind::Assignment);
+        assert_eq!(binding.scope, 0);
+    }
+
+    #[test]
+    fn a_right_hand_side_sees_the_previous_binding() {
+        let f = fixture("x = 1\nx = x + 1\nprint(x)\n");
+        assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 1)));
+        assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 2)));
+        let print = f.model.resolve(&f.nodes, f.loads("print")[0]).unwrap();
+        assert_eq!(print.kind, BindingKind::Builtin);
+    }
+
+    #[test]
+    fn comprehension_variables_stay_inside() {
+        let f = fixture("x = 0\nys = [x for x in range(3)]\nz = x\n");
+        assert_eq!(f.resolve("x", 0), Some((BindingKind::ComprehensionVar, 2)));
+        assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn visible_bindings_leave_out_shadowed_names() {
+        let f = fixture("a = 1\nb = 2\ndef f(a):\n    return a + b\n");
+        let node = f.loads("b")[0];
+        let visible = f.model.visible_bindings(&f.nodes, node);
+        let summary: Vec<(String, BindingKind)> = visible
+            .into_iter()
+            .map(|binding| (binding.name, binding.kind))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("a".into(), BindingKind::Parameter),
+                ("b".into(), BindingKind::Assignment),
+                ("f".into(), BindingKind::FunctionDef),
+            ]
+        );
+    }
+}

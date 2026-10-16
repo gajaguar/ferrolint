@@ -3,9 +3,32 @@
 //! A test still marked `#[ignore]` is a criterion whose feature has not
 //! landed; its body is a single `unimplemented!` marker.
 
+// A helper that panics is how a test fails, as `clippy.toml` allows
+// inside `#[test]` functions themselves.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod support;
 
+use serde_json::Value;
 use support::{BARE_NOQA, CLEAN, Project, SYNTAX_ERROR};
+
+/// The diagnostics array of a `--format json` report.
+fn json_diagnostics(stdout: &str) -> Vec<Value> {
+    let report: Value = serde_json::from_str(stdout).unwrap();
+    report["diagnostics"].as_array().unwrap().clone()
+}
+
+/// A probe project: the probe plugin, with `select` limited to `codes`.
+fn probe_project(codes: &[&str]) -> Project {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-probe", "probe.wasm");
+    let select: Vec<String> = codes.iter().map(|code| format!("{code:?}")).collect();
+    project.write(
+        "ferrolint.toml",
+        format!("select = [{}]\n\n{plugin}", select.join(", ")),
+    );
+    project
+}
 
 // Configuration (AC-01..AC-06, FR-01, FR-02)
 
@@ -141,30 +164,134 @@ fn ac_06_named_files_bypass_discovery() {
 // Plugins (AC-07..AC-10, FR-03, FR-04)
 
 #[test]
-#[ignore = "AC-07: a plugin receives AST visitor events"]
 fn ac_07_plugin_receives_visitor_events() {
-    // Given a plugin recording every visitor event for a file,
-    // when a fixture with a function, a class and nested statements is linted,
-    // then events cover module body, class and function in source order, no visit after the file ends.
-    unimplemented!("AC-07");
+    let project = probe_project(&["PRB001"]);
+    project.write(
+        "pkg/shapes.py",
+        "import os\n\nclass Shape:\n    def area(self):\n        if self:\n            return 1\n        return 0\n\ndef main():\n    for item in [Shape()]:\n        print(item.area(), os.sep)\n",
+    );
+    let run = project.run(&["--format", "json"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let mut events: Vec<(String, u64)> = json_diagnostics(&run.stdout)
+        .iter()
+        .map(|d| {
+            let message = d["message"].as_str().unwrap().to_owned();
+            (message, d["range"]["start"]["offset"].as_u64().unwrap())
+        })
+        .collect();
+    events.sort();
+    let names: Vec<&str> = events.iter().map(|(message, _)| &message[5..]).collect();
+
+    assert_eq!(names.first(), Some(&"start-file pkg.shapes"));
+    assert_eq!(
+        names.last(),
+        Some(&"end-file"),
+        "no event after the file ends"
+    );
+    assert_eq!(names[1], "visit module");
+
+    let visits: Vec<&(String, u64)> = events
+        .iter()
+        .filter(|(m, _)| m[5..].starts_with("visit "))
+        .collect();
+    let leaves = names
+        .iter()
+        .filter(|name| name.starts_with("leave "))
+        .count();
+    assert_eq!(visits.len(), leaves, "every visit has its leave");
+    assert!(
+        visits.windows(2).all(|pair| pair[0].1 <= pair[1].1),
+        "visits come in source order: {visits:?}"
+    );
+    let position = |event: &str| names.iter().position(|name| *name == event).unwrap();
+    assert!(position("visit classdef Shape") < position("visit functiondef area"));
+    assert!(position("visit functiondef area") < position("visit if"));
+    assert!(position("leave classdef") < position("visit functiondef main"));
+    assert!(position("visit for") > position("visit functiondef main"));
 }
 
 #[test]
-#[ignore = "AC-08: scope and binding queries resolve names"]
 fn ac_08_scope_and_binding_queries_resolve_names() {
-    // Given a plugin querying visible bindings and resolution targets at each name,
-    // when a fixture with a global, a shadowing local and a function-local import is linted,
-    // then the answers are the local, the global and the import origin - never the shadowed binding.
-    unimplemented!("AC-08");
+    let project = probe_project(&["PRB002", "PRB003"]);
+    project.write(
+        "scopes.py",
+        "counter = 0\n\ndef shadow():\n    counter = 1\n    return counter\n\ndef reader():\n    return counter\n\ndef importer():\n    import json.decoder as jd\n    return jd\n",
+    );
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let lines = run.finding_lines();
+    let line = |prefix: &str| -> &str {
+        lines
+            .iter()
+            .find(|line| line.starts_with(prefix))
+            .unwrap_or_else(|| panic!("no line {prefix}: {run:?}"))
+    };
+    assert!(
+        line("scopes.py:5:12: info PRB002")
+            .ends_with("counter -> assignment in function shadow line 4")
+    );
+    assert!(
+        line("scopes.py:8:12: info PRB002").ends_with("counter -> assignment in module - line 1")
+    );
+    assert!(
+        line("scopes.py:12:12: info PRB002")
+            .ends_with("jd -> import in function importer line 11 from json.decoder")
+    );
+
+    let visible = line("scopes.py:5:12: info PRB003");
+    assert!(visible.contains("counter=assignment@4"), "{visible}");
+    assert!(
+        !visible.contains("counter=assignment@1"),
+        "the shadowed global is hidden: {visible}"
+    );
+    let visible = line("scopes.py:8:12: info PRB003");
+    assert!(visible.contains("counter=assignment@1"), "{visible}");
 }
 
 #[test]
-#[ignore = "AC-09: diagnostic records carry the full field set"]
 fn ac_09_diagnostic_records_full_field_set() {
-    // Given one diagnostic with severity, message, code, range and fix data, one without fix data,
-    // when linting with `--format json`,
-    // then both appear with exactly those fields, the fix is a host-reported suggestion, exit code 1.
-    unimplemented!("AC-09");
+    let project = probe_project(&["PRB004", "PRB005"]);
+    let source = "class Box:\n    pass\n\ndef make():\n    return Box()\n";
+    project.write("defs.py", source);
+    let run = project.run(&["--format", "json"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let diagnostics = json_diagnostics(&run.stdout);
+    assert_eq!(diagnostics.len(), 2, "{run:?}");
+    let keys =
+        |value: &Value| -> Vec<String> { value.as_object().unwrap().keys().cloned().collect() };
+
+    let class = &diagnostics[0];
+    assert_eq!(class["code"], "PRB005");
+    assert_eq!(
+        keys(class),
+        ["aliases", "code", "message", "path", "range", "severity"]
+    );
+    assert_eq!(class["severity"], "error");
+    assert_eq!(class["message"], "class Box");
+    assert_eq!(
+        class["range"]["start"],
+        serde_json::json!({"column": 1, "line": 1, "offset": 0})
+    );
+
+    let function = &diagnostics[1];
+    assert_eq!(function["code"], "PRB004");
+    assert_eq!(
+        keys(function),
+        [
+            "aliases", "code", "fix", "message", "path", "range", "severity"
+        ]
+    );
+    assert_eq!(function["severity"], "warning");
+    assert_eq!(
+        keys(&function["fix"]),
+        ["description", "range", "replacement"]
+    );
+    assert_eq!(function["fix"]["replacement"], "MAKE");
+    assert_eq!(
+        std::fs::read_to_string(project.join("defs.py")).unwrap(),
+        source,
+        "the fix is not applied"
+    );
 }
 
 #[test]
@@ -313,12 +440,23 @@ fn ac_21_broken_run_exits_two() {
     );
     assert_broken(project.run(&[]), "sha256 mismatch");
 
-    let digest = support::sha256(b"not wasm");
-    project.write(
-        "ferrolint.toml",
-        format!("plugins = [{{ path = \"plugin.wasm\", sha256 = \"{digest}\" }}]\n"),
-    );
-    assert_broken(project.run(&[]), "plugin error");
+    // Bytes that are not WASM, a core module, and a component without the
+    // contract's exports all fail to load.
+    let empty_component = b"\0asm\x0d\0\x01\0".to_vec();
+    let core_module = b"\0asm\x01\0\0\0".to_vec();
+    for (bytes, cause) in [
+        (b"not wasm".to_vec(), "not a WASM component"),
+        (core_module, "not a WASM component"),
+        (empty_component, "does not implement the plugin contract"),
+    ] {
+        let digest = support::sha256(&bytes);
+        project.write("plugin.wasm", bytes);
+        project.write(
+            "ferrolint.toml",
+            format!("plugins = [{{ path = \"plugin.wasm\", sha256 = \"{digest}\" }}]\n"),
+        );
+        assert_broken(project.run(&[]), cause);
+    }
 }
 
 // Diff mode (AC-22..AC-23, FR-08)
@@ -393,21 +531,64 @@ fn ac_28_startup_compile_once_parallelism() {
 // Sandbox (AC-29..AC-30, NFR-03)
 
 #[test]
-#[ignore = "AC-29: a plugin touches nothing it should not"]
 fn ac_29_plugin_sandbox_enforced() {
-    // Given a plugin attempting a filesystem open, socket, environment read and host-disabled builtin,
-    // when those attempts execute,
-    // then each fails inside the instance, the failure is reported, and remaining files still lint.
-    unimplemented!("AC-29");
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-sandbox", "sandbox.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", CLEAN)
+        .write("b.py", "SANDBOX_EXIT = True\n")
+        .write("c.py", CLEAN);
+    let run = project.run(&["--threads", "1"]);
+    assert_eq!(
+        run.code, 2,
+        "a plugin abort makes the verdict incomplete: {run:?}"
+    );
+    for file in ["a.py", "c.py"] {
+        for attempt in ["filesystem", "network", "environment"] {
+            let expected = format!("{file}:1:1: info SBX001 {attempt}: denied");
+            assert!(run.stdout.contains(&expected), "{expected}: {run:?}");
+        }
+    }
+    assert!(
+        run.stdout.contains("b.py:1:1: error FL001 plugin sandbox aborted on this file: called the disabled builtin exit("),
+        "{run:?}"
+    );
+    assert!(!project.join("escape.txt").exists());
 }
 
 #[test]
-#[ignore = "AC-30: a runaway plugin cannot hang a run"]
 fn ac_30_runaway_plugin_aborts() {
-    // Given a plugin whose visitor loops forever and a host-chosen fuel or epoch budget,
-    // when the cap is hit,
-    // then the work aborts, the file reports termination, and the run completes over remaining files.
-    unimplemented!("AC-30");
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-runaway", "runaway.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", CLEAN)
+        .write("b.py", "RUNAWAY = True\n")
+        .write("c.py", CLEAN);
+    let started = std::time::Instant::now();
+    let run = project.run(&[]);
+    assert!(started.elapsed().as_secs() < 60, "the cap stops the loop");
+    assert_eq!(run.code, 2, "{run:?}");
+    assert!(
+        run.stdout.contains("a.py:1:1: info RUN001 checked"),
+        "{run:?}"
+    );
+    assert!(
+        run.stdout.contains("c.py:1:1: info RUN001 checked"),
+        "{run:?}"
+    );
+    let abort = run
+        .finding_lines()
+        .into_iter()
+        .find(|line| line.starts_with("b.py:"))
+        .unwrap();
+    assert!(
+        abort.contains("FL001 plugin runaway aborted on this file: ran out of fuel")
+            || abort.contains("exceeded its time budget"),
+        "{abort}"
+    );
+    assert_eq!(run.summary(), "3 files linted, 3 findings.");
 }
 
 // Determinism (AC-31, NFR-04)

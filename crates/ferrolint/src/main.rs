@@ -1,11 +1,15 @@
+mod ast;
 mod checks;
 mod config;
 mod discover;
 mod engine;
 mod error;
+mod host;
 mod report;
 mod selection;
+mod semantic;
 mod suppress;
+mod wit;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -31,6 +35,10 @@ struct Args {
     /// Worker threads; 0 uses every available core.
     #[arg(long, default_value_t = 0)]
     threads: usize,
+
+    /// The report format.
+    #[arg(long, value_enum, default_value_t)]
+    format: report::Format,
 }
 
 fn main() -> ExitCode {
@@ -44,17 +52,22 @@ fn main() -> ExitCode {
         }
     };
     let options = engine::Options {
-        paths: args.paths,
-        config: args.config,
+        paths: args.paths.clone(),
+        config: args.config.clone(),
         threads: args.threads,
     };
     match engine::run(&cwd, &options) {
         Ok(report) => {
-            let out = report::text(&report);
+            let out = report::render(&report, args.format);
             if std::io::stdout().lock().write_all(out.as_bytes()).is_err() {
                 return ExitCode::from(2);
             }
-            if report.findings.is_empty() {
+            if report.aborted() {
+                eprintln!(
+                    "ferrolint: a plugin aborted on at least one file; see the FL001 findings"
+                );
+                ExitCode::from(2)
+            } else if report.findings.is_empty() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::from(1)

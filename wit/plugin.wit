@@ -1,50 +1,266 @@
-package ferrolint:plugin;
+package ferrolint:plugin@0.1.0;
 
-/// Diagnostic severity.
-enum severity {
-    error,
-    warning,
-    info,
-    hint,
+/// Data shared by the host and the plugin.
+interface types {
+    /// Diagnostic severity.
+    enum severity {
+        error,
+        warning,
+        info,
+    }
+
+    /// A point in the source: a byte offset, a 1-based line and a 1-based
+    /// column counted in characters.
+    record position {
+        offset: u32,
+        line: u32,
+        column: u32,
+    }
+
+    /// A source range, start inclusive and end exclusive.
+    record range {
+        start: position,
+        end: position,
+    }
+
+    /// A suggested edit: replace `range` with `replacement`. The host reports
+    /// it; nothing on the plugin side applies it.
+    record fix {
+        description: string,
+        replacement: string,
+        range: range,
+    }
+
+    /// A diagnostic a plugin reports.
+    record diagnostic {
+        code: string,
+        message: string,
+        range: range,
+        severity: severity,
+        fix: option<fix>,
+    }
+
+    /// A rule a plugin can report, with the Pylint aliases it ports.
+    record rule {
+        code: string,
+        name: string,
+        summary: string,
+        severity: severity,
+        pylint-id: option<string>,
+        pylint-symbol: option<string>,
+    }
+
+    /// What a plugin is and the rules it reports.
+    record plugin-info {
+        name: string,
+        version: string,
+        rules: list<rule>,
+    }
+
+    /// The file being linted.
+    record file {
+        /// The path as reports show it.
+        path: string,
+        /// The dotted module name derived from the path.
+        module: string,
+        /// The source text.
+        source: string,
+    }
+
+    /// The kind of an AST node.
+    enum node-kind {
+        module,
+        // Statements.
+        function-def,
+        class-def,
+        return,
+        delete,
+        assign,
+        aug-assign,
+        ann-assign,
+        type-alias,
+        for,
+        while,
+        if,
+        %with,
+        match,
+        raise,
+        try,
+        assert,
+        %import,
+        import-from,
+        global,
+        nonlocal,
+        expr,
+        pass,
+        break,
+        continue,
+        // Expressions.
+        bool-op,
+        named,
+        bin-op,
+        unary-op,
+        lambda,
+        if-exp,
+        dict,
+        set,
+        list-comp,
+        set-comp,
+        dict-comp,
+        generator,
+        await,
+        yield,
+        yield-from,
+        compare,
+        call,
+        f-string,
+        t-string,
+        string-literal,
+        bytes-literal,
+        number-literal,
+        boolean-literal,
+        none-literal,
+        ellipsis-literal,
+        attribute,
+        subscript,
+        starred,
+        name,
+        %list,
+        %tuple,
+        slice,
+        // Other nodes.
+        alias,
+        arguments,
+        keyword,
+        parameters,
+        parameter,
+        decorator,
+        except-handler,
+        comprehension,
+        with-item,
+        elif-else-clause,
+        match-case,
+        pattern,
+        type-param,
+        /// A name in a `global` or `nonlocal` statement.
+        identifier,
+        other,
+    }
+
+    /// How an expression is used: read, bound or deleted.
+    enum expr-context {
+        none,
+        load,
+        store,
+        del,
+    }
+
+    /// One AST node. The host sends a file's nodes in pre-order, so a
+    /// node's descendants are exactly the ids `id + 1` through `last`.
+    record node {
+        id: u32,
+        parent: option<u32>,
+        kind: node-kind,
+        range: range,
+        /// The id of the last node in this node's subtree.
+        last: u32,
+        context: expr-context,
+        /// The identifier the node carries: a definition's name, a name's
+        /// id, an attribute's attribute, an alias's dotted name, a
+        /// keyword's argument, a parameter's name.
+        name: option<string>,
+        /// A second string: an alias's `as` name, an `import-from`'s
+        /// module (with its leading dots), an operator's spelling, a
+        /// literal's source text.
+        detail: option<string>,
+    }
 }
 
-/// Source range.
-record range {
-    start-line: u32,
-    start-column: u32,
-    end-line: u32,
-    end-column: u32,
+/// Scope and binding queries the host answers about the current file.
+interface semantic {
+    use types.{range};
+
+    enum scope-kind {
+        module,
+        class,
+        function,
+        lambda,
+        comprehension,
+        type-params,
+    }
+
+    record scope {
+        id: u32,
+        kind: scope-kind,
+        /// The class or function name; none for the others.
+        name: option<string>,
+        /// The node that opens the scope.
+        node: u32,
+        parent: option<u32>,
+    }
+
+    enum binding-kind {
+        assignment,
+        annotation,
+        %import,
+        from-import,
+        star-import,
+        function-def,
+        class-def,
+        parameter,
+        loop-var,
+        with-item,
+        except-handler,
+        named-expr,
+        comprehension-var,
+        global,
+        nonlocal,
+        deletion,
+        type-param,
+        match-capture,
+        builtin,
+    }
+
+    record binding {
+        id: u32,
+        name: string,
+        kind: binding-kind,
+        /// The scope the name lives in.
+        scope: u32,
+        /// The node that binds the name; none for a builtin.
+        node: option<u32>,
+        range: option<range>,
+        /// For an import, what it binds: `os.path` for `import os.path as
+        /// p`, `os.path.join` for `from os.path import join`.
+        origin: option<string>,
+    }
+
+    /// The innermost scope holding `node`.
+    scope-of: func(node: u32) -> scope;
+
+    /// The bindings a name at `node` could see, one per name: shadowed
+    /// bindings from outer scopes are left out, and so are builtins.
+    visible-bindings: func(node: u32) -> list<binding>;
+
+    /// The binding a `name` node (or a definition's name) resolves to;
+    /// a builtin resolves to a `builtin` binding, an unknown name to none.
+    resolve: func(node: u32) -> option<binding>;
 }
 
-/// Optional fix.
-record fix {
-    description: string,
-    replacement: string,
-    range: range,
-}
+/// The plugin's exports.
+interface checker {
+    use types.{diagnostic, file, node, plugin-info};
 
-/// Diagnostic emitted by a plugin.
-record diagnostic {
-    code: string,
-    message: string,
-    range: range,
-    severity: severity,
-    fix: option<fix>,
-}
+    /// The plugin's name, version and rules; called once per run.
+    info: func() -> plugin-info;
 
-/// Source unit being linted.
-record source {
-    path: string,
-    text: string,
-}
-
-/// Visitor events exposed by the host.
-interface visitor {
-    /// Visit a module.
-    visit-module: func(source: source) -> list<diagnostic>;
+    /// Check one file. `nodes` holds its AST in pre-order, the module
+    /// first. Semantic queries made during the call are about this file.
+    check: func(file: file, nodes: list<node>) -> list<diagnostic>;
 }
 
 /// World contract for a ferrolint plugin.
 world plugin {
-    export visitor;
+    import semantic;
+    export checker;
 }
