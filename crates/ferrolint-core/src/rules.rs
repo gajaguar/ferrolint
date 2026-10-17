@@ -113,6 +113,14 @@ impl Registry {
         }
         for rule in registry.rules.values() {
             for alias in rule.aliases() {
+                // A rule's own code is never an alias of another rule.
+                if registry.rules.contains_key(&alias) && alias != rule.code {
+                    return Err(RegistryError::AmbiguousSpelling {
+                        spelling: alias.clone(),
+                        first: alias,
+                        second: rule.code.clone(),
+                    });
+                }
                 if let Some(owner) = owners.get(&alias) {
                     registry.spellings.insert(alias, owner.clone());
                     continue;
@@ -211,6 +219,13 @@ mod tests {
         assert_eq!(registry.aliases("X2"), ["W0611"]);
         let bad = BTreeMap::from([("W0612".to_owned(), "X1".to_owned())]);
         assert!(Registry::with_owners([rule("X1", Some("W0611"), None)], &bad).is_err());
+    }
+
+    #[test]
+    fn an_owner_cannot_take_another_rules_code() {
+        let owners = BTreeMap::from([("W0611".to_owned(), "X2".to_owned())]);
+        let rules = [rule("W0611", None, None), rule("X2", Some("W0611"), None)];
+        assert!(Registry::with_owners(rules, &owners).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Comment directives: the line-level suppressions a comment carries
 //! (`# ferrolint: disable=`, `# pylint: disable=` and `# noqa:`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ferrolint_core::{Diagnostic, LineIndex, Registry};
 use ruff_python_ast::token::{TokenKind, Tokens};
@@ -41,20 +41,24 @@ pub enum Noqa<'a> {
     Codes(Vec<&'a str>),
 }
 
-/// The `noqa` directive of a comment, if it has one. The directive may
-/// follow other text after its own `#`, as in `# type: ignore  # noqa`.
-pub fn noqa(comment: &str) -> Option<Noqa<'_>> {
-    comment.split('#').skip(1).find_map(|segment| {
-        let segment = segment.trim_start();
-        let keyword = segment.get(..4)?;
-        if !keyword.eq_ignore_ascii_case("noqa") {
-            return None;
-        }
-        let rest = &segment[4..];
-        if rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
-            return None;
-        }
-        let codes = rest.trim_start().strip_prefix(':').map(split_codes);
+/// The text after `keyword` when a comment segment (the text after one of
+/// its `#`) starts with it, keyword case aside, followed by something that
+/// cannot continue a word.
+fn directive<'a>(segment: &'a str, keyword: &str) -> Option<&'a str> {
+    let segment = segment.trim_start();
+    let head = segment.get(..keyword.len())?;
+    let rest = &segment[keyword.len()..];
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let continues = keyword.ends_with(word) && rest.starts_with(word);
+    (head.eq_ignore_ascii_case(keyword) && !continues).then_some(rest)
+}
+
+/// Every `noqa` directive of a comment, in order. A directive may follow
+/// other text after its own `#`, as in `# type: ignore  # noqa`.
+fn noqa_directives(comment: &str) -> impl Iterator<Item = Noqa<'_>> {
+    comment.split('#').skip(1).filter_map(|segment| {
+        let rest = directive(segment, "noqa")?;
+        let codes = rest.trim_start().strip_prefix(':').map(noqa_codes);
         Some(match codes {
             Some(codes) if !codes.is_empty() => Noqa::Codes(codes),
             _ => Noqa::Bare,
@@ -62,85 +66,128 @@ pub fn noqa(comment: &str) -> Option<Noqa<'_>> {
     })
 }
 
+/// The first `noqa` directive of a comment, if it has one.
+pub fn noqa(comment: &str) -> Option<Noqa<'_>> {
+    noqa_directives(comment).next()
+}
+
 /// The codes a comment's directives name, as spelled: every
-/// `ferrolint: disable=` and `pylint: disable=` list (keyword case aside)
-/// and every `noqa:` list. Other Pylint directives, such as
-/// `disable-next=` or `enable=`, suppress nothing.
+/// `ferrolint: disable=` and `pylint: disable=` list and every `noqa:`
+/// list, keywords case aside. Other Pylint directives, such as
+/// `disable-next=` or `enable=`, name nothing.
 pub fn disabled_codes(comment: &str) -> Vec<&str> {
     let mut codes = Vec::new();
     for segment in comment.split('#').skip(1) {
-        let segment = segment.trim_start();
-        let payload = ["ferrolint:", "pylint:"].iter().find_map(|keyword| {
-            let head = segment.get(..keyword.len())?;
-            head.eq_ignore_ascii_case(keyword)
-                .then(|| segment[keyword.len()..].trim_start())
-        });
-        if let Some(payload) = payload {
-            let Some(rest) = payload.strip_prefix("disable") else {
-                continue;
-            };
-            if let Some(list) = rest.trim_start().strip_prefix('=') {
-                codes.extend(split_codes(list));
-            }
+        let payload = directive(segment, "ferrolint:").or_else(|| directive(segment, "pylint:"));
+        let list = payload
+            .and_then(|payload| directive(payload, "disable"))
+            .and_then(|rest| rest.trim_start().strip_prefix('='));
+        if let Some(list) = list {
+            codes.extend(disable_codes(list));
         }
     }
-    if let Some(Noqa::Codes(listed)) = noqa(comment) {
-        codes.extend(listed);
+    for noqa in noqa_directives(comment) {
+        if let Noqa::Codes(listed) = noqa {
+            codes.extend(listed);
+        }
     }
     codes
 }
 
-/// The suppressions of one file, by line.
-#[derive(Default)]
-pub struct Suppressions {
-    lines: HashMap<u32, Vec<String>>,
+/// A `disable=` list: comma-separated codes, ending at the first entry
+/// followed by prose (`disable=W0612 -- because ...`).
+fn disable_codes(list: &str) -> Vec<&str> {
+    let mut codes = Vec::new();
+    for entry in list.split(',') {
+        let mut words = entry.split_whitespace();
+        let Some(code) = words.next() else {
+            continue;
+        };
+        if !code.chars().all(is_code_char) {
+            break;
+        }
+        codes.push(code);
+        if words.next().is_some() {
+            break;
+        }
+    }
+    codes
 }
 
-impl Suppressions {
-    pub fn new(source: &str, tokens: &Tokens, index: &LineIndex) -> Self {
-        let mut lines: HashMap<u32, Vec<String>> = HashMap::new();
-        for comment in comments(source, tokens) {
-            let codes = disabled_codes(comment.text);
-            if !codes.is_empty() {
-                lines
-                    .entry(index.line(comment.start))
-                    .or_default()
-                    .extend(codes.into_iter().map(str::to_owned));
-            }
-        }
-        Self { lines }
-    }
-
-    /// Whether a comment on the line the diagnostic starts or ends on
-    /// names its code, in any spelling the registry resolves. A plugin
-    /// abort is never suppressed.
-    pub fn suppresses(&self, registry: &Registry, diagnostic: &Diagnostic) -> bool {
-        if diagnostic.code == checks::PLUGIN_ABORTED {
-            return false;
-        }
-        let range = diagnostic.range;
-        [range.start.line, range.end.line].iter().any(|line| {
-            self.lines.get(line).is_some_and(|codes| {
-                codes
-                    .iter()
-                    .any(|code| registry.resolve(code) == Some(diagnostic.code.as_str()))
-            })
-        })
-    }
-}
-
-/// Split a comma- or space-separated code list, stopping at the first
-/// token that is not a code.
-fn split_codes(payload: &str) -> Vec<&str> {
+/// A `noqa:` list: codes separated by commas or spaces, ending at the first
+/// word that does not look like a code (it has no digit, `-` or `_`).
+fn noqa_codes(payload: &str) -> Vec<&str> {
     payload
         .split([',', ' ', '\t'])
         .map(str::trim)
         .filter(|code| !code.is_empty())
         .take_while(|code| {
-            code.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            code.chars().all(is_code_char)
+                && code
+                    .chars()
+                    .any(|c| c.is_ascii_digit() || c == '-' || c == '_')
         })
         .collect()
+}
+
+fn is_code_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '_'
+}
+
+/// The suppressions of one file: the rule codes silenced on each line.
+#[derive(Default)]
+pub struct Suppressions {
+    lines: HashMap<u32, HashSet<String>>,
+}
+
+impl Suppressions {
+    /// Read the directives of every comment that shares its line with
+    /// code, resolving each listed spelling to its rule code; a comment on
+    /// a line of its own suppresses nothing.
+    pub fn new(source: &str, tokens: &Tokens, index: &LineIndex, registry: &Registry) -> Self {
+        let mut lines: HashMap<u32, HashSet<String>> = HashMap::new();
+        for comment in comments(source, tokens) {
+            let line_start = source[..comment.start as usize]
+                .rfind(['\n', '\r'])
+                .map_or(0, |at| at + 1);
+            if source[line_start..comment.start as usize].trim().is_empty() {
+                continue;
+            }
+            let codes: HashSet<String> = disabled_codes(comment.text)
+                .into_iter()
+                .filter_map(|spelling| registry.resolve(spelling))
+                .map(str::to_owned)
+                .collect();
+            if !codes.is_empty() {
+                lines
+                    .entry(index.line(comment.start))
+                    .or_default()
+                    .extend(codes);
+            }
+        }
+        Self { lines }
+    }
+
+    /// Whether a comment on the first or last line of the diagnostic names
+    /// its code. A plugin abort is never suppressed.
+    pub fn suppresses(&self, diagnostic: &Diagnostic) -> bool {
+        if diagnostic.code == checks::PLUGIN_ABORTED {
+            return false;
+        }
+        let range = diagnostic.range;
+        // The end is exclusive: a range ending at a line's first column
+        // stops on the line before.
+        let last = if range.end.column == 1 && range.end.line > range.start.line {
+            range.end.line - 1
+        } else {
+            range.end.line
+        };
+        [range.start.line, last].iter().any(|line| {
+            self.lines
+                .get(line)
+                .is_some_and(|codes| codes.contains(&diagnostic.code))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +213,7 @@ mod tests {
     fn disable_directives() {
         assert_eq!(disabled_codes("# ferrolint: disable=IMP001"), ["IMP001"]);
         assert_eq!(
-            disabled_codes("#Pylint:disable = W0611, unused-import"),
+            disabled_codes("#Pylint:Disable = W0611, unused-import"),
             ["W0611", "unused-import"]
         );
         assert_eq!(
@@ -179,5 +226,21 @@ mod tests {
             ["W0611", "F401"]
         );
         assert_eq!(disabled_codes("# noqa"), Vec::<&str>::new());
+        assert_eq!(
+            disabled_codes("# noqa: E501  # noqa: IMP001"),
+            ["E501", "IMP001"]
+        );
+    }
+
+    #[test]
+    fn prose_after_a_list_is_not_codes() {
+        assert_eq!(
+            disabled_codes("# pylint: disable=W0612 -- not an unused-import"),
+            ["W0612"]
+        );
+        assert_eq!(
+            disabled_codes("# noqa: E501 because the line is long"),
+            ["E501"]
+        );
     }
 }

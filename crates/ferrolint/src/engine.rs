@@ -150,8 +150,10 @@ impl Linter<'_> {
         if parsed.has_no_syntax_errors() {
             diagnostics.extend(self.run_plugins(path, display, source, &index, &parsed, enabled));
         }
-        let suppressions = Suppressions::new(source, parsed.tokens(), &index);
-        diagnostics.retain(|diagnostic| !suppressions.suppresses(self.registry, diagnostic));
+        if !diagnostics.is_empty() {
+            let suppressions = Suppressions::new(source, parsed.tokens(), &index, self.registry);
+            diagnostics.retain(|diagnostic| !suppressions.suppresses(diagnostic));
+        }
         diagnostics
     }
 
