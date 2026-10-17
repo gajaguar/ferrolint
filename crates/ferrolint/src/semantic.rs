@@ -691,7 +691,13 @@ impl<'a> Visitor<'a> for Builder<'_> {
         match expr {
             Expr::Name(name) => match name.ctx {
                 Ctx::Store => {
-                    let effective = self.statement_end.max(name.range.end().to_u32());
+                    // A comprehension variable exists from its own target on,
+                    // not from the end of the statement around it.
+                    let effective = if self.store_kind == BindingKind::ComprehensionVar {
+                        name.range.end().to_u32()
+                    } else {
+                        self.statement_end.max(name.range.end().to_u32())
+                    };
                     self.bind(
                         &name.id,
                         self.store_kind,
@@ -934,6 +940,12 @@ mod tests {
         let f = fixture("y = z = []\nws = [[i] + [i for _ in y] for i, v in enumerate(z)]\n");
         assert_eq!(f.resolve("i", 0), Some((BindingKind::ComprehensionVar, 2)));
         assert_eq!(f.resolve("i", 1), Some((BindingKind::ComprehensionVar, 2)));
+    }
+
+    #[test]
+    fn a_comprehension_inside_a_container_sees_the_outer_variable() {
+        let f = fixture("d = []\nx = {'r': [[i for _ in d] for i in d]}\n");
+        assert_eq!(f.resolve("i", 0), Some((BindingKind::ComprehensionVar, 2)));
     }
 
     #[test]
