@@ -36,6 +36,14 @@ printf 'x = 1\n' >clean.py
 printf 'x = 1  # noqa\n' >finding.py
 [ "$(exit_code "$bin" finding.py)" -eq 1 ] || fail "a finding must exit 1"
 
+# A cargo-built binary has no bundled plugins; the acceptance test sets this.
+if [ -z "${SMOKE_UNBUNDLED:-}" ]; then
+	printf 'import os\n' >unused.py
+	out="$("$bin" unused.py || true)"
+	case "$out" in *IMP001* | *W0611*) ;; *) fail "the bundled plugins must report an unused import" ;; esac
+	[ "$(exit_code "$bin" unused.py)" -eq 1 ] || fail "an unused import must exit 1"
+fi
+
 first_parse="$("$bin" --stats --no-cache clean.py 2>&1 >/dev/null | sed -n 's/.*first-parse-ms=\([0-9.]*\).*/\1/p')"
 awk -v ms="$first_parse" 'BEGIN { exit !(ms != "" && ms < 100) }' || fail "first parse took ${first_parse:-?} ms"
 

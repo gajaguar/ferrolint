@@ -2,6 +2,8 @@ name: release
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 jobs:
   build:
@@ -30,3 +32,29 @@ jobs:
           name: ferrolint-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/ferrolint
           if-no-files-found: error
+      - run: make wheel TARGET=${{ matrix.target }}
+      - name: Install the wheel and smoke-test it
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-venv"
+          uv pip install --python "$RUNNER_TEMP/wheel-venv" target/wheels/*.whl
+          "$RUNNER_TEMP/wheel-venv/bin/ferrolint" --version
+          make smoke BIN="$RUNNER_TEMP/wheel-venv/bin/ferrolint"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.target }}
+          path: target/wheels/*.whl
+          if-no-files-found: error
+  publish:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@v1.14.2

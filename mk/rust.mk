@@ -7,6 +7,9 @@ WASM_PACKAGES := --workspace --exclude ferrolint --exclude ferrolint-core
 # The Pylint the sample plugin's fixtures are recorded against. Pinned: a
 # checker's verdict changes between versions.
 PYLINT ?= uvx pylint@4.1.3
+# The wheel tooling, pinned like Pylint.
+MATURIN ?= uvx maturin@1.15.0
+WHEEL ?= uvx wheel@0.48.0
 SAMPLE_FIXTURES := plugins/unused-import/fixtures
 PYLINT_W0611 = $(PYLINT) --disable=all --enable=unused-import,unused-variable --score=n --persistent=n \
 	--msg-template '{line}:{column}:{msg_id}:{symbol}:{msg}'
@@ -44,8 +47,15 @@ build: ## Build the crate into target/
 plugins: ## Build the workspace plugins as WASM components into target/wasm32-wasip2/release/
 	$(CARGO) build --locked --release --target $(WASM_TARGET) $(WASM_PACKAGES)
 
-release-build: ## Build the release binary for TARGET (a target pinned in mise.toml)
-	$(CARGO) build --locked --release --target $(TARGET) -p ferrolint
+release-build: plugins ## Build the release binary for TARGET (a target pinned in mise.toml) with the plugins bundled
+	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(CARGO) build --locked --release --target $(TARGET) -p ferrolint
+
+wheel: release-build ## Build the PyPI wheel for TARGET into target/wheels/, with the plugins bundled
+	rm -rf target/wheels
+	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(MATURIN) build --release --locked --target $(TARGET) -m crates/ferrolint/Cargo.toml --out target/wheels
+	@# The musl binary is static: tag it manylinux too so pip on glibc accepts it.
+	@case $(TARGET) in *-linux-musl) arch=$(firstword $(subst -, ,$(TARGET))); \
+		$(WHEEL) tags --platform-tag manylinux_2_17_$$arch.musllinux_1_2_$$arch --remove target/wheels/*.whl;; esac
 
 smoke: ## Smoke-test the binary BIN: version, help, config validation, exit codes and start-up time
 	tools/smoke.sh $(BIN)
@@ -59,8 +69,8 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 			> "$${file%.py}.txt.new" && mv "$${file%.py}.txt.new" "$${file%.py}.txt"; \
 	done
 
-pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, PYLINT, PYLINT_OUT, IGNORE, PY_VERSION
-	CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" PY_VERSION="$(PY_VERSION)" tools/pylint-compare.sh
+pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, PY_VERSION
+	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" PY_VERSION="$(PY_VERSION)" tools/pylint-compare.sh
 
 release-tag: ## Tag the base branch as v<package.version> and push the tag (minor and major bumps)
 	@version=$$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1); base=$(BASE:origin/%=%); tag=v$$version; \
@@ -69,4 +79,4 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 	git rev-parse --quiet --verify "refs/tags/$$tag" >/dev/null && { echo "release-tag: $$tag already exists"; exit 1; }; \
 	git tag -s "$$tag" -m "$$tag" && git push origin "$$tag"
 
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build smoke bench sample-fixtures pylint-compare release-tag
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare release-tag

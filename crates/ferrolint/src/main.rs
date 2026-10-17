@@ -1,4 +1,7 @@
 mod ast;
+#[cfg(test)]
+#[path = "../bundle.rs"]
+mod bundle;
 mod cache;
 mod checks;
 mod config;

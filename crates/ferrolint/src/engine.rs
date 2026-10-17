@@ -214,10 +214,17 @@ impl Setup {
     }
 }
 
-/// Read every plugin and check it against its pinned SHA-256 before any
-/// file is linted.
+include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
+
+/// The bundled plugins, then the configured ones, each checked against its
+/// pinned SHA-256 before any file is linted.
 fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
-    config
+    let bundled = BUNDLED.iter().map(|(name, bytes)| PluginSource {
+        path: Path::new("<bundled>").join(name),
+        bytes: bytes.to_vec(),
+        sha256: hex(&Sha256::digest(bytes)),
+    });
+    let configured = config
         .plugins
         .iter()
         .map(|plugin| {
@@ -238,7 +245,8 @@ fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
                 sha256: actual,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    Ok(bundled.chain(configured).collect())
 }
 
 /// The path with its directory's symlinks resolved and its own name kept,

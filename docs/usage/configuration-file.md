@@ -19,7 +19,7 @@ ignore = ["FL003"]                   # beats select
 exclude = ["vendor/", "*_gen.py"]    # gitignore patterns, on top of .gitignore
 py-version = "3.14"                  # default: none; MAJOR.MINOR
 
-[[plugins]]                          # one table per plugin, in run order
+[[plugins]]                          # external plugins only, in run order
 path = "plugins/unused_import.wasm"
 sha256 = "<the file's lowercase hex SHA-256>"
 
@@ -32,6 +32,10 @@ W0611 = "IMP001"
 
 * Relative paths and patterns resolve against the directory holding the
   configuration file.
+* The default `select` covers every known rule, including the bundled
+  plugins of a release binary (see [Plugins](plugins.md)); no `[[plugins]]`
+  table is needed for them. `[[plugins]]` names external plugins only, and
+  a bundled one repeated there is a duplicate rule code error.
 * `exclude` uses gitignore syntax: `vendor/` matches a directory anywhere,
   `/vendor/` only at the root. It filters what a directory walk discovers;
   a file named on the command line is always linted.
