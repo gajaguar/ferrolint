@@ -34,7 +34,9 @@ pipx
 pnpm
 posonlyargs
 precommit
+pylintrc
 pypi
+pxxxx
 rana
 redef
 retag
