@@ -154,12 +154,13 @@ fn self_assigning_variable() {
 }
 
 #[test]
-fn a_plugin_built_against_contract_0_2_0_still_loads() {
-    // The same component with every `@0.2.1` interface name spelled
-    // `@0.2.0`, as a build against the 0.2.0 SDK names them; the strings
-    // have one length, so the binary stays valid.
+fn a_plugin_built_against_contract_0_2_0_is_refused() {
+    // The same component with every `@0.3.0` interface name spelled
+    // `@0.2.0`, as a build against the 0.2.0 SDK names them (0.3.0 changed
+    // the `file` record, so it is not compatible); the strings have one
+    // length, so the binary stays valid.
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, version) = (b"ferrolint:plugin/", b"@0.2.1");
+    let (prefix, version) = (b"ferrolint:plugin/", b"@0.3.0");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -169,7 +170,7 @@ fn a_plugin_built_against_contract_0_2_0_still_loads() {
                 .position(|&byte| byte == b'@')
             && bytes[start + at..].starts_with(version)
         {
-            bytes[start + at + 5] = b'0';
+            bytes[start + at + 3] = b'2';
             rewritten += 1;
         }
     }
@@ -184,6 +185,6 @@ fn a_plugin_built_against_contract_0_2_0_still_loads() {
         )
         .write("case.py", "import os\n");
     let run = project.run(&["--no-cache"]);
-    assert_eq!(run.code, 1, "{run:?}");
-    assert_eq!(run.finding_lines().len(), 1, "{run:?}");
+    assert_eq!(run.code, 2, "{run:?}");
+    assert!(run.stderr.contains("ferrolint:plugin"), "{run:?}");
 }

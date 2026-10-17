@@ -28,6 +28,9 @@ sha256 = "<the file's lowercase hex SHA-256>"
 
 [pylint-aliases]                     # who owns an alias two rules declare
 W0611 = "IMP001"
+
+[options]                            # sent to every plugin, as text
+max-args = "3"
 ```
 
 * Relative paths and patterns resolve against the directory holding the
@@ -70,9 +73,13 @@ relative paths.
   checker name) is dropped without an error, unlike `ignore`.
 * `py-version` sets the target Python version; `ignore` (Pylint's base
   names, like `CVS`) is added to `exclude`.
-* Every other option is accepted and has no effect, so a Pylint file never
-  fails a run. That includes `load-plugins`, and `ignore-paths` and
-  `ignore-patterns`, which are regular expressions and are not supported
-  yet.
+* Every other option is accepted so a Pylint file never fails a run, and
+  goes to the plugins as an option (below). `load-plugins`, `ignore-paths`
+  and `ignore-patterns` have no effect of their own; the last two are
+  regular expressions and are not supported yet.
+* `[options]` and those other Pylint options reach every plugin on every
+  file, as written, with kebab-case keys; the host rules ignore them. A
+  Pylint file cannot name plugins, so a plugin that reads options needs a
+  `ferrolint.toml` carrying both `[[plugins]]` and `[options]`.
 * In `pyproject.toml` every `[tool.pylint.*]` table is flattened; arrays
   join with `,` and booleans become `yes` or `no`.

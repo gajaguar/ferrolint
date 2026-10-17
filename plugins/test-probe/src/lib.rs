@@ -9,6 +9,7 @@
 //! | PRB003 | the bindings visible at each name load                     |
 //! | PRB004 | each function definition, with a fix                       |
 //! | PRB005 | each class definition, without a fix                       |
+//! | PRB006 | the value of the `probe` option, when the config sets it   |
 
 // The struct is only reachable through the WASM export.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -100,6 +101,7 @@ impl Guest for Probe {
                 rule("PRB003", "The bindings visible at a name.", Severity::Info),
                 rule("PRB004", "A function definition.", Severity::Warning),
                 rule("PRB005", "A class definition.", Severity::Error),
+                rule("PRB006", "The `probe` option.", Severity::Info),
             ],
         }
     }
@@ -140,6 +142,14 @@ impl Guest for Probe {
         events.push("end-file", empty);
 
         let mut diagnostics = events.diagnostics;
+        if let Some((_, value)) = file.options.iter().find(|(key, _)| key == "probe") {
+            diagnostics.push(diagnostic(
+                "PRB006",
+                format!("probe={value}"),
+                empty,
+                Severity::Info,
+            ));
+        }
         for node in &nodes {
             let name = node.name.unwrap_or_default().to_owned();
             match node.kind {

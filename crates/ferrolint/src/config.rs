@@ -28,7 +28,7 @@ pub struct Config {
     /// Pylint's `disable` and `enable` entries, in order; `Selection`
     /// resolves them against the registry.
     pub pylint_disable: Vec<(Toggle, String)>,
-    /// The other Pylint options, as written; none has an effect yet.
+    /// The other Pylint options, as written; plugins receive them.
     pub options: BTreeMap<String, String>,
 }
 
@@ -54,6 +54,8 @@ struct RawConfig {
     pylint_aliases: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "version")]
     py_version: Option<(u32, u32)>,
+    #[serde(default)]
+    options: BTreeMap<String, String>,
 }
 
 /// Parse `"MAJOR.MINOR"`, the spelling Pylint's `py-version` uses.
@@ -221,7 +223,7 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         pylint_aliases: raw.pylint_aliases,
         py_version: raw.py_version,
         pylint_disable: Vec::new(),
-        options: BTreeMap::new(),
+        options: raw.options,
     }
 }
 

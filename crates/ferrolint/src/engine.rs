@@ -187,6 +187,8 @@ struct Setup {
     registry: Registry,
     selection: Selection,
     py_version: Option<(u32, u32)>,
+    /// The configuration's other options, sorted by key, as the plugins get them.
+    options: Vec<(String, String)>,
 }
 
 impl Setup {
@@ -210,6 +212,7 @@ impl Setup {
             registry,
             selection,
             py_version: config.py_version,
+            options: config.options.clone().into_iter().collect(),
         })
     }
 }
@@ -404,12 +407,15 @@ impl Linter<'_> {
         let key = self.cache.map(|cache| {
             let rules = enabled.iter().cloned().collect::<Vec<_>>().join(",");
             let version = format!("{:?}", setup.py_version);
+            // A plugin's verdict depends on the options it is sent.
+            let options = format!("{:?}", setup.options);
             cache.key(&[
                 &hex(&Sha256::digest(bytes)),
                 display,
                 &module,
                 &rules,
                 &version,
+                &options,
             ])
         });
         let stored = self
@@ -499,6 +505,7 @@ impl Linter<'_> {
                 index: &index,
                 parsed: &parsed,
                 py_version: setup.py_version,
+                options: &setup.options,
             };
             for (position, outcome) in self.run_plugins(host, &context, &missing)? {
                 let plugin = &host.plugins[position];
@@ -540,6 +547,7 @@ impl Linter<'_> {
             path: context.display.to_owned(),
             module: context.module.to_owned(),
             source: context.source.to_owned(),
+            options: context.options.to_vec(),
         };
         positions
             .iter()
@@ -598,6 +606,7 @@ struct PluginContext<'a> {
     index: &'a LineIndex,
     parsed: &'a Parsed<ModModule>,
     py_version: Option<(u32, u32)>,
+    options: &'a [(String, String)],
 }
 
 /// The dotted module name Python imports a file under: its stem, prefixed

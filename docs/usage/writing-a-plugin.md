@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 
 [dependencies.ferrolint-plugin-sdk]
 path = "../../crates/ferrolint-plugin-sdk"
-version = "=0.2.1"
+version = "=0.3.0"
 ```
 
 Pin the SDK exactly: its version is the version of the
@@ -64,9 +64,10 @@ export_checker!(NoPrint);
   `parent`, `children`, `ancestors` and `text`, and the host's answers:
   `scope`, `visible_bindings` and `resolve`, plus `infer` for a
   best-effort type. Report on an inferred type only when its `resolved`
-  is true; `plugins/not-callable` shows the pattern. A plugin built with
-  SDK 0.2.1 needs a host of contract 0.2.1, which still loads plugins
-  built with SDK 0.2.0.
+  is true; `plugins/not-callable` shows the pattern. `option("max-args")`
+  gives a configuration option as text, or none when it is unset.
+* A plugin built with SDK 0.3.0 needs a host of contract 0.3.0, which does
+  not load plugins built with SDK 0.2.x: rebuild them.
 * A `Diagnostic` takes its rule's severity unless it sets one, and may
   carry a `Fix` (`Fix::replace`, `Fix::delete`). The host reports a fix and
   never applies it.

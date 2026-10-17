@@ -943,6 +943,34 @@ fn ac_25_key_part_change_invalidates() {
     assert_eq!(run.stdout, cold(&project));
 }
 
+#[test]
+fn plugin_options_reach_the_plugin_and_key_the_cache() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-probe", "probe.wasm");
+    let configure = |value: &str| {
+        project.write(
+            "ferrolint.toml",
+            format!("select = [\"PRB006\"]\n\n[options]\nprobe = \"{value}\"\n\n{plugin}"),
+        );
+    };
+    project.write("a.py", "x = 1\n");
+    configure("one");
+    let cold = project.run(&["--stats"]);
+    assert!(cold.stdout.contains("probe=one"), "{cold:?}");
+    assert_eq!(stats(&cold)["plugin-runs"], 1, "{cold:?}");
+    let warm = project.run(&["--stats"]);
+    assert_eq!(stats(&warm)["plugin-runs"], 0, "{warm:?}");
+
+    configure("two");
+    let run = project.run(&["--stats"]);
+    assert!(run.stdout.contains("probe=two"), "{run:?}");
+    assert_eq!(
+        (stats(&run)["parsed"], stats(&run)["plugin-runs"]),
+        (1, 1),
+        "{run:?}"
+    );
+}
+
 // Performance (AC-26..AC-28, NFR-01, NFR-02, NFR-05)
 
 #[test]
