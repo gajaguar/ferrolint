@@ -1155,6 +1155,7 @@ fn ac_32_static_binary_per_target() {
     // The same smoke check passes on this machine's binary.
     let output = std::process::Command::new(support::workspace().join("tools/smoke.sh"))
         .arg(env!("CARGO_BIN_EXE_ferrolint"))
+        .env("SMOKE_UNBUNDLED", "1")
         .output()
         .unwrap();
     assert!(

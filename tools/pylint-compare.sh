@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # Compare ferrolint's findings with Pylint's on CODE, one normalized
 # "path:line:Pxxxx" per finding: build a configuration from every compiled
-# plugin, run both linters, and print the findings each side has that the
+# plugin (or, when BIN names a binary with the plugins bundled, use that
+# binary alone), run both linters, and print the findings each side has that the
 # other has not. PYLINT_OUT, when it names an existing file, is reused
 # instead of running Pylint, which takes ~106 s on a codebase; a missing one is
 # written, so the slow run happens once. IGNORE is a comma-separated list
@@ -24,13 +25,18 @@ fail() {
 : "${PYLINT:=pylint}"
 
 bin=""
-for kind in debug release; do
-	if [ -x "$root/target/$kind/ferrolint" ]; then
-		bin="$root/target/$kind/ferrolint"
-		break
-	fi
-done
-[ -n "$bin" ] || fail "no ferrolint binary under $root/target; run: make build"
+if [ -n "${BIN:-}" ]; then
+	bin="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
+	[ -x "$bin" ] || fail "BIN is not executable: $BIN"
+else
+	for kind in debug release; do
+		if [ -x "$root/target/$kind/ferrolint" ]; then
+			bin="$root/target/$kind/ferrolint"
+			break
+		fi
+	done
+	[ -n "$bin" ] || fail "no ferrolint binary under $root/target; run: make build"
+fi
 
 # `ignore` belongs at the root of the configuration, before the first
 # `[[plugins]]` table, where TOML would otherwise nest it inside the table.
@@ -46,6 +52,7 @@ if [ -n "${IGNORE:-}" ]; then
 fi
 printf '\n' >>"$config"
 for wasm in "$root"/target/wasm32-wasip2/release/ferrolint_plugin_*.wasm; do
+	[ -z "${BIN:-}" ] || break
 	[ -f "$wasm" ] || fail "no plugins under $root/target/wasm32-wasip2/release; run: make plugins"
 	case "$(basename "$wasm")" in
 	ferrolint_plugin_test_* | test_*) continue ;;
