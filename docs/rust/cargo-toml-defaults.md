@@ -26,6 +26,12 @@ These are left out on purpose:
 | `[dependencies]`       | an empty table says nothing its absence does not                      |
 | `[profile.*]` settings | every knob equals its default until the crate needs the exception     |
 
+The one profile exception is `[profile.dev.package."*"] opt-level = 2`:
+dependencies such as wasmtime and sha2 build optimized in dev and test
+builds, so the test suite runs in reasonable time and the start-up budget
+the acceptance tests check means something. The workspace's own crates
+keep plain debug builds.
+
 `rust-version` is the one that a published crate usually adds. A scaffold
 leaves it out because `mise.toml` already pins the toolchain, and a second
 place to change the version is a second place to be wrong — see

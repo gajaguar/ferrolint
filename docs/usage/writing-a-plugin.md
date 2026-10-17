@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 
 [dependencies.ferrolint-plugin-sdk]
 path = "../../crates/ferrolint-plugin-sdk"
-version = "=0.1.0"
+version = "=0.2.0"
 ```
 
 Pin the SDK exactly: its version is the version of the
@@ -45,8 +45,8 @@ impl Checker for NoPrint {
         Info::new("no-print", "0.1.0").rule(rule.pylint("W9999", "print-call"))
     }
 
-    fn visit(&mut self, node: &Node, cx: &mut Context<'_>) {
-        let print = node.name.as_deref() == Some("print");
+    fn visit(&mut self, node: &Node<'_>, cx: &mut Context<'_>) {
+        let print = node.name == Some("print");
         if node.kind == NodeKind::Name && print {
             cx.report(Diagnostic::new("NP001", "print() is called", node.range));
         }
@@ -59,6 +59,7 @@ export_checker!(NoPrint);
 * Each file gets a fresh value. `start_file`, then `visit` and `leave` for
   every node in source order, then `end_file`; all default to doing
   nothing.
+* A `Node` borrows its `name` and `detail` from the file's string table.
 * `Context` holds the file (`path`, `module`, `source`), the node list with
   `parent`, `children`, `ancestors` and `text`, and the host's answers:
   `scope`, `visible_bindings` and `resolve`.

@@ -2,6 +2,10 @@
 
 ## 2026-10-17
 
+* **Performance and releases**: Added `toolchain/ruff-upgrade.md`,
+  `toolchain/release-builds.md`, `usage/plugins.md` and
+  `decisions/packed-ast.md`.
+
 * **Result cache and diff mode**: Added `usage/result-cache.md` and
   `usage/diff-mode.md`.
 

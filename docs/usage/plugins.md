@@ -1,0 +1,33 @@
+---
+type: reference
+title: Bundled plugins
+description: The ten Pylint checkers ported as plugins in this repository, with their codes, aliases and what they leave out.
+tags: [plugins, rules]
+status: stable
+---
+
+# Bundled plugins
+
+`make plugins` builds each into
+`target/wasm32-wasip2/release/ferrolint_plugin_<name>.wasm`. Every rule
+answers to its Pylint msg-id and symbol as well as its code.
+
+| Plugin                    | Code     | Pylint                            | Fix |
+| :------------------------ | :------- | :-------------------------------- | :-- |
+| `unused-import`           | `IMP001` | `W0611` `unused-import`           | yes |
+| `undefined-variable`      | `NAM001` | `E0602` `undefined-variable`      | no  |
+| `redefined-builtin`       | `NAM002` | `W0622` `redefined-builtin`       | no  |
+| `unused-variable`         | `NAM003` | `W0612` `unused-variable`         | no  |
+| `global-statement`        | `STM001` | `W0603` `global-statement`        | no  |
+| `pointless-statement`     | `STM002` | `W0104` `pointless-statement`     | no  |
+| `unnecessary-pass`        | `STM003` | `W0107` `unnecessary-pass`        | yes |
+| `bare-except`             | `EXC001` | `W0702` `bare-except`             | no  |
+| `singleton-comparison`    | `CMP001` | `C0121` `singleton-comparison`    | yes |
+| `self-assigning-variable` | `ASG001` | `W0127` `self-assigning-variable` | no  |
+
+* `unused-import` is the SDK's sample and matches Pylint 4.1.3 on its
+  fixtures (acceptance test AC-10).
+* The others follow their Pylint checker's main behavior; each crate's
+  doc comment lists what it leaves out, such as loop variables for
+  `unused-variable` or every name of a module with a star import for
+  `undefined-variable`.

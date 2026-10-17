@@ -9,3 +9,5 @@ considered, what was chosen, and what the choice puts on future us.
 * [Plugin sandbox environment](plugin-sandbox-environment.md) - WASI linked
   but emptied, frozen clocks and fixed randomness, and a fresh instance
   under its own caps for every file.
+* [Packed AST](packed-ast.md) - why contract 0.2.0 sends the AST as `u32`
+  words and one string blob.

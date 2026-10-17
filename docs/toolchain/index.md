@@ -10,3 +10,7 @@ and why.
   out.
 * [Re-tag the notes](retag-notes.md) - run `make docs-retag`, review the
   dry run, then write the tags.
+* [Ruff upgrade](ruff-upgrade.md) - moving every Ruff crate to a new tag
+  in one change, and the current tag.
+* [Release builds](release-builds.md) - the three release targets, their
+  smoke check, and building one locally.
