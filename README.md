@@ -51,6 +51,8 @@ ferrolint [PATHS]...            # default: the current directory
 ferrolint --config ci.toml src  # an explicit configuration file
 ferrolint --threads 4           # 0, the default, uses every core
 ferrolint --format sarif        # text (default), json, sarif or junit
+ferrolint --diff-base origin/main  # only files changed since the merge base
+ferrolint --no-cache            # skip .ferrolint-cache/
 ```
 
 Configuration lives in `ferrolint.toml` or the `[tool.ferrolint]` table of

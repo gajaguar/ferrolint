@@ -1,5 +1,8 @@
 ### Project-specific stuff
 
+# ferrolint's result cache
+.ferrolint-cache/
+
 # mise local overrides
 mise.local.toml
 .mise.local.toml

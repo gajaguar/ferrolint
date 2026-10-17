@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Result cache and diff mode**: Added `usage/result-cache.md` and
+  `usage/diff-mode.md`.
+
 * **Report formats**: Added `usage/report-formats.md` - the four formats
   and their shared order.
 

@@ -13,3 +13,6 @@ from `ferrolint --help` alone.
   without any plugin.
 * [Writing a plugin](writing-a-plugin.md) - the SDK's `Checker`, building to
   `wasm32-wasip2`, loading by SHA-256, and parity fixtures against Pylint.
+* [Result cache](result-cache.md) - what `.ferrolint-cache/` stores and
+  what invalidates it.
+* [Diff mode](diff-mode.md) - the files `--diff-base` lints.
