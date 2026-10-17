@@ -33,12 +33,12 @@ mod context;
 mod model;
 
 pub use context::{Context, Semantic};
-pub use model::{Diagnostic, Fix, Info, Rule};
+pub use model::{Diagnostic, Fix, Info, Node, Rule};
 
 /// The contract's data types, as the host sends them.
 pub use bindings::ferrolint::plugin::semantic::{Binding, BindingKind, Scope, ScopeKind};
 pub use bindings::ferrolint::plugin::types::{
-    ExprContext, File, Node, NodeKind, Position, Range, Severity,
+    Ast, ExprContext, File, NodeKind, Position, Range, Severity,
 };
 
 /// Everything a checker needs, for a glob import.
@@ -75,24 +75,25 @@ pub trait Checker: Default {
     fn start_file(&mut self, _cx: &mut Context<'_>) {}
 
     /// Called for each node in source order, parents before children.
-    fn visit(&mut self, _node: &Node, _cx: &mut Context<'_>) {}
+    fn visit(&mut self, _node: &Node<'_>, _cx: &mut Context<'_>) {}
 
     /// Called after the node's last descendant.
-    fn leave(&mut self, _node: &Node, _cx: &mut Context<'_>) {}
+    fn leave(&mut self, _node: &Node<'_>, _cx: &mut Context<'_>) {}
 
     /// Called once per file, after the last node.
     fn end_file(&mut self, _cx: &mut Context<'_>) {}
 }
 
 /// Run a checker over one file: the visitor events in order, then the
-/// diagnostics it reported.
-/// A diagnostic without a severity gets its rule's.
-pub fn run<C: Checker>(file: &File, nodes: &[Node], semantic: &dyn Semantic) -> Vec<Diagnostic> {
+/// diagnostics it reported. A diagnostic without a severity gets its
+/// rule's.
+pub fn run<C: Checker>(file: &File, ast: &Ast, semantic: &dyn Semantic) -> Vec<Diagnostic> {
+    let nodes = Node::decode(ast);
     let mut checker = C::default();
-    let mut cx = Context::new(file, nodes, semantic);
+    let mut cx = Context::new(file, &nodes, semantic);
     checker.start_file(&mut cx);
-    let mut open: Vec<&Node> = Vec::new();
-    for node in nodes {
+    let mut open: Vec<&Node<'_>> = Vec::new();
+    for node in &nodes {
         while let Some(top) = open.pop_if(|top| top.last < node.id) {
             checker.leave(top, &mut cx);
         }
@@ -124,14 +125,14 @@ pub fn run<C: Checker>(file: &File, nodes: &[Node], semantic: &dyn Semantic) -> 
 #[doc(hidden)]
 pub mod __export {
     use crate::bindings::exports::ferrolint::plugin::checker as raw;
-    use crate::{Checker, File, Node};
+    use crate::{Checker, File};
 
     pub fn info<C: Checker>() -> raw::PluginInfo {
         C::info().into_raw()
     }
 
-    pub fn check<C: Checker>(file: &File, nodes: &[Node]) -> Vec<raw::Diagnostic> {
-        crate::run::<C>(file, nodes, &crate::context::HostSemantic)
+    pub fn check<C: Checker>(file: &File, ast: &raw::Ast) -> Vec<raw::Diagnostic> {
+        crate::run::<C>(file, ast, &crate::context::HostSemantic)
             .into_iter()
             .map(crate::Diagnostic::into_raw)
             .collect()
@@ -154,11 +155,11 @@ macro_rules! export_checker {
 
                 fn check(
                     file: $crate::File,
-                    nodes: ::std::vec::Vec<$crate::Node>,
+                    ast: $crate::Ast,
                 ) -> ::std::vec::Vec<
                     $crate::bindings::exports::ferrolint::plugin::checker::Diagnostic,
                 > {
-                    $crate::__export::check::<$checker>(&file, &nodes)
+                    $crate::__export::check::<$checker>(&file, &ast)
                 }
             }
 

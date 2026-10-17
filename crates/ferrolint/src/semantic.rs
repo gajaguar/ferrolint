@@ -10,7 +10,9 @@ use ruff_text_size::{Ranged, TextRange};
 
 use ferrolint_core::LineIndex;
 
-use crate::wit::{Binding, BindingKind, Node, Range, Scope, ScopeKind};
+use crate::ast::Flat;
+use crate::ast::FlatNode;
+use crate::wit::{Binding, BindingKind, Range, Scope, ScopeKind};
 
 /// The Python minor version builtins are taken from.
 const PYTHON_MINOR: u8 = 14;
@@ -58,7 +60,12 @@ enum Resolved {
 }
 
 impl Model {
-    pub fn build(module: &ast::ModModule, nodes: &[Node], source: &str, index: &LineIndex) -> Self {
+    pub fn build(
+        module: &ast::ModModule,
+        nodes: &[FlatNode],
+        source: &str,
+        index: &LineIndex,
+    ) -> Self {
         let mut builder = Builder {
             source,
             index,
@@ -76,8 +83,7 @@ impl Model {
         builder.model.node_scope[0] = 0;
         builder.visit_body(&module.body);
         let mut model = builder.model;
-        for node in nodes {
-            let id = node.id as usize;
+        for (id, node) in nodes.iter().enumerate() {
             if model.node_scope[id] == UNSET {
                 model.node_scope[id] = node
                     .parent
@@ -103,19 +109,19 @@ impl Model {
         })
     }
 
-    pub fn resolve(&self, nodes: &[Node], node: u32) -> Option<Binding> {
+    pub fn resolve(&self, flat: &Flat, node: u32) -> Option<Binding> {
         if let Some(&binding) = self.node_binding.get(&node) {
             return Some(self.binding(binding));
         }
-        let target = nodes.get(node as usize)?;
-        let name = target.name.as_deref()?;
+        let target = flat.nodes.get(node as usize)?;
+        let name = flat.string(target.name)?;
         let scope = self.scope_of_node(node)?;
         self.resolve_name(name, scope, target.range.start.offset)
             .map(|resolved| self.output(resolved))
     }
 
-    pub fn visible_bindings(&self, nodes: &[Node], node: u32) -> Vec<Binding> {
-        let (Some(scope), Some(target)) = (self.scope_of_node(node), nodes.get(node as usize))
+    pub fn visible_bindings(&self, flat: &Flat, node: u32) -> Vec<Binding> {
+        let (Some(scope), Some(target)) = (self.scope_of_node(node), flat.nodes.get(node as usize))
         else {
             return Vec::new();
         };
@@ -805,18 +811,18 @@ mod tests {
 
     struct Fixture {
         source: &'static str,
-        nodes: Vec<Node>,
+        flat: Flat,
         model: Model,
     }
 
     fn fixture(source: &'static str) -> Fixture {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = LineIndex::new(source);
-        let nodes = flatten(source, &index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &nodes, source, &index);
+        let flat = flatten(source, &index, parsed.syntax());
+        let model = Model::build(parsed.syntax(), &flat.nodes, source, &index);
         Fixture {
             source,
-            nodes,
+            flat,
             model,
         }
     }
@@ -824,21 +830,23 @@ mod tests {
     impl Fixture {
         /// The name load nodes spelled `name`, in source order.
         fn loads(&self, name: &str) -> Vec<u32> {
-            self.nodes
+            self.flat
+                .nodes
                 .iter()
-                .filter(|node| {
+                .enumerate()
+                .filter(|(_, node)| {
                     node.kind == crate::wit::NodeKind::Name
-                        && node.name.as_deref() == Some(name)
+                        && self.flat.string(node.name) == Some(name)
                         && node.context == crate::wit::ExprContext::Load
                 })
-                .map(|node| node.id)
+                .map(|(id, _)| u32::try_from(id).unwrap())
                 .collect()
         }
 
         /// What the `nth` load of `name` resolves to: kind and line.
         fn resolve(&self, name: &str, nth: usize) -> Option<(BindingKind, u32)> {
             let node = self.loads(name)[nth];
-            self.model.resolve(&self.nodes, node).map(|binding| {
+            self.model.resolve(&self.flat, node).map(|binding| {
                 (
                     binding.kind,
                     binding.range.map_or(0, |range| range.start.line),
@@ -854,7 +862,7 @@ mod tests {
         );
         assert_eq!(f.resolve("counter", 0), Some((BindingKind::Assignment, 4)));
         assert_eq!(f.resolve("counter", 1), Some((BindingKind::Assignment, 1)));
-        let jd = f.model.resolve(&f.nodes, f.loads("jd")[0]).unwrap();
+        let jd = f.model.resolve(&f.flat, f.loads("jd")[0]).unwrap();
         assert_eq!(jd.kind, BindingKind::Import);
         assert_eq!(jd.origin.as_deref(), Some("json.decoder"));
         let _ = f.source;
@@ -871,7 +879,7 @@ mod tests {
     #[test]
     fn global_declarations_redirect_bindings() {
         let f = fixture("def f():\n    global g\n    g = 1\n\ndef h():\n    return g\n");
-        let binding = f.model.resolve(&f.nodes, f.loads("g")[0]).unwrap();
+        let binding = f.model.resolve(&f.flat, f.loads("g")[0]).unwrap();
         assert_eq!(binding.kind, BindingKind::Assignment);
         assert_eq!(binding.scope, 0);
     }
@@ -881,7 +889,7 @@ mod tests {
         let f = fixture("x = 1\nx = x + 1\nprint(x)\n");
         assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 1)));
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 2)));
-        let print = f.model.resolve(&f.nodes, f.loads("print")[0]).unwrap();
+        let print = f.model.resolve(&f.flat, f.loads("print")[0]).unwrap();
         assert_eq!(print.kind, BindingKind::Builtin);
     }
 
@@ -896,7 +904,7 @@ mod tests {
     fn decorated_definitions_report_the_name_position() {
         let f =
             fixture("import functools\n\n@functools.cache\ndef handler():\n    return handler\n");
-        let binding = f.model.resolve(&f.nodes, f.loads("handler")[0]).unwrap();
+        let binding = f.model.resolve(&f.flat, f.loads("handler")[0]).unwrap();
         let start = binding.range.unwrap().start;
         assert_eq!((start.line, start.column), (4, 5));
     }
@@ -921,7 +929,7 @@ mod tests {
     fn visible_bindings_leave_out_shadowed_names() {
         let f = fixture("a = 1\nb = 2\ndef f(a):\n    return a + b\n");
         let node = f.loads("b")[0];
-        let visible = f.model.visible_bindings(&f.nodes, node);
+        let visible = f.model.visible_bindings(&f.flat, node);
         let summary: Vec<(String, BindingKind)> = visible
             .into_iter()
             .map(|binding| (binding.name, binding.kind))

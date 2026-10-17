@@ -6,6 +6,6 @@ wasmtime::component::bindgen!({
     imports: { default: trappable },
 });
 
-pub use exports::ferrolint::plugin::checker::{Diagnostic, File, Node, PluginInfo};
+pub use exports::ferrolint::plugin::checker::{Ast, Diagnostic, File, PluginInfo};
 pub use ferrolint::plugin::semantic::{Binding, BindingKind, Scope, ScopeKind};
 pub use ferrolint::plugin::types::{ExprContext, NodeKind, Position, Range, Severity};

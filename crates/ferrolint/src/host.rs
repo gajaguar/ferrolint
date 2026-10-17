@@ -10,16 +10,20 @@ use std::time::Duration;
 
 use ferrolint_core::{RuleInfo, Severity};
 use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
-use wasmtime::{Engine, Store, StoreLimits, StoreLimitsBuilder, Trap};
+use wasmtime::{
+    Engine, InstanceAllocationStrategy, PoolingAllocationConfig, Store, StoreLimits,
+    StoreLimitsBuilder, Trap,
+};
 use wasmtime_wasi::{
     Deterministic, HostMonotonicClock, HostWallClock, WasiCtx, WasiCtxBuilder, WasiCtxView,
     WasiView,
 };
 
+use crate::ast::Flat;
 use crate::cache::{Cache, PluginMeta};
 use crate::error::{Error, Result};
 use crate::semantic::Model;
-use crate::wit::{self, Binding, Diagnostic, File, Node, Plugin, PluginPre, Scope};
+use crate::wit::{self, Binding, Diagnostic, File, Plugin, PluginPre, Scope};
 
 /// Instructions one plugin may run on one file.
 const FUEL_PER_FILE: u64 = 2_000_000_000;
@@ -27,12 +31,16 @@ const FUEL_PER_FILE: u64 = 2_000_000_000;
 const EPOCH_TICK: Duration = Duration::from_millis(10);
 /// Epoch ticks one plugin may take on one file: ten seconds.
 const EPOCHS_PER_FILE: u64 = 1_000;
+/// Bytes of memory and tables a recycled instance slot keeps resident.
+const KEEP_RESIDENT: usize = 4 << 20;
 /// Linear memory one plugin instance may grow to.
 const MEMORY_LIMIT: usize = 512 << 20;
 
 /// A file as the plugins see it: its node list and semantic model.
 pub struct FileData {
-    pub nodes: Vec<Node>,
+    pub flat: Flat,
+    /// The packed form of `flat` the plugins receive.
+    pub ast: wit::Ast,
     pub model: Model,
 }
 
@@ -85,7 +93,7 @@ impl State {
 
     fn check_node(&self, node: u32) -> wasmtime::Result<&FileData> {
         let file = self.file()?;
-        if (node as usize) < file.nodes.len() {
+        if (node as usize) < file.flat.nodes.len() {
             Ok(file)
         } else {
             Err(wasmtime::Error::msg(format!(
@@ -129,12 +137,12 @@ impl wit::ferrolint::plugin::semantic::Host for State {
 
     fn visible_bindings(&mut self, node: u32) -> wasmtime::Result<Vec<Binding>> {
         let file = self.check_node(node)?;
-        Ok(file.model.visible_bindings(&file.nodes, node))
+        Ok(file.model.visible_bindings(&file.flat, node))
     }
 
     fn resolve(&mut self, node: u32) -> wasmtime::Result<Option<Binding>> {
         let file = self.check_node(node)?;
-        Ok(file.model.resolve(&file.nodes, node))
+        Ok(file.model.resolve(&file.flat, node))
     }
 }
 
@@ -183,14 +191,10 @@ impl Host {
     /// Link the contract and learn each plugin's rules: from the cache when
     /// it knows the plugin's SHA-256, otherwise by compiling the plugin and
     /// asking it. `plugins` are in run order.
-    pub fn load(plugins: Vec<PluginSource>, cache: Option<&Cache>) -> Result<Self> {
-        let mut config = wasmtime::Config::new();
-        config
-            .wasm_component_model(true)
-            .consume_fuel(true)
-            .epoch_interruption(true);
-        let engine = Engine::new(&config)
-            .map_err(|err| Error::plugin(format!("cannot start the WASM engine: {err}")))?;
+    /// `workers` is how many threads check files at once, which sizes the
+    /// pool of instance slots.
+    pub fn load(plugins: Vec<PluginSource>, cache: Option<&Cache>, workers: usize) -> Result<Self> {
+        let engine = engine(workers)?;
         let mut linker = Linker::<State>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .and_then(|()| {
@@ -286,7 +290,7 @@ impl Host {
             instance.plugin.ferrolint_plugin_checker().call_check(
                 &mut instance.store,
                 file,
-                &data.nodes,
+                &data.ast,
             )
         });
         match result {
@@ -302,6 +306,38 @@ impl Drop for Host {
             ticker.stop();
         }
     }
+}
+
+/// The engine: component model, fuel and epochs, and a pooling allocator
+/// that recycles instance slots, since every file gets fresh instances.
+/// Without the address space for the pool, it falls back to allocating
+/// each instance on demand.
+fn engine(workers: usize) -> Result<Engine> {
+    let mut config = wasmtime::Config::new();
+    config
+        .wasm_component_model(true)
+        .consume_fuel(true)
+        .epoch_interruption(true);
+    let slots = u32::try_from(workers.saturating_mul(2).max(8)).unwrap_or(u32::MAX);
+    let mut pool = PoolingAllocationConfig::new();
+    pool.total_component_instances(slots)
+        .total_core_instances(slots.saturating_mul(16))
+        .total_memories(slots.saturating_mul(4))
+        .total_tables(slots.saturating_mul(16))
+        .total_stacks(slots)
+        .max_memories_per_component(4)
+        .max_tables_per_component(16)
+        .max_memory_size(MEMORY_LIMIT)
+        // Reset a recycled slot's first pages in place instead of handing
+        // them back to the kernel, so the next file does not fault them in.
+        .linear_memory_keep_resident(KEEP_RESIDENT)
+        .table_keep_resident(KEEP_RESIDENT);
+    let mut pooled = config.clone();
+    pooled.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
+    Engine::new(&pooled)
+        .inspect_err(|err| eprintln!("POOL FAILED: {err}"))
+        .or_else(|_| Engine::new(&config))
+        .map_err(|err| Error::plugin(format!("cannot start the WASM engine: {err}")))
 }
 
 /// Compile and link a plugin against the contract.

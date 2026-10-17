@@ -1,4 +1,4 @@
-package ferrolint:plugin@0.1.0;
+package ferrolint:plugin@0.2.0;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -155,25 +155,29 @@ interface types {
         del,
     }
 
-    /// One AST node. The host sends a file's nodes in pre-order, so a
-    /// node's descendants are exactly the ids `id + 1` through `last`.
-    record node {
-        id: u32,
-        parent: option<u32>,
-        kind: node-kind,
-        range: range,
-        /// The id of the last node in this node's subtree.
-        last: u32,
-        context: expr-context,
-        /// The identifier the node carries: a definition's name, a name's
-        /// id, an attribute's attribute, an alias's dotted name, a
-        /// keyword's argument, a parameter's name.
-        name: option<string>,
-        /// A second string: an alias's `as` name, an `import-from`'s
-        /// module (with its leading dots), an operator's spelling, a number
-        /// or boolean literal's source text. Other literals carry none:
-        /// slice `file.source` by the node's range.
-        detail: option<string>,
+    /// A file's AST, packed so it crosses into the plugin as two bulk
+    /// copies. Nodes come in pre-order, the module first; a node's id is its
+    /// position, and its descendants are exactly the ids after it up to its
+    /// `last`. Each node takes fourteen words of `nodes`, in this order:
+    ///
+    /// 0. parent id + 1 (0 for the module)
+    /// 1. kind: the index of its `node-kind` case
+    /// 2-4. start offset, line and column
+    /// 5-7. end offset, line and column
+    /// 8. id of the last node of its subtree
+    /// 9. expression context: the index of its `expr-context` case
+    /// 10-11. start and end byte of its name in `strings`
+    /// 12-13. start and end byte of its detail in `strings`
+    ///
+    /// An absent name or detail has start and end 4294967295. The name is
+    /// what the node carries: a definition's name, a name's id, an
+    /// attribute's attribute, an alias's dotted name, a keyword's argument,
+    /// a parameter's name. The detail is an alias's `as` name, an
+    /// `import-from`'s module (with its leading dots), an operator's
+    /// spelling, or a number or boolean literal's source text.
+    record ast {
+        nodes: list<u32>,
+        strings: string,
     }
 }
 
@@ -250,14 +254,14 @@ interface semantic {
 
 /// The plugin's exports.
 interface checker {
-    use types.{diagnostic, file, node, plugin-info};
+    use types.{ast, diagnostic, file, plugin-info};
 
     /// The plugin's name, version and rules; called once per run.
     info: func() -> plugin-info;
 
-    /// Check one file. `nodes` holds its AST in pre-order, the module
-    /// first. Semantic queries made during the call are about this file.
-    check: func(file: file, nodes: list<node>) -> list<diagnostic>;
+    /// Check one file. Semantic queries made during the call are about
+    /// this file.
+    check: func(file: file, ast: ast) -> list<diagnostic>;
 }
 
 /// World contract for a ferrolint plugin.

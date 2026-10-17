@@ -1,7 +1,7 @@
 //! Target selection: expand the command-line targets into the Python files
 //! a run lints, honouring git's ignore rules and the configured excludes.
 
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -44,21 +44,32 @@ impl Excludes {
     }
 }
 
-/// Expand `targets` (resolved against `cwd`) into a sorted, de-duplicated
-/// list of absolute paths to Python files.
+/// Hand each Python file under `targets` (resolved against `cwd`) to
+/// `found` as the walk reaches it, once per file and in no particular
+/// order, so linting can start before the walk ends.
 ///
 /// Files named explicitly are kept even when an ignore rule covers them;
 /// the filters apply only to what a directory walk discovers.
-pub fn discover(cwd: &Path, targets: &[PathBuf], excludes: &Excludes) -> Result<Vec<PathBuf>> {
-    let mut files = BTreeSet::new();
+pub fn stream(
+    cwd: &Path,
+    targets: &[PathBuf],
+    excludes: &Excludes,
+    mut found: impl FnMut(PathBuf),
+) -> Result<()> {
+    let mut seen = HashSet::new();
+    let mut emit = |path: PathBuf| {
+        if seen.insert(path.clone()) {
+            found(path);
+        }
+    };
     for target in targets {
         let path = normalize(&cwd.join(target));
         if path.is_file() {
             if is_python(&path) {
-                files.insert(path);
+                emit(path);
             }
         } else if path.is_dir() {
-            walk(&path, excludes, &mut files)?;
+            walk(&path, excludes, &mut emit)?;
         } else {
             return Err(Error::usage(format!(
                 "{}: no such file or directory",
@@ -66,10 +77,10 @@ pub fn discover(cwd: &Path, targets: &[PathBuf], excludes: &Excludes) -> Result<
             )));
         }
     }
-    Ok(files.into_iter().collect())
+    Ok(())
 }
 
-fn walk(dir: &Path, excludes: &Excludes, files: &mut BTreeSet<PathBuf>) -> Result<()> {
+fn walk(dir: &Path, excludes: &Excludes, emit: &mut impl FnMut(PathBuf)) -> Result<()> {
     let filter = excludes.clone();
     let walker = WalkBuilder::new(dir)
         .hidden(false)
@@ -88,7 +99,7 @@ fn walk(dir: &Path, excludes: &Excludes, files: &mut BTreeSet<PathBuf>) -> Resul
         let entry = entry.map_err(|err| Error::io(err.to_string()))?;
         let is_file = entry.file_type().is_some_and(|kind| kind.is_file());
         if is_file && is_python(entry.path()) {
-            files.insert(normalize(entry.path()));
+            emit(normalize(entry.path()));
         }
     }
     Ok(())

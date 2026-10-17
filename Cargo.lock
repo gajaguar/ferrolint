@@ -812,15 +812,78 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrolint-plugin-bare-except"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-global-statement"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-pointless-statement"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-redefined-builtin"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
 name = "ferrolint-plugin-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]
 
 [[package]]
+name = "ferrolint-plugin-self-assigning-variable"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-singleton-comparison"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-undefined-variable"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-unnecessary-pass"
+version = "0.6.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
 name = "ferrolint-plugin-unused-import"
 version = "0.7.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-plugin-unused-variable"
+version = "0.6.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]

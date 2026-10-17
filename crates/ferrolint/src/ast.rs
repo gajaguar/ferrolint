@@ -1,36 +1,109 @@
-//! Flatten a parsed module into the contract's node list: every node in
+//! Flatten a parsed module into the contract's packed AST: every node in
 //! pre-order, each with its parent, subtree end and the strings it carries.
 
-use ferrolint_core::LineIndex;
+use std::collections::HashMap;
+
+use ferrolint_core::{LineIndex, Range};
 use ruff_python_ast::visitor::source_order::{SourceOrderVisitor, TraversalSignal};
 use ruff_python_ast::{self as ast, AnyNodeRef, ExprContext as Ctx, HasNodeIndex, NodeIndex};
 use ruff_text_size::Ranged;
 
-use crate::wit::{ExprContext, Node, NodeKind, Position, Range};
+use crate::wit::{self, ExprContext, NodeKind};
+
+/// Words per node in the packed list `check` receives.
+const WORDS: usize = 14;
+/// The word that marks an absent name or detail.
+const ABSENT: u32 = u32::MAX;
+
+/// A byte span of the string table.
+pub type Span = (u32, u32);
+
+/// One node; its id is its position in [`Flat::nodes`].
+#[derive(Clone, Debug)]
+pub struct FlatNode {
+    pub parent: Option<u32>,
+    pub kind: NodeKind,
+    pub range: Range,
+    /// The id of the last node of its subtree.
+    pub last: u32,
+    pub context: ExprContext,
+    pub name: Option<Span>,
+    pub detail: Option<Span>,
+}
+
+/// A file's nodes in pre-order and the string table their names point into.
+pub struct Flat {
+    pub nodes: Vec<FlatNode>,
+    pub strings: String,
+}
+
+impl Flat {
+    /// The text of a name or detail span.
+    pub fn string(&self, span: Option<Span>) -> Option<&str> {
+        let (start, end) = span?;
+        self.strings.get(start as usize..end as usize)
+    }
+
+    /// The contract's packed form, built once and handed to every plugin.
+    pub fn pack(&self) -> wit::Ast {
+        let mut words = Vec::with_capacity(self.nodes.len() * WORDS);
+        for node in &self.nodes {
+            let (name_start, name_end) = node.name.unwrap_or((ABSENT, ABSENT));
+            let (detail_start, detail_end) = node.detail.unwrap_or((ABSENT, ABSENT));
+            words.extend([
+                node.parent.map_or(0, |parent| parent + 1),
+                node.kind as u32,
+                node.range.start.offset,
+                node.range.start.line,
+                node.range.start.column,
+                node.range.end.offset,
+                node.range.end.line,
+                node.range.end.column,
+                node.last,
+                node.context as u32,
+                name_start,
+                name_end,
+                detail_start,
+                detail_end,
+            ]);
+        }
+        wit::Ast {
+            nodes: words,
+            strings: self.strings.clone(),
+        }
+    }
+}
 
 /// The flat node list of `module`. Each emitted node's `node_index` is set
 /// to its id, so a later pass over the same tree can name it.
-pub fn flatten(source: &str, index: &LineIndex, module: &ast::ModModule) -> Vec<Node> {
+pub fn flatten(source: &str, index: &LineIndex, module: &ast::ModModule) -> Flat {
     let mut flattener = Flattener {
         source,
         index,
         nodes: Vec::new(),
         stack: Vec::new(),
+        strings: String::new(),
+        interned: HashMap::new(),
     };
     flattener.enter_node(AnyNodeRef::from(module));
     for stmt in &module.body {
         flattener.visit_stmt(stmt);
     }
     flattener.leave_node(AnyNodeRef::from(module));
-    flattener.nodes
+    Flat {
+        nodes: flattener.nodes,
+        strings: flattener.strings,
+    }
 }
 
 struct Flattener<'s> {
     source: &'s str,
     index: &'s LineIndex,
-    nodes: Vec<Node>,
+    nodes: Vec<FlatNode>,
     /// One entry per entered node: its id, or none for a node left out.
     stack: Vec<Option<u32>>,
+    strings: String,
+    interned: HashMap<String, Span>,
 }
 
 impl Flattener<'_> {
@@ -42,26 +115,21 @@ impl Flattener<'_> {
         self.parent().map(|id| self.nodes[id as usize].kind)
     }
 
-    fn range(&self, node: AnyNodeRef<'_>) -> Range {
-        let range = node.range();
-        let start = self.index.position(self.source, range.start().to_u32());
-        let end = self.index.position(self.source, range.end().to_u32());
-        Range {
-            start: position(start),
-            end: position(end),
-        }
-    }
-
     fn text(&self, node: AnyNodeRef<'_>) -> String {
         self.source[node.range()].to_owned()
     }
-}
 
-fn position(position: ferrolint_core::Position) -> Position {
-    Position {
-        offset: position.offset,
-        line: position.line,
-        column: position.column,
+    /// The table span of a string, adding it the first time.
+    fn intern(&mut self, value: Option<String>) -> Option<Span> {
+        let value = value?;
+        if let Some(&span) = self.interned.get(&value) {
+            return Some(span);
+        }
+        let start = u32::try_from(self.strings.len()).unwrap_or(ABSENT);
+        self.strings.push_str(&value);
+        let span = (start, u32::try_from(self.strings.len()).unwrap_or(ABSENT));
+        self.interned.insert(value, span);
+        Some(span)
     }
 }
 
@@ -73,11 +141,15 @@ impl<'a> SourceOrderVisitor<'a> for Flattener<'_> {
         };
         let id = u32::try_from(self.nodes.len()).unwrap_or(u32::MAX);
         node.node_index().set(NodeIndex::from(id));
-        self.nodes.push(Node {
-            id,
+        let (name, detail) = (self.intern(name), self.intern(detail));
+        let range = node.range();
+        let range = self
+            .index
+            .range(self.source, range.start().to_u32(), range.end().to_u32());
+        self.nodes.push(FlatNode {
             parent: self.parent(),
             kind,
-            range: self.range(node),
+            range,
             last: id,
             context,
             name,

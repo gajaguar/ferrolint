@@ -5,8 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock, mpsc};
+use std::time::{Duration, Instant};
 
 use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
 use rayon::prelude::*;
@@ -54,6 +55,13 @@ pub struct Stats {
     pub parsed: usize,
     pub plugin_runs: usize,
     pub compiles: usize,
+    /// Milliseconds from process start to the first parse.
+    pub first_parse_ms: Option<f64>,
+    /// The share of the workers' time spent on files while linting.
+    pub parallelism: f64,
+    /// Workers that linted no file.
+    pub idle_workers: usize,
+    pub peak_rss_mb: Option<u64>,
 }
 
 /// What a run was asked to do.
@@ -63,6 +71,8 @@ pub struct Options {
     pub threads: usize,
     pub diff_base: Option<String>,
     pub cache: bool,
+    /// When the process started, for the first-parse figure.
+    pub started: Instant,
 }
 
 pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
@@ -73,65 +83,119 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     };
     let plugins = read_plugins(&config)?;
     let cache = options.cache.then(|| Cache::new(cwd));
-    let host = Host::load(plugins, cache.as_ref())?;
-    let rules = checks::host_rules().into_iter().chain(
-        host.plugins
-            .iter()
-            .flat_map(|plugin| plugin.rules.iter().cloned()),
-    );
-    let registry = Registry::with_owners(rules, &config.pylint_aliases)
-        .map_err(|err| Error::config(err.to_string()))?;
-    let selection = Selection::new(&registry, &config)?;
+    let workers = if options.threads == 0 {
+        std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+    } else {
+        options.threads
+    };
     let excludes = Excludes::new(&config)?;
-    let mut files = discover::discover(cwd, &options.paths, &excludes)?;
-    if let Some(changed) = &changed {
-        files.retain(|file| changed.contains(file) || changed.contains(&resolved_parent(file)));
-    }
-
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(options.threads)
+        .num_threads(workers)
         .build()
         .map_err(|err| Error::io(format!("cannot start worker threads: {err}")))?;
+
+    // Plugins compile on their own thread while the files are discovered
+    // and the first ones parse; a file waits for them only to run them.
+    let setup: OnceLock<Result<Setup>> = OnceLock::new();
     let linter = Linter {
-        selection: &selection,
-        registry: &registry,
-        host: &host,
+        setup: &setup,
         cache: cache.as_ref(),
-        counters: Counters::default(),
+        counters: Counters::new(workers),
+        started: options.started,
     };
-    let displays: Vec<String> = files
-        .iter()
-        .map(|path| discover::display_path(cwd, path))
-        .collect();
-    let per_file: Vec<Result<Vec<Finding>>> = pool.install(|| {
-        files
-            .par_iter()
-            .zip(&displays)
-            .map(|(path, display)| linter.lint_file(path, display))
-            .collect()
-    });
+    let (displays, per_file, lint_time) = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let _ = setup.set(Setup::new(plugins, cache.as_ref(), workers, &config));
+        });
+        // The walk feeds the workers as it goes.
+        let (sender, receiver) = mpsc::channel();
+        let walker = scope.spawn(move || {
+            discover::stream(cwd, &options.paths, &excludes, |file| {
+                let keep = changed.as_ref().is_none_or(|changed| {
+                    changed.contains(&file) || changed.contains(&resolved_parent(&file))
+                });
+                if keep {
+                    let _ = sender.send(file);
+                }
+            })
+        });
+        let began = Instant::now();
+        let per_file: Vec<(String, Result<Vec<Finding>>)> = pool.install(|| {
+            receiver
+                .into_iter()
+                .par_bridge()
+                .map(|path| {
+                    let display = discover::display_path(cwd, &path);
+                    let findings = linter.timed(|| linter.lint_file(&path, &display));
+                    (display, findings)
+                })
+                .collect()
+        });
+        let lint_time = began.elapsed();
+        let _ = setup.wait();
+        walker
+            .join()
+            .unwrap_or_else(|_| Err(Error::io("the file walk panicked")))?;
+        let (displays, per_file): (Vec<String>, Vec<Result<Vec<Finding>>>) =
+            per_file.into_iter().unzip();
+        Ok::<_, Error>((displays, per_file, lint_time))
+    })?;
+    let compiles = setup
+        .get()
+        .and_then(|setup| setup.as_ref().ok())
+        .map_or(0, |setup| setup.host.compiles());
+    let stats = linter.counters.stats(displays.len(), compiles, lint_time);
+    drop(linter);
+    let Setup { registry, .. } = setup
+        .into_inner()
+        .unwrap_or_else(|| Err(Error::plugin("plugin loading did not finish")))?;
     let mut findings = Vec::new();
     for result in per_file {
         findings.extend(result?);
     }
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
-    let mut files = displays;
-    files.sort();
-    let stats = Stats {
-        files: files.len(),
-        cached: linter.counters.cached.load(Ordering::Relaxed),
-        parsed: linter.counters.parsed.load(Ordering::Relaxed),
-        plugin_runs: linter.counters.plugin_runs.load(Ordering::Relaxed),
-        compiles: host.compiles(),
-    };
+    let mut displays = displays;
+    displays.sort();
     Ok(Report {
         findings,
-        files,
+        files: displays,
         registry,
         diff_base: options.diff_base.clone(),
         stats,
     })
+}
+
+/// What linting needs from the plugins: the loaded plugins, the rule
+/// table their rules complete, and the selection it resolves.
+struct Setup {
+    host: Host,
+    registry: Registry,
+    selection: Selection,
+}
+
+impl Setup {
+    fn new(
+        plugins: Vec<PluginSource>,
+        cache: Option<&Cache>,
+        workers: usize,
+        config: &Config,
+    ) -> Result<Self> {
+        let host = Host::load(plugins, cache, workers)?;
+        let rules = checks::host_rules().into_iter().chain(
+            host.plugins
+                .iter()
+                .flat_map(|plugin| plugin.rules.iter().cloned()),
+        );
+        let registry = Registry::with_owners(rules, &config.pylint_aliases)
+            .map_err(|err| Error::config(err.to_string()))?;
+        let selection = Selection::new(&registry, config)?;
+        Ok(Self {
+            host,
+            registry,
+            selection,
+        })
+    }
 }
 
 /// Read every plugin and check it against its pinned SHA-256 before any
@@ -178,27 +242,121 @@ pub fn hex(bytes: &[u8]) -> String {
     })
 }
 
-#[derive(Default)]
 struct Counters {
     cached: AtomicUsize,
     parsed: AtomicUsize,
     plugin_runs: AtomicUsize,
+    /// Nanoseconds from process start to the first parse, or `u64::MAX`.
+    first_parse: AtomicU64,
+    /// Nanoseconds each worker spent on files.
+    busy: Vec<AtomicU64>,
+}
+
+impl Counters {
+    fn new(workers: usize) -> Self {
+        Self {
+            cached: AtomicUsize::new(0),
+            parsed: AtomicUsize::new(0),
+            plugin_runs: AtomicUsize::new(0),
+            first_parse: AtomicU64::new(u64::MAX),
+            busy: (0..workers).map(|_| AtomicU64::new(0)).collect(),
+        }
+    }
+
+    // The figures are for reading; a float's precision is plenty.
+    #[allow(clippy::cast_precision_loss)]
+    fn stats(&self, files: usize, compiles: usize, lint_time: Duration) -> Stats {
+        let busy: Vec<u64> = self
+            .busy
+            .iter()
+            .map(|nanos| nanos.load(Ordering::Relaxed))
+            .collect();
+        let capacity = lint_time.as_nanos() as f64 * busy.len() as f64;
+        let first_parse = self.first_parse.load(Ordering::Relaxed);
+        Stats {
+            files,
+            cached: self.cached.load(Ordering::Relaxed),
+            parsed: self.parsed.load(Ordering::Relaxed),
+            plugin_runs: self.plugin_runs.load(Ordering::Relaxed),
+            compiles,
+            first_parse_ms: (first_parse != u64::MAX).then(|| first_parse as f64 / 1e6),
+            parallelism: if capacity > 0.0 {
+                busy.iter().sum::<u64>() as f64 / capacity
+            } else {
+                0.0
+            },
+            idle_workers: busy.iter().filter(|nanos| **nanos == 0).count(),
+            peak_rss_mb: peak_rss_mb(),
+        }
+    }
+}
+
+/// The process's peak resident memory, where the system reports it.
+fn peak_rss_mb() -> Option<u64> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
+    let kilobytes: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kilobytes / 1024)
 }
 
 struct Linter<'a> {
-    selection: &'a Selection,
-    registry: &'a Registry,
-    host: &'a Host,
+    setup: &'a OnceLock<Result<Setup>>,
     cache: Option<&'a Cache>,
     counters: Counters,
+    started: Instant,
+}
+
+/// A file read and parsed, before any plugin runs.
+enum Prepared {
+    NotUtf8,
+    Source {
+        source: String,
+        parsed: Parsed<ModModule>,
+        index: LineIndex,
+    },
 }
 
 impl Linter<'_> {
+    /// Run `work` on the current worker and count the time as busy.
+    fn timed<T>(&self, work: impl FnOnce() -> T) -> T {
+        let began = Instant::now();
+        let result = work();
+        if let Some(slot) =
+            rayon::current_thread_index().and_then(|index| self.counters.busy.get(index))
+        {
+            let nanos = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            slot.fetch_add(nanos, Ordering::Relaxed);
+        }
+        result
+    }
+
+    /// Decode and parse a file, noting when the run's first parse began.
+    fn prepare(&self, bytes: &[u8]) -> Prepared {
+        let since_start = u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.counters
+            .first_parse
+            .fetch_min(since_start, Ordering::Relaxed);
+        let Ok(source) = std::str::from_utf8(bytes) else {
+            return Prepared::NotUtf8;
+        };
+        let parsed = ruff_python_parser::parse_unchecked_source(source, PySourceType::Python);
+        Prepared::Source {
+            source: source.to_owned(),
+            parsed,
+            index: LineIndex::new(source),
+        }
+    }
+
     fn lint_file(&self, path: &Path, display: &str) -> Result<Vec<Finding>> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
-        let enabled = self.selection.for_file(path);
-        let wanted: Vec<usize> = self
+        // While the plugins still load, parse ahead instead of waiting.
+        let early = self.setup.get().is_none().then(|| self.prepare(&bytes));
+        let Ok(setup) = self.setup.wait() else {
+            return Ok(Vec::new());
+        };
+        let enabled = setup.selection.for_file(path);
+        let wanted: Vec<usize> = setup
             .host
             .plugins
             .iter()
@@ -220,7 +378,7 @@ impl Linter<'_> {
                 || wanted.iter().all(|&position| {
                     entry
                         .plugins
-                        .contains_key(&self.host.plugins[position].sha256)
+                        .contains_key(&setup.host.plugins[position].sha256)
                 })
         });
         let (entry, aborts) = match stored {
@@ -230,7 +388,12 @@ impl Linter<'_> {
             }
             stored => {
                 self.counters.parsed.fetch_add(1, Ordering::Relaxed);
-                let (entry, aborts) = self.check(display, &module, bytes, &wanted, stored)?;
+                let prepared = early.unwrap_or_else(|| self.prepare(&bytes));
+                let file = FileRef {
+                    display,
+                    module: &module,
+                };
+                let (entry, aborts) = self.check(setup, &file, prepared, &wanted, stored)?;
                 if let (Some(cache), Some(key)) = (self.cache, key.as_deref()) {
                     cache.store_entry(key, &entry);
                 }
@@ -239,65 +402,62 @@ impl Linter<'_> {
         };
         let mut diagnostics = entry.host;
         for &position in &wanted {
-            if let Some(reported) = entry.plugins.get(&self.host.plugins[position].sha256) {
+            if let Some(reported) = entry.plugins.get(&setup.host.plugins[position].sha256) {
                 diagnostics.extend(reported.iter().cloned());
             }
         }
-        let suppressions = Suppressions::resolve(&entry.suppressions, self.registry);
+        let suppressions = Suppressions::resolve(&entry.suppressions, &setup.registry);
         diagnostics.retain(|diagnostic| !suppressions.suppresses(diagnostic));
         diagnostics.extend(aborts);
-        Ok(self.place(display, diagnostics, &enabled))
+        Ok(place(&setup.registry, display, diagnostics, &enabled))
     }
 
-    /// Parse the file and run the wanted plugins a stored entry lacks. An
-    /// aborted plugin's output is not stored, so the next run retries it.
+    /// Check a parsed file and run the wanted plugins a stored entry lacks.
+    /// An aborted plugin's output is not stored, so the next run retries it.
     fn check(
         &self,
-        display: &str,
-        module: &str,
-        bytes: Vec<u8>,
+        setup: &Setup,
+        file: &FileRef<'_>,
+        prepared: Prepared,
         wanted: &[usize],
         stored: Option<Entry>,
     ) -> Result<(Entry, Vec<Diagnostic>)> {
+        let host = &setup.host;
         let mut entry = stored.unwrap_or_default();
         // Keep only the outputs of the plugins this run loads.
-        entry.plugins.retain(|sha256, _| {
-            self.host
-                .plugins
-                .iter()
-                .any(|plugin| plugin.sha256 == *sha256)
-        });
-        let Ok(source) = String::from_utf8(bytes) else {
+        entry
+            .plugins
+            .retain(|sha256, _| host.plugins.iter().any(|plugin| plugin.sha256 == *sha256));
+        let Prepared::Source {
+            source,
+            parsed,
+            index,
+        } = prepared
+        else {
             entry.host = vec![checks::not_utf8()];
             entry.suppressions = BTreeMap::new();
             entry.unparsable = true;
             return Ok((entry, Vec::new()));
         };
-        let parsed = ruff_python_parser::parse_unchecked_source(&source, PySourceType::Python);
-        let index = LineIndex::new(&source);
         entry.host = checks::check(&source, &parsed, &index);
         entry.suppressions = suppress::spelled(&source, parsed.tokens(), &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted
             .iter()
             .copied()
-            .filter(|&position| {
-                !entry
-                    .plugins
-                    .contains_key(&self.host.plugins[position].sha256)
-            })
+            .filter(|&position| !entry.plugins.contains_key(&host.plugins[position].sha256))
             .collect();
         let mut aborts = Vec::new();
         if parsed.has_no_syntax_errors() && !missing.is_empty() {
             let context = PluginContext {
-                module,
-                display,
+                module: file.module,
+                display: file.display,
                 source: &source,
                 index: &index,
                 parsed: &parsed,
             };
-            for (position, outcome) in self.run_plugins(&context, &missing)? {
-                let plugin = &self.host.plugins[position];
+            for (position, outcome) in self.run_plugins(host, &context, &missing)? {
+                let plugin = &host.plugins[position];
                 match outcome {
                     Ok(diagnostics) => {
                         entry.plugins.insert(plugin.sha256.clone(), diagnostics);
@@ -313,17 +473,19 @@ impl Linter<'_> {
     /// each one's diagnostics, or the abort it ended in.
     fn run_plugins(
         &self,
+        host: &Host,
         context: &PluginContext<'_>,
         positions: &[usize],
     ) -> Result<Vec<(usize, PluginOutcome)>> {
-        let nodes = ast::flatten(context.source, context.index, context.parsed.syntax());
+        let flat = ast::flatten(context.source, context.index, context.parsed.syntax());
         let model = Model::build(
             context.parsed.syntax(),
-            &nodes,
+            &flat.nodes,
             context.source,
             context.index,
         );
-        let data = Arc::new(FileData { nodes, model });
+        let ast = flat.pack();
+        let data = Arc::new(FileData { flat, ast, model });
         let file = wit::File {
             path: context.display.to_owned(),
             module: context.module.to_owned(),
@@ -332,9 +494,9 @@ impl Linter<'_> {
         positions
             .iter()
             .map(|&position| {
-                let plugin = &self.host.plugins[position];
+                let plugin = &host.plugins[position];
                 self.counters.plugin_runs.fetch_add(1, Ordering::Relaxed);
-                let outcome = match self.host.check(position, &file, &data) {
+                let outcome = match host.check(position, &file, &data) {
                     Outcome::Diagnostics(reported) => {
                         accept(plugin, reported, context.source, context.index)
                             .map_err(|reason| aborted(plugin, &reason))
@@ -346,27 +508,33 @@ impl Linter<'_> {
             })
             .collect()
     }
+}
 
-    /// Keep the diagnostics whose code reports for this file and attach the
-    /// path and aliases a report needs. A plugin abort always reports.
-    fn place(
-        &self,
-        display: &str,
-        diagnostics: Vec<Diagnostic>,
-        enabled: &BTreeSet<String>,
-    ) -> Vec<Finding> {
-        diagnostics
-            .into_iter()
-            .filter(|diagnostic| {
-                diagnostic.code == checks::PLUGIN_ABORTED || enabled.contains(&diagnostic.code)
-            })
-            .map(|diagnostic| Finding {
-                path: display.to_owned(),
-                aliases: self.registry.aliases(&diagnostic.code),
-                diagnostic,
-            })
-            .collect()
-    }
+/// Keep the diagnostics whose code reports for this file and attach the
+/// path and aliases a report needs. A plugin abort always reports.
+fn place(
+    registry: &Registry,
+    display: &str,
+    diagnostics: Vec<Diagnostic>,
+    enabled: &BTreeSet<String>,
+) -> Vec<Finding> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| {
+            diagnostic.code == checks::PLUGIN_ABORTED || enabled.contains(&diagnostic.code)
+        })
+        .map(|diagnostic| Finding {
+            path: display.to_owned(),
+            aliases: registry.aliases(&diagnostic.code),
+            diagnostic,
+        })
+        .collect()
+}
+
+/// How a file is named to the plugins.
+struct FileRef<'a> {
+    display: &'a str,
+    module: &'a str,
 }
 
 /// A plugin's diagnostics on a file, or the `FL001` abort it ended in.

@@ -113,8 +113,8 @@ fn output_project() -> Project {
     project
 }
 
-/// The `--stats` line of a run: files, cached, parsed, plugin-runs and
-/// compiles, by name.
+/// The whole-number figures of a run's `--stats` line, by name: files,
+/// cached, parsed, plugin-runs, compiles, idle-workers, peak-rss-mb.
 fn stats(run: &support::Run) -> std::collections::BTreeMap<String, usize> {
     let line = run
         .stderr
@@ -122,9 +122,9 @@ fn stats(run: &support::Run) -> std::collections::BTreeMap<String, usize> {
         .find_map(|line| line.strip_prefix("ferrolint: stats: "))
         .unwrap_or_else(|| panic!("no stats line: {run:?}"));
     line.split(' ')
-        .map(|pair| {
+        .filter_map(|pair| {
             let (name, value) = pair.split_once('=').unwrap();
-            (name.to_owned(), value.parse().unwrap())
+            Some((name.to_owned(), value.parse().ok()?))
         })
         .collect()
 }

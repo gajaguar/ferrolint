@@ -58,6 +58,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
+    let started = std::time::Instant::now();
     let args = Args::parse();
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
@@ -73,15 +74,29 @@ fn main() -> ExitCode {
         threads: args.threads,
         diff_base: args.diff_base,
         cache: !args.no_cache,
+        started,
     };
     match engine::run(&cwd, &options) {
         Ok(report) => {
             let out = report::render(&report, args.format);
             if args.stats {
                 let stats = &report.stats;
+                let first_parse = stats
+                    .first_parse_ms
+                    .map_or_else(|| "none".to_owned(), |ms| format!("{ms:.1}"));
+                let rss = stats
+                    .peak_rss_mb
+                    .map_or_else(|| "unknown".to_owned(), |mb| mb.to_string());
                 eprintln!(
-                    "ferrolint: stats: files={} cached={} parsed={} plugin-runs={} compiles={}",
-                    stats.files, stats.cached, stats.parsed, stats.plugin_runs, stats.compiles
+                    "ferrolint: stats: files={} cached={} parsed={} plugin-runs={} compiles={} \
+                     first-parse-ms={first_parse} parallelism={:.2} idle-workers={} peak-rss-mb={rss}",
+                    stats.files,
+                    stats.cached,
+                    stats.parsed,
+                    stats.plugin_runs,
+                    stats.compiles,
+                    stats.parallelism,
+                    stats.idle_workers
                 );
             }
             if std::io::stdout().lock().write_all(out.as_bytes()).is_err() {
