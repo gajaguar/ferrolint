@@ -475,7 +475,7 @@ impl Linter<'_> {
             return Ok((entry, Vec::new()));
         };
         entry.host = checks::check(&source, &parsed, &index);
-        entry.suppressions = suppress::spelled(&source, parsed.tokens(), &index);
+        entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted
             .iter()
