@@ -1,5 +1,6 @@
-//! Configuration loading: `ferrolint.toml`, or the `[tool.ferrolint]` table
-//! of `pyproject.toml`, in the working directory.
+//! Configuration loading: `ferrolint.toml`, the `[tool.ferrolint]` table of
+//! `pyproject.toml`, or else Pylint's own configuration, in the working
+//! directory.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::pylint::{self, Settings, Toggle};
 
 /// The settings a run uses, with plugin paths made absolute.
 #[derive(Clone, Debug, Default)]
@@ -23,6 +25,11 @@ pub struct Config {
     pub pylint_aliases: BTreeMap<String, String>,
     /// The Python `(major, minor)` the code targets, from `py-version`.
     pub py_version: Option<(u32, u32)>,
+    /// Pylint's `disable` and `enable` entries, in order; `Selection`
+    /// resolves them against the registry.
+    pub pylint_disable: Vec<(Toggle, String)>,
+    /// The other Pylint options, as written; none has an effect yet.
+    pub options: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,14 +61,15 @@ fn version<'de, D: serde::Deserializer<'de>>(
     de: D,
 ) -> std::result::Result<Option<(u32, u32)>, D::Error> {
     let text = String::deserialize(de)?;
+    parse_version(&text)
+        .map(Some)
+        .map_err(serde::de::Error::custom)
+}
+
+fn parse_version(text: &str) -> std::result::Result<(u32, u32), String> {
     text.split_once('.')
         .and_then(|(major, minor)| Some((major.parse().ok()?, minor.parse().ok()?)))
-        .map(Some)
-        .ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "py-version must be MAJOR.MINOR, like \"3.14\", not \"{text}\""
-            ))
-        })
+        .ok_or_else(|| format!("py-version must be MAJOR.MINOR, like \"3.14\", not \"{text}\""))
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,26 +79,39 @@ struct RawPlugin {
     sha256: String,
 }
 
+/// Pylint's configuration files, in the order Pylint looks for them.
+const PYLINT_FILES: [&str; 5] = [
+    ".pylintrc",
+    "pylintrc",
+    "pyproject.toml",
+    "setup.cfg",
+    "tox.ini",
+];
+
 /// Load the configuration for a run started in `cwd`.
 ///
-/// An explicit `--config` file is read as a `ferrolint.toml`, or as a
-/// `pyproject.toml` when it has that name. Otherwise `ferrolint.toml` in
-/// `cwd` wins entirely over `pyproject.toml`; with neither, the defaults
-/// apply.
+/// An explicit `--config` file is read as a Pylint configuration when it is
+/// named like one (`.pylintrc`, `pylintrc`, `setup.cfg`, `tox.ini`), as a
+/// `pyproject.toml` when it has that name, else as a `ferrolint.toml`.
+/// Otherwise the first source that exists wins entirely, never merged:
+/// `ferrolint.toml`, `[tool.ferrolint]`, then Pylint's files in `PYLINT_FILES`
+/// order; with none, the defaults apply.
 pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<Config> {
     if let Some(path) = explicit {
         let path = cwd.join(path);
-        let is_pyproject = path
-            .file_name()
-            .is_some_and(|name| name == "pyproject.toml");
-        let raw = if is_pyproject {
-            read_pyproject(&path)?
-        } else {
-            read_ferrolint(&path)?
-        };
+        let name = path.file_name().map(|name| name.to_string_lossy());
         let root = path
             .parent()
             .map_or_else(|| cwd.to_path_buf(), Path::to_path_buf);
+        let raw = match name.as_deref() {
+            Some("pyproject.toml") => read_pyproject(&path)?,
+            Some(name) if PYLINT_FILES.contains(&name) => {
+                return Ok(
+                    read_pylint(&path)?.unwrap_or_else(|| resolve(RawConfig::default(), root))
+                );
+            }
+            _ => read_ferrolint(&path)?,
+        };
         return Ok(resolve(raw.unwrap_or_default(), root));
     }
     let ferrolint = cwd.join("ferrolint.toml");
@@ -104,7 +125,46 @@ pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<Config> {
     {
         return Ok(resolve(raw, cwd.to_path_buf()));
     }
+    for name in PYLINT_FILES {
+        let path = cwd.join(name);
+        if path.is_file()
+            && let Some(config) = read_pylint(&path)?
+        {
+            return Ok(config);
+        }
+    }
     Ok(resolve(RawConfig::default(), cwd.to_path_buf()))
+}
+
+/// The settings of a Pylint file, or `None` when it holds no Pylint section.
+fn read_pylint(path: &Path) -> Result<Option<Config>> {
+    let text = read(path)?;
+    let name = path.file_name().map(|name| name.to_string_lossy());
+    let entries = if name.as_deref() == Some("pyproject.toml") {
+        let table: toml::Table = toml::from_str(&text)
+            .map_err(|err| Error::config(format!("{}: {}", path.display(), err.message())))?;
+        pylint::toml(&table)
+    } else {
+        let only_pylint = matches!(name.as_deref(), Some("setup.cfg" | "tox.ini"));
+        pylint::ini(&text, only_pylint)
+    };
+    let Some(entries) = entries else {
+        return Ok(None);
+    };
+    let settings = Settings::from_entries(entries);
+    let py_version = settings
+        .py_version
+        .as_deref()
+        .map(parse_version)
+        .transpose()
+        .map_err(|err| Error::config(format!("{}: {err}", path.display())))?;
+    let root = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let mut config = resolve(RawConfig::default(), root);
+    config.exclude = settings.ignore;
+    config.py_version = py_version;
+    config.pylint_disable = settings.toggles;
+    config.options = settings.options;
+    Ok(Some(config))
 }
 
 fn read(path: &Path) -> Result<String> {
@@ -160,6 +220,8 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         per_file_ignores: raw.per_file_ignores,
         pylint_aliases: raw.pylint_aliases,
         py_version: raw.py_version,
+        pylint_disable: Vec::new(),
+        options: BTreeMap::new(),
     }
 }
 
@@ -213,5 +275,81 @@ mod tests {
                 sha256: "ab".into()
             }]
         );
+    }
+
+    fn write(dir: &tempfile::TempDir, name: &str, text: &str) {
+        fs::write(dir.path().join(name), text).unwrap();
+    }
+
+    #[test]
+    fn pylintrc_gives_toggles_options_ignore_and_py_version() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir,
+            ".pylintrc",
+            "[MASTER]\nignore=CVS\nload-plugins=pylint_django\npy-version=3.12\n\n\
+             [MESSAGES CONTROL]\ndisable=fixme,\n  W\nenable=unused-import\n",
+        );
+        let config = load(dir.path(), None).unwrap();
+        assert_eq!(config.exclude, ["CVS"]);
+        assert_eq!(config.py_version, Some((3, 12)));
+        assert_eq!(config.options["load-plugins"], "pylint_django");
+        assert_eq!(config.pylint_disable.len(), 3);
+        assert_eq!(config.root, dir.path());
+        write(&dir, ".pylintrc", "py-version=3\n");
+        assert!(load(dir.path(), None).is_err());
+    }
+
+    #[test]
+    fn the_first_source_wins_and_nothing_merges() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir, "tox.ini", "[pylint.messages_control]\ndisable=tox\n");
+        write(
+            &dir,
+            "setup.cfg",
+            "[pylint.messages_control]\ndisable=cfg\n",
+        );
+        let disabled = |dir: &tempfile::TempDir| {
+            load(dir.path(), None)
+                .unwrap()
+                .pylint_disable
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(disabled(&dir), ["cfg"]);
+        write(
+            &dir,
+            "pyproject.toml",
+            "[tool.pylint.messages_control]\ndisable=['toml']\n",
+        );
+        assert_eq!(disabled(&dir), ["toml"]);
+        write(&dir, "pylintrc", "[MESSAGES CONTROL]\ndisable=rc\n");
+        assert_eq!(disabled(&dir), ["rc"]);
+        write(&dir, ".pylintrc", "[MESSAGES CONTROL]\ndisable=dotrc\n");
+        assert_eq!(disabled(&dir), ["dotrc"]);
+        write(&dir, "pyproject.toml", "[tool.ferrolint]\nignore=['X']\n");
+        write(&dir, ".pylintrc", "[MESSAGES CONTROL]\ndisable=dotrc\n");
+        let config = load(dir.path(), None).unwrap();
+        assert_eq!(config.ignore, ["X"]);
+        assert!(config.pylint_disable.is_empty(), "[tool.ferrolint] wins");
+        write(&dir, "ferrolint.toml", "");
+        assert_eq!(load(dir.path(), None).unwrap().ignore.len(), 0);
+    }
+
+    #[test]
+    fn a_setup_cfg_without_a_pylint_section_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir, "setup.cfg", "[flake8]\nmax-line-length=9\n");
+        write(&dir, "tox.ini", "[pylint]\nmax-args=3\n");
+        assert_eq!(load(dir.path(), None).unwrap().options["max-args"], "3");
+    }
+
+    #[test]
+    fn an_explicit_pylint_file_is_read_as_pylint() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir, "pylintrc", "[MESSAGES CONTROL]\ndisable=fixme\n");
+        let config = load(dir.path(), Some(Path::new("pylintrc"))).unwrap();
+        assert_eq!(config.pylint_disable.len(), 1);
     }
 }

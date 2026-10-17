@@ -19,7 +19,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
 tempfile = "3.27"
-toml = "1.1"
+toml = { version = "1.1", features = ["preserve_order"] }
 wasmtime = { version = "=49.0.3", default-features = false, features = ["cranelift", "component-model", "parallel-compilation", "pooling-allocator", "runtime", "std"] }
 wasmtime-wasi = "=49.0.3"
 wit-bindgen = "0.63"

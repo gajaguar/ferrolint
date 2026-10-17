@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Configuration file
-description: The keys ferrolint.toml and the [tool.ferrolint] table accept, with how paths, globs and rule spellings resolve.
+description: The keys ferrolint.toml and the [tool.ferrolint] table accept, how Pylint's own configuration is read instead, and how paths, globs and rule spellings resolve.
 tags: [config]
 status: stable
 ---
@@ -47,3 +47,32 @@ W0611 = "IMP001"
 * When two plugins declare the same Pylint msg-id or symbol, the run stops
   until `pylint-aliases` names the rule that owns it; the other rule keeps
   its code and its remaining aliases.
+
+## Pylint configuration
+
+With neither `ferrolint.toml` nor `[tool.ferrolint]`, a run reads the first
+Pylint source that exists, in Pylint's order, and ignores the rest:
+
+* `.pylintrc`, then `pylintrc` (INI, every section).
+* `[tool.pylint.*]` in `pyproject.toml`.
+* `setup.cfg`, then `tox.ini`, only their `[pylint.*]` sections.
+
+Sources never merge. `--config PATH` with a file named like one of these is
+read as Pylint configuration. The directory holding the file is the root of
+relative paths.
+
+* `disable` and `enable` entries are applied in file order; within one
+  file, in the order the options appear. `disable` turns rules off and
+  `enable` turns them back on. An entry is a ferrolint code, a Pylint
+  msg-id or symbol, a category letter (`C`, `R`, `W`, `E`, `F`, `I`: the
+  rules whose msg-id starts with it) or `all`.
+* An entry naming no rule ferrolint has (`duplicate-code`, `fixme`, a
+  checker name) is dropped without an error, unlike `ignore`.
+* `py-version` sets the target Python version; `ignore` (Pylint's base
+  names, like `CVS`) is added to `exclude`.
+* Every other option is accepted and has no effect, so a Pylint file never
+  fails a run. That includes `load-plugins`, and `ignore-paths` and
+  `ignore-patterns`, which are regular expressions and are not supported
+  yet.
+* In `pyproject.toml` every `[tool.pylint.*]` table is flattened; arrays
+  join with `,` and booleans become `yes` or `no`.

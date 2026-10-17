@@ -11,6 +11,7 @@ mod engine;
 mod error;
 mod host;
 mod infer;
+mod pylint;
 mod report;
 mod selection;
 mod semantic;

@@ -231,6 +231,22 @@ fn ac_02_ferrolint_toml_wins_over_pyproject() {
 }
 
 #[test]
+fn ac_02b_pylintrc_is_read_when_no_ferrolint_config_exists() {
+    let project = Project::new();
+    project
+        .write(
+            ".pylintrc",
+            "[MESSAGES CONTROL]\ndisable=FL002,\n        fixme\n",
+        )
+        .write("bare.py", BARE_NOQA)
+        .write("broken.py", SYNTAX_ERROR);
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("FL003"), "{run:?}");
+    assert!(!run.stdout.contains("FL002"), "{run:?}");
+}
+
+#[test]
 fn ac_03_plugin_sha_mismatch_is_config_error() {
     let project = Project::new();
     project

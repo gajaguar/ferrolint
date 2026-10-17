@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Pylint configuration**: Extended `usage/configuration-file.md` with the
+  Pylint files a run reads, their precedence and translation.
+
 * **Pylint comparison**: Added `toolchain/pylint-compare.md` - how
   `make pylint-compare` measures parity with Pylint on a codebase.
 

@@ -25,6 +25,7 @@ markdownlint
 maturin
 mise
 musllinux
+dotrc
 pypa
 retagged
 ncols
