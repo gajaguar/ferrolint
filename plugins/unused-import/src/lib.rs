@@ -44,12 +44,12 @@ impl Checker for UnusedImport {
         )
     }
 
-    fn visit(&mut self, node: &Node, cx: &mut Context<'_>) {
+    fn visit(&mut self, node: &Node<'_>, cx: &mut Context<'_>) {
         match node.kind {
             NodeKind::Alias => self.collect(node, cx),
             NodeKind::Name if matches!(node.context, ExprContext::Load | ExprContext::Del) => {
-                if let (Some(name), Some(binding)) = (&node.name, cx.resolve(node)) {
-                    self.used.insert((binding.scope, name.clone()));
+                if let (Some(name), Some(binding)) = (node.name, cx.resolve(node)) {
+                    self.used.insert((binding.scope, name.to_owned()));
                 }
             }
             NodeKind::StringLiteral if in_annotation(node, cx) => {
@@ -92,15 +92,15 @@ impl Checker for UnusedImport {
 }
 
 impl UnusedImport {
-    fn collect(&mut self, alias: &Node, cx: &Context<'_>) {
+    fn collect(&mut self, alias: &Node<'_>, cx: &Context<'_>) {
         let Some(statement) = cx.parent(alias) else {
             return;
         };
-        let dotted = alias.name.clone().unwrap_or_default();
-        let asname = alias.detail.as_deref();
+        let dotted = alias.name.unwrap_or_default();
+        let asname = alias.detail;
         let module = match statement.kind {
             NodeKind::Import => None,
-            NodeKind::ImportFrom => Some(statement.detail.as_deref().unwrap_or("")),
+            NodeKind::ImportFrom => Some(statement.detail.unwrap_or("")),
             _ => return,
         };
         if module == Some("__future__") || dotted == "*" || asname == Some("_") {
@@ -135,7 +135,7 @@ impl UnusedImport {
 
 /// Whether a string literal is (part of) an annotation: of a parameter, of
 /// a function's return, or of an annotated assignment.
-fn in_annotation(node: &Node, cx: &Context<'_>) -> bool {
+fn in_annotation(node: &Node<'_>, cx: &Context<'_>) -> bool {
     let mut child = node;
     for parent in cx.ancestors(node) {
         match parent.kind {
@@ -193,14 +193,12 @@ fn string_prefix(word: &str) -> bool {
 }
 
 /// The names a module-level `__all__ = [...]` (or tuple) lists.
-fn dunder_all(assign: &Node, cx: &Context<'_>) -> Vec<String> {
+fn dunder_all(assign: &Node<'_>, cx: &Context<'_>) -> Vec<String> {
     let children: Vec<&Node> = cx.children(assign).collect();
     let [target, value] = children.as_slice() else {
         return Vec::new();
     };
-    if target.name.as_deref() != Some("__all__")
-        || !matches!(value.kind, NodeKind::List | NodeKind::Tuple)
-    {
+    if target.name != Some("__all__") || !matches!(value.kind, NodeKind::List | NodeKind::Tuple) {
         return Vec::new();
     }
     cx.children(value)
@@ -215,16 +213,14 @@ fn dunder_all(assign: &Node, cx: &Context<'_>) -> Vec<String> {
 
 /// Whether the import sits in the body of an `if TYPE_CHECKING:` or
 /// `elif TYPE_CHECKING:` block.
-fn type_checking_only(statement: &Node, cx: &Context<'_>) -> bool {
+fn type_checking_only(statement: &Node<'_>, cx: &Context<'_>) -> bool {
     let mut child = statement;
     for parent in cx.ancestors(statement) {
         if matches!(parent.kind, NodeKind::If | NodeKind::ElifElseClause)
             && Context::is_statement(child)
         {
             let guard = cx.children(parent).next();
-            if guard.is_some_and(|test| {
-                test.id != child.id && test.name.as_deref() == Some("TYPE_CHECKING")
-            }) {
+            if guard.is_some_and(|test| test.id != child.id && test.name == Some("TYPE_CHECKING")) {
                 return true;
             }
         }
@@ -236,12 +232,8 @@ fn type_checking_only(statement: &Node, cx: &Context<'_>) -> bool {
 /// The fix: drop the alias from a statement importing several names, drop
 /// the whole statement when it imports one, or put `pass` in its place
 /// when it is the only statement of its block.
-fn removal(statement: &Node, alias: &Node, cx: &Context<'_>) -> Fix {
-    let name = alias
-        .detail
-        .as_deref()
-        .or(alias.name.as_deref())
-        .unwrap_or("");
+fn removal(statement: &Node, alias: &Node<'_>, cx: &Context<'_>) -> Fix {
+    let name = alias.detail.or(alias.name).unwrap_or("");
     let description = format!("Remove the unused import of {name}");
     let aliases: Vec<&Node> = cx
         .children(statement)
@@ -285,7 +277,7 @@ fn span(start: Position, end: Position) -> Range {
 /// belong to the same block unless an `else`, `elif`, `except` or `finally`
 /// line separates them (the bodies of `for`, `while` and `try` share a
 /// parent node).
-fn only_statement(statement: &Node, cx: &Context<'_>) -> bool {
+fn only_statement(statement: &Node<'_>, cx: &Context<'_>) -> bool {
     let Some(parent) = cx.parent(statement) else {
         return false;
     };
@@ -324,7 +316,7 @@ fn only_statement(statement: &Node, cx: &Context<'_>) -> bool {
 
 /// The statement's range grown to whole lines when nothing else shares
 /// them, so deleting it leaves no blank line behind.
-fn whole_lines(statement: &Node, source: &str) -> Range {
+fn whole_lines(statement: &Node<'_>, source: &str) -> Range {
     let range = statement.range;
     let (start, end) = (range.start.offset as usize, range.end.offset as usize);
     let line_start = source[..start].rfind('\n').map_or(0, |newline| newline + 1);

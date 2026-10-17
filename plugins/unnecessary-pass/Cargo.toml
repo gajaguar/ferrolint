@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-plugin-unnecessary-pass"
+version.workspace = true
+edition.workspace = true
+description = "ferrolint plugin: a port of Pylint's unnecessary-pass (W0107)"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.2.0" }
+
+[lints]
+workspace = true

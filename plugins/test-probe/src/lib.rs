@@ -15,8 +15,9 @@
 
 use std::fmt::Write;
 
+use ferrolint_plugin_sdk::Node;
 use ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::checker::{
-    Diagnostic, File, Guest, Node, PluginInfo,
+    Ast, Diagnostic, File, Guest, PluginInfo,
 };
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::semantic::{self, Binding};
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::types::{
@@ -103,7 +104,8 @@ impl Guest for Probe {
         }
     }
 
-    fn check(file: File, nodes: Vec<Node>) -> Vec<Diagnostic> {
+    fn check(file: File, ast: Ast) -> Vec<Diagnostic> {
+        let nodes = Node::decode(&ast);
         let origin = Position {
             offset: 0,
             line: 1,
@@ -118,14 +120,14 @@ impl Guest for Probe {
             sequence: 0,
         };
         events.push(&format!("start-file {}", file.module), empty);
-        let mut open: Vec<&Node> = Vec::new();
+        let mut open: Vec<&Node<'_>> = Vec::new();
         for node in &nodes {
             while open.last().is_some_and(|top| top.last < node.id) {
                 if let Some(done) = open.pop() {
                     events.push(&format!("leave {}", kind(done.kind)), done.range);
                 }
             }
-            let name = node.name.as_deref().unwrap_or("");
+            let name = node.name.unwrap_or("");
             events.push(
                 format!("visit {} {name}", kind(node.kind)).trim_end(),
                 node.range,
@@ -139,7 +141,7 @@ impl Guest for Probe {
 
         let mut diagnostics = events.diagnostics;
         for node in &nodes {
-            let name = node.name.clone().unwrap_or_default();
+            let name = node.name.unwrap_or_default().to_owned();
             match node.kind {
                 NodeKind::Name if node.context == ExprContext::Load => {
                     let target = semantic::resolve(node.id)

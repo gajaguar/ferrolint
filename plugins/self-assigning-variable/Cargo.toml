@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-plugin-self-assigning-variable"
+version.workspace = true
+edition.workspace = true
+description = "ferrolint plugin: a port of Pylint's self-assigning-variable (W0127)"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.2.0" }
+
+[lints]
+workspace = true

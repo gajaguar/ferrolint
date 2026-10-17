@@ -7,7 +7,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::checker::{
-    Diagnostic, File, Guest, Node, PluginInfo,
+    Ast, Diagnostic, File, Guest, PluginInfo,
 };
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::types::{Position, Range, Rule, Severity};
 
@@ -38,7 +38,7 @@ impl Guest for Sandbox {
         }
     }
 
-    fn check(file: File, _nodes: Vec<Node>) -> Vec<Diagnostic> {
+    fn check(file: File, _ast: Ast) -> Vec<Diagnostic> {
         if file.source.contains("SANDBOX_EXIT") {
             std::process::exit(3);
         }

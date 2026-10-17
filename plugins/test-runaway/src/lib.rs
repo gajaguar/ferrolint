@@ -5,7 +5,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::checker::{
-    Diagnostic, File, Guest, Node, PluginInfo,
+    Ast, Diagnostic, File, Guest, PluginInfo,
 };
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::types::{Position, Range, Rule, Severity};
 
@@ -27,11 +27,11 @@ impl Guest for Runaway {
         }
     }
 
-    fn check(file: File, nodes: Vec<Node>) -> Vec<Diagnostic> {
+    fn check(file: File, ast: Ast) -> Vec<Diagnostic> {
         if file.source.contains("RUNAWAY") {
             let mut spins: u64 = 0;
             loop {
-                spins = std::hint::black_box(spins.wrapping_add(nodes.len() as u64));
+                spins = std::hint::black_box(spins.wrapping_add(ast.nodes.len() as u64));
             }
         }
         let origin = Position {

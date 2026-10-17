@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-plugin-pointless-statement"
+version.workspace = true
+edition.workspace = true
+description = "ferrolint plugin: a port of Pylint's pointless-statement (W0104)"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.2.0" }
+
+[lints]
+workspace = true
