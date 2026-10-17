@@ -124,7 +124,7 @@ fn not_callable_reports_resolved_builtin_instances() {
 
 #[test]
 fn not_callable_stays_silent_when_the_type_is_unresolved() {
-    let source = "import random\nfrom os import sep\n\nclass C:\n    pass\n\ndef make() -> C:\n    return C()\n\nfn = random.choice([len, 1])\nfn()\nsep()\nC()\nmake()\nlen('a')\nint('1')\na, b = 1, 2\na()\ntry:\n    from _speedups import fast\nexcept ImportError:\n    fast = None\nfast()\ncallback: Callable[[], None] | None = None\ncallback()\nflag = 1 == 2\nflag()\n";
+    let source = "import random\nfrom os import sep\n\nclass C:\n    pass\n\ndef make() -> C:\n    return C()\n\nfn = random.choice([len, 1])\nfn()\nsep()\nC()\nmake()\nlen('a')\nint('1')\na, b = 1, 2\na()\ntry:\n    from _speedups import fast\nexcept ImportError:\n    fast = None\nfast()\ncallback: Callable[[], None] | None = None\ncallback()\nflag = 1 == 2\nflag()\n\ndef g(validate_host: bool):\n    validate_host(1)\ng(True)\n";
     assert_eq!(
         findings("ferrolint-plugin-not-callable", source),
         Vec::<String>::new()

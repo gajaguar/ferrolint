@@ -43,8 +43,8 @@ answers resolved only when the type holds on every path:
 * Names bound once in their scope, through the scope model's `resolve`:
   a builtin class is `type[int]`, another builtin a
   `builtin_function_or_method`, an `import` a `module`, a class
-  `type[C]`, a function `function`, an annotated parameter or annotated
-  assignment its annotation, and a single-target assignment its value.
+  `type[C]`, a function `function`, an annotated assignment its annotation,
+  and a single-target assignment its value.
 * Calls: calling `type[C]` gives `C`, and calling an undecorated,
   synchronous function with a plain return annotation gives that
   annotation.
@@ -58,7 +58,7 @@ Anything else is unresolved:
   is a literal (`x: Callable | None = None` is not `NoneType`);
 * a call of an `async` or decorated function;
 * attributes, subscripts, tuple unpacking, `from` imports and
-  unannotated parameters.
+  parameters.
 
 One query infers each expression once, so a cycle (`x = x + x`) ends
 unresolved and shared operands cost no extra work. The engine works on

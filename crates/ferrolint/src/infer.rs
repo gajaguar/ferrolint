@@ -223,10 +223,6 @@ impl Engine<'_> {
                 Some(node) => known("function", Origin::FunctionDef(node)),
                 None => unknown(),
             },
-            BindingKind::Parameter => binding
-                .node
-                .and_then(|node| self.children(node).first().copied())
-                .map_or_else(unknown, |annotation| self.annotation(annotation)),
             BindingKind::Assignment | BindingKind::Annotation | BindingKind::NamedExpr => binding
                 .node
                 .map_or_else(unknown, |target| self.assigned(target, depth)),
@@ -428,7 +424,7 @@ mod tests {
             infer_name(source, "Widget", 4),
             ("type[Widget]".into(), true)
         );
-        assert_eq!(infer_name(source, "x", 0), ("str".into(), true));
+        assert_eq!(infer_name(source, "x", 0), ("unknown".into(), false));
         assert_eq!(infer_name(source, "y", 0), ("unknown".into(), false));
     }
 

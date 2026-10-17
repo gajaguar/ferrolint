@@ -4,8 +4,8 @@
 //!
 //! The plugin asks the `inference` interface of contract 0.2.1 and
 //! reports nothing when the answer is unresolved, so a callee it cannot
-//! follow (a parameter without an annotation, an attribute, a value from
-//! another module) never yields a finding. Unlike Pylint it does not look
+//! follow (a parameter, an attribute, a value from another module) never
+//! yields a finding. Unlike Pylint it does not look
 //! at user classes, so an instance of a class without `__call__` passes.
 
 use ferrolint_plugin_sdk::prelude::*;
