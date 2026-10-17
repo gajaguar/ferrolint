@@ -47,24 +47,34 @@ struct Receipt {
 
 pub struct Cache {
     root: PathBuf,
+    /// This build of the linter: its version, plus the size and time of
+    /// its executable, so a rebuild at the same version starts afresh.
+    build: String,
 }
 
 impl Cache {
     pub fn new(cwd: &Path) -> Self {
+        let executable = std::env::current_exe()
+            .and_then(fs::metadata)
+            .map(|meta| {
+                let modified = meta
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |since| since.as_nanos());
+                format!("{}:{modified}", meta.len())
+            })
+            .unwrap_or_default();
         Self {
             root: cwd.join(".ferrolint-cache").join(LAYOUT),
+            build: format!("{}:{executable}", env!("CARGO_PKG_VERSION")),
         }
     }
 
-    /// The key of a file's entry: its bytes and the configuration that
-    /// decides its results, under this build of the linter.
-    pub fn key(file_hash: &str, configuration: &str) -> String {
-        let mut hasher = Sha256::new();
-        for part in [env!("CARGO_PKG_VERSION"), file_hash, configuration] {
-            hasher.update(part.len().to_le_bytes());
-            hasher.update(part.as_bytes());
-        }
-        hex(&hasher.finalize())
+    /// The key of a file's entry: every input of its results (its bytes,
+    /// path, module name and effective rules), under this build.
+    pub fn key(&self, parts: &[&str]) -> String {
+        digest(std::iter::once(self.build.as_str()).chain(parts.iter().copied()))
     }
 
     pub fn entry(&self, key: &str) -> Option<Entry> {
@@ -76,11 +86,11 @@ impl Cache {
     }
 
     pub fn plugin(&self, sha256: &str) -> Option<PluginMeta> {
-        Self::read(&self.path("plugins", sha256))
+        Self::read(&self.path("plugins", &self.key(&[sha256])))
     }
 
     pub fn store_plugin(&self, sha256: &str, meta: &PluginMeta) {
-        Self::write(&self.path("plugins", sha256), meta);
+        Self::write(&self.path("plugins", &self.key(&[sha256])), meta);
     }
 
     fn path(&self, kind: &str, key: &str) -> PathBuf {
@@ -124,6 +134,16 @@ impl Cache {
     }
 }
 
+/// A SHA-256 over length-prefixed parts, so no two lists of parts collide.
+fn digest<'a>(parts: impl Iterator<Item = &'a str>) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.len().to_le_bytes());
+        hasher.update(part.as_bytes());
+    }
+    hex(&hasher.finalize())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,7 +152,7 @@ mod tests {
     fn entries_round_trip_and_a_tampered_one_reads_as_absent() {
         let dir = tempfile::tempdir().unwrap();
         let cache = Cache::new(dir.path());
-        let key = Cache::key("abc", "FL002");
+        let key = cache.key(&["abc", "FL002"]);
         let mut entry = Entry::default();
         entry.suppressions.insert(3, vec!["W0611".into()]);
         cache.store_entry(&key, &entry);
@@ -146,9 +166,11 @@ mod tests {
 
     #[test]
     fn keys_change_with_each_part() {
-        let base = Cache::key("abc", "FL002");
-        assert_ne!(base, Cache::key("abd", "FL002"));
-        assert_ne!(base, Cache::key("abc", "FL003"));
-        assert_ne!(Cache::key("ab", "cFL002"), Cache::key("abc", "FL002"));
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::new(dir.path());
+        let base = cache.key(&["abc", "FL002"]);
+        assert_ne!(base, cache.key(&["abd", "FL002"]));
+        assert_ne!(base, cache.key(&["abc", "FL003"]));
+        assert_ne!(cache.key(&["ab", "cFL002"]), base);
     }
 }

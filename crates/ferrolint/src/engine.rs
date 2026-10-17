@@ -85,10 +85,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let excludes = Excludes::new(&config)?;
     let mut files = discover::discover(cwd, &options.paths, &excludes)?;
     if let Some(changed) = &changed {
-        files.retain(|file| {
-            let file = fs::canonicalize(file).unwrap_or_else(|_| file.clone());
-            changed.contains(&file)
-        });
+        files.retain(|file| changed.contains(file) || changed.contains(&resolved_parent(file)));
     }
 
     let pool = rayon::ThreadPoolBuilder::new()
@@ -100,7 +97,6 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         registry: &registry,
         host: &host,
         cache: cache.as_ref(),
-        owners: owners_key(&config),
         counters: Counters::default(),
     };
     let displays: Vec<String> = files
@@ -165,15 +161,13 @@ fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
         .collect()
 }
 
-/// The `pylint-aliases` table as one string, part of every cache key: it
-/// decides which rule a suppression's alias silences.
-fn owners_key(config: &Config) -> String {
-    config
-        .pylint_aliases
-        .iter()
-        .map(|(alias, code)| format!("{alias}={code}"))
-        .collect::<Vec<_>>()
-        .join(",")
+/// The path with its directory's symlinks resolved and its own name kept,
+/// as git lists a file under the repository's real root.
+fn resolved_parent(file: &Path) -> PathBuf {
+    match (file.parent().map(fs::canonicalize), file.file_name()) {
+        (Some(Ok(parent)), Some(name)) => parent.join(name),
+        _ => file.to_path_buf(),
+    }
 }
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -196,7 +190,6 @@ struct Linter<'a> {
     registry: &'a Registry,
     host: &'a Host,
     cache: Option<&'a Cache>,
-    owners: String,
     counters: Counters,
 }
 
@@ -213,13 +206,10 @@ impl Linter<'_> {
             .filter(|(_, plugin)| plugin.rules.iter().any(|rule| enabled.contains(&rule.code)))
             .map(|(position, _)| position)
             .collect();
-        let key = self.cache.map(|_| {
-            let configuration = format!(
-                "{}|{}",
-                enabled.iter().cloned().collect::<Vec<_>>().join(","),
-                self.owners
-            );
-            Cache::key(&hex(&Sha256::digest(&bytes)), &configuration)
+        let module = module_name(path);
+        let key = self.cache.map(|cache| {
+            let rules = enabled.iter().cloned().collect::<Vec<_>>().join(",");
+            cache.key(&[&hex(&Sha256::digest(&bytes)), display, &module, &rules])
         });
         let stored = self
             .cache
@@ -240,7 +230,7 @@ impl Linter<'_> {
             }
             stored => {
                 self.counters.parsed.fetch_add(1, Ordering::Relaxed);
-                let (entry, aborts) = self.check(path, display, bytes, &wanted, stored);
+                let (entry, aborts) = self.check(display, &module, bytes, &wanted, stored)?;
                 if let (Some(cache), Some(key)) = (self.cache, key.as_deref()) {
                     cache.store_entry(key, &entry);
                 }
@@ -263,18 +253,25 @@ impl Linter<'_> {
     /// aborted plugin's output is not stored, so the next run retries it.
     fn check(
         &self,
-        path: &Path,
         display: &str,
+        module: &str,
         bytes: Vec<u8>,
         wanted: &[usize],
         stored: Option<Entry>,
-    ) -> (Entry, Vec<Diagnostic>) {
+    ) -> Result<(Entry, Vec<Diagnostic>)> {
         let mut entry = stored.unwrap_or_default();
+        // Keep only the outputs of the plugins this run loads.
+        entry.plugins.retain(|sha256, _| {
+            self.host
+                .plugins
+                .iter()
+                .any(|plugin| plugin.sha256 == *sha256)
+        });
         let Ok(source) = String::from_utf8(bytes) else {
             entry.host = vec![checks::not_utf8()];
             entry.suppressions = BTreeMap::new();
             entry.unparsable = true;
-            return (entry, Vec::new());
+            return Ok((entry, Vec::new()));
         };
         let parsed = ruff_python_parser::parse_unchecked_source(&source, PySourceType::Python);
         let index = LineIndex::new(&source);
@@ -293,13 +290,13 @@ impl Linter<'_> {
         let mut aborts = Vec::new();
         if parsed.has_no_syntax_errors() && !missing.is_empty() {
             let context = PluginContext {
-                path,
+                module,
                 display,
                 source: &source,
                 index: &index,
                 parsed: &parsed,
             };
-            for (position, outcome) in self.run_plugins(&context, &missing) {
+            for (position, outcome) in self.run_plugins(&context, &missing)? {
                 let plugin = &self.host.plugins[position];
                 match outcome {
                     Ok(diagnostics) => {
@@ -309,7 +306,7 @@ impl Linter<'_> {
                 }
             }
         }
-        (entry, aborts)
+        Ok((entry, aborts))
     }
 
     /// Run the plugins at `positions`, in configuration order, on one file:
@@ -318,7 +315,7 @@ impl Linter<'_> {
         &self,
         context: &PluginContext<'_>,
         positions: &[usize],
-    ) -> Vec<(usize, std::result::Result<Vec<Diagnostic>, Diagnostic>)> {
+    ) -> Result<Vec<(usize, PluginOutcome)>> {
         let nodes = ast::flatten(context.source, context.index, context.parsed.syntax());
         let model = Model::build(
             context.parsed.syntax(),
@@ -329,7 +326,7 @@ impl Linter<'_> {
         let data = Arc::new(FileData { nodes, model });
         let file = wit::File {
             path: context.display.to_owned(),
-            module: module_name(context.path),
+            module: context.module.to_owned(),
             source: context.source.to_owned(),
         };
         positions
@@ -343,8 +340,9 @@ impl Linter<'_> {
                             .map_err(|reason| aborted(plugin, &reason))
                     }
                     Outcome::Aborted(reason) => Err(aborted(plugin, &reason)),
+                    Outcome::Broken(reason) => return Err(Error::plugin(reason)),
                 };
-                (position, outcome)
+                Ok((position, outcome))
             })
             .collect()
     }
@@ -371,9 +369,12 @@ impl Linter<'_> {
     }
 }
 
+/// A plugin's diagnostics on a file, or the `FL001` abort it ended in.
+type PluginOutcome = std::result::Result<Vec<Diagnostic>, Diagnostic>;
+
 /// What a plugin run needs of the file.
 struct PluginContext<'a> {
-    path: &'a Path,
+    module: &'a str,
     display: &'a str,
     source: &'a str,
     index: &'a LineIndex,

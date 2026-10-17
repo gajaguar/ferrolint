@@ -138,7 +138,6 @@ impl wit::ferrolint::plugin::semantic::Host for State {
     }
 }
 
-/// A plugin compiled and checked against the contract.
 /// A plugin file read and checked against its pinned SHA-256.
 pub struct PluginSource {
     pub path: PathBuf,
@@ -161,6 +160,9 @@ pub enum Outcome {
     Diagnostics(Vec<Diagnostic>),
     /// The plugin trapped or hit a cap; the reason says which.
     Aborted(String),
+    /// The plugin, loaded from cached metadata, failed to compile or link:
+    /// a load error found late, which stops the run.
+    Broken(String),
 }
 
 /// One instance of a plugin, for one call.
@@ -271,7 +273,7 @@ impl Host {
         let loaded = &self.plugins[plugin];
         let pre = match self.pre(loaded) {
             Ok(pre) => pre,
-            Err(reason) => return Outcome::Aborted(reason),
+            Err(reason) => return Outcome::Broken(reason),
         };
         self.ticker
             .get_or_init(|| Ticker::start(self.engine.clone()));
