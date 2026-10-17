@@ -11,7 +11,7 @@
 //! body, imports under `if TYPE_CHECKING:`, and every import of an
 //! `__init__.py`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -22,6 +22,9 @@ struct UnusedImport {
     imports: Vec<Import>,
     /// (scope, name) pairs some read reached.
     used: HashSet<(u32, String)>,
+    /// The bindings visible in each scope, fetched once per scope for the
+    /// string annotations in it.
+    visible: HashMap<u32, Vec<Binding>>,
 }
 
 /// An import alias that binds a name.
@@ -50,14 +53,18 @@ impl Checker for UnusedImport {
                 }
             }
             NodeKind::StringLiteral if in_annotation(node, cx) => {
-                let visible = cx.visible_bindings(node);
+                let scope = cx.scope(node).id;
+                let visible = self
+                    .visible
+                    .entry(scope)
+                    .or_insert_with(|| cx.visible_bindings(node));
                 for name in annotation_names(cx.text(node)) {
                     if let Some(binding) = visible.iter().find(|binding| binding.name == name) {
                         self.used.insert((binding.scope, name));
                     }
                 }
             }
-            NodeKind::Assign if node.parent == Some(0) => {
+            NodeKind::Assign if cx.scope(node).kind == ScopeKind::Module => {
                 for name in dunder_all(node, cx) {
                     self.used.insert((0, name));
                 }
@@ -167,7 +174,9 @@ fn annotation_names(text: &str) -> Vec<String> {
                 index += 1;
             }
             let after_dot = start > 0 && bytes[start - 1] == b'.';
-            let prefix = matches!(bytes.get(index), Some(b'"' | b'\''));
+            let prefix = string_prefix(&text[start..index])
+                && (start == 0 || bytes[start - 1].is_ascii_whitespace())
+                && matches!(bytes.get(index), Some(b'"' | b'\''));
             if !after_dot && !prefix {
                 names.push(text[start..index].to_owned());
             }
@@ -176,6 +185,11 @@ fn annotation_names(text: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// Whether a word is a string literal prefix such as `r` or `rb`.
+fn string_prefix(word: &str) -> bool {
+    word.len() <= 2 && word.chars().all(|c| "rRbBuUfFtT".contains(c))
 }
 
 /// The names a module-level `__all__ = [...]` (or tuple) lists.
@@ -199,13 +213,18 @@ fn dunder_all(assign: &Node, cx: &Context<'_>) -> Vec<String> {
         .collect()
 }
 
-/// Whether the import sits in the body of an `if TYPE_CHECKING:` block.
+/// Whether the import sits in the body of an `if TYPE_CHECKING:` or
+/// `elif TYPE_CHECKING:` block.
 fn type_checking_only(statement: &Node, cx: &Context<'_>) -> bool {
     let mut child = statement;
     for parent in cx.ancestors(statement) {
-        if parent.kind == NodeKind::If && Context::is_statement(child) {
+        if matches!(parent.kind, NodeKind::If | NodeKind::ElifElseClause)
+            && Context::is_statement(child)
+        {
             let guard = cx.children(parent).next();
-            if guard.is_some_and(|test| test.name.as_deref() == Some("TYPE_CHECKING")) {
+            if guard.is_some_and(|test| {
+                test.id != child.id && test.name.as_deref() == Some("TYPE_CHECKING")
+            }) {
                 return true;
             }
         }
@@ -245,35 +264,62 @@ fn removal(statement: &Node, alias: &Node, cx: &Context<'_>) -> Fix {
     Fix::delete(whole_lines(statement, cx.source()), description)
 }
 
+/// A range over two byte offsets; the host recomputes lines and columns
+/// from the offsets, so only those need to be right.
+fn offsets(range: Range, start: usize, end: usize) -> Range {
+    let at = |position: Position, offset: usize| Position {
+        offset: u32::try_from(offset).unwrap_or(position.offset),
+        ..position
+    };
+    Range {
+        start: at(range.start, start),
+        end: at(range.end, end),
+    }
+}
+
 fn span(start: Position, end: Position) -> Range {
     Range { start, end }
 }
 
-/// Whether deleting the statement would leave its block empty.
+/// Whether deleting the statement would leave its block empty. Siblings
+/// belong to the same block unless an `else`, `elif`, `except` or `finally`
+/// line separates them (the bodies of `for`, `while` and `try` share a
+/// parent node).
 fn only_statement(statement: &Node, cx: &Context<'_>) -> bool {
     let Some(parent) = cx.parent(statement) else {
         return false;
     };
-    let single_body = matches!(
-        parent.kind,
-        NodeKind::Module
-            | NodeKind::FunctionDef
-            | NodeKind::ClassDef
-            | NodeKind::If
-            | NodeKind::ElifElseClause
-            | NodeKind::With
-            | NodeKind::ExceptHandler
-            | NodeKind::MatchCase
-    );
-    if !single_body {
-        return true;
+    if parent.kind == NodeKind::Module {
+        return false;
     }
-    parent.kind != NodeKind::Module
-        && cx
-            .children(parent)
-            .filter(|child| Context::is_statement(child))
-            .count()
-            == 1
+    let siblings: Vec<&Node> = cx
+        .children(parent)
+        .filter(|child| Context::is_statement(child))
+        .collect();
+    let Some(position) = siblings
+        .iter()
+        .position(|sibling| sibling.id == statement.id)
+    else {
+        return true;
+    };
+    let same_block = |a: &Node, b: &Node| {
+        let gap = cx
+            .source()
+            .get(a.range.end.offset as usize..b.range.start.offset as usize)
+            .unwrap_or("");
+        !gap.lines().any(|line| {
+            let line = line.trim_start();
+            ["else", "elif", "except", "finally"].iter().any(|keyword| {
+                line.strip_prefix(keyword)
+                    .is_some_and(|rest| rest.starts_with([':', ' ', '(', '*']))
+            })
+        })
+    };
+    let before = position > 0 && same_block(siblings[position - 1], statement);
+    let after = siblings
+        .get(position + 1)
+        .is_some_and(|next| same_block(statement, next));
+    !before && !after
 }
 
 /// The statement's range grown to whole lines when nothing else shares
@@ -286,21 +332,21 @@ fn whole_lines(statement: &Node, source: &str) -> Range {
     let line_end = rest
         .find('\n')
         .map_or(source.len(), |newline| end + newline + 1);
-    let before_blank = source[line_start..start].trim().is_empty();
+    let before = source[line_start..start].trim_end();
     let after = source[end..line_end].trim();
-    if !before_blank || !(after.is_empty() || after.starts_with('#')) {
+    if let Some(rest) = source[end..line_end].trim_start().strip_prefix(';') {
+        // `import os; x = 1`: take the semicolon and the space after it.
+        let gap = source[end..line_end].len() - rest.len() + (rest.len() - rest.trim_start().len());
+        return offsets(range, start, end + gap);
+    }
+    if before.ends_with(';') {
+        // `x = 1; import os`: take the semicolon before it.
+        return offsets(range, line_start + before.len() - 1, end);
+    }
+    if !before.trim().is_empty() || !(after.is_empty() || after.starts_with('#')) {
         return range;
     }
-    let shift = |position: Position, offset: usize, line: u32| Position {
-        offset: u32::try_from(offset).unwrap_or(position.offset),
-        line,
-        column: 1,
-    };
-    let lines_after = u32::from(line_end > end && source.as_bytes()[line_end - 1] == b'\n');
-    Range {
-        start: shift(range.start, line_start, range.start.line),
-        end: shift(range.end, line_end, range.end.line + lines_after),
-    }
+    offsets(range, line_start, line_end)
 }
 
 export_checker!(UnusedImport);

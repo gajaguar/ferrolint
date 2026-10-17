@@ -46,7 +46,8 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 	@for file in $$(find $(SAMPLE_FIXTURES) -name '*.py' | sort); do \
 		{ $(PYLINT) --disable=all --enable=unused-import,unused-variable --score=n --persistent=n \
 			--msg-template '{line}:{column}:{msg_id}:{symbol}:{msg}' "$$file" || test $$? -lt 32; } \
-			| { grep ':W0611:' || true; } | sort -t: -k1,1n -k2,2n > "$${file%.py}.txt"; \
+			| { grep ':W0611:' || true; } | sort -t: -k1,1n -k2,2n > "$${file%.py}.txt.new"; \
+		mv "$${file%.py}.txt.new" "$${file%.py}.txt"; \
 	done
 
 release-tag: ## Tag the base branch as v<package.version> and push the tag (minor and major bumps)

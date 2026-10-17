@@ -88,7 +88,6 @@ pub trait Checker: Default {
 /// diagnostics it reported.
 /// A diagnostic without a severity gets its rule's.
 pub fn run<C: Checker>(file: &File, nodes: &[Node], semantic: &dyn Semantic) -> Vec<Diagnostic> {
-    let rules = C::info().rules;
     let mut checker = C::default();
     let mut cx = Context::new(file, nodes, semantic);
     checker.start_file(&mut cx);
@@ -105,12 +104,18 @@ pub fn run<C: Checker>(file: &File, nodes: &[Node], semantic: &dyn Semantic) -> 
     }
     checker.end_file(&mut cx);
     let mut diagnostics = cx.into_diagnostics();
-    for diagnostic in &mut diagnostics {
-        if diagnostic.severity.is_none() {
-            diagnostic.severity = rules
-                .iter()
-                .find(|rule| rule.code == diagnostic.code)
-                .map(|rule| rule.severity);
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity.is_none())
+    {
+        let rules = C::info().rules;
+        for diagnostic in &mut diagnostics {
+            if diagnostic.severity.is_none() {
+                diagnostic.severity = rules
+                    .iter()
+                    .find(|rule| rule.code == diagnostic.code)
+                    .map(|rule| rule.severity);
+            }
         }
     }
     diagnostics
@@ -157,7 +162,7 @@ macro_rules! export_checker {
                 }
             }
 
-            $crate::bindings::export!(Export with_types_in $crate::bindings);
+    $crate::bindings::export!(Export with_types_in $crate::bindings);
         };
 
         #[cfg(not(target_arch = "wasm32"))]

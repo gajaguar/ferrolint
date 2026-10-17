@@ -73,6 +73,20 @@ fn plugin_dir() -> &'static Path {
     })
 }
 
+/// Every file under `dir`, recursively.
+pub fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
 /// The repository's root directory.
 pub fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -152,14 +166,13 @@ impl Project {
 
     /// Copy a directory of the repository into the project, recursively.
     pub fn copy_dir(&self, from: &Path, to: &str) -> &Self {
-        for entry in fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = format!("{to}/{}", entry.file_name().to_string_lossy());
-            if entry.file_type().unwrap().is_dir() {
-                self.copy_dir(&entry.path(), &target);
-            } else {
-                self.write(&target, fs::read(entry.path()).unwrap());
-            }
+        for file in walk(from) {
+            let relative = file
+                .strip_prefix(from)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            self.write(&format!("{to}/{relative}"), fs::read(&file).unwrap());
         }
         self
     }

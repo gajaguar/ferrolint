@@ -18,20 +18,6 @@ fn json_diagnostics(stdout: &str) -> Vec<Value> {
     report["diagnostics"].as_array().unwrap().clone()
 }
 
-/// Every file under `dir`, recursively.
-fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            files.extend(walk(&path));
-        } else {
-            files.push(path);
-        }
-    }
-    files
-}
-
 /// A probe project: the probe plugin, with `select` limited to `codes`.
 fn probe_project(codes: &[&str]) -> Project {
     let project = Project::new();
@@ -321,13 +307,10 @@ fn ac_10_sample_plugin_matches_pylint_checker() {
         .copy_dir(&fixtures, "fixtures");
 
     let mut expected = Vec::new();
-    for entry in walk(&project.join("fixtures")) {
+    for entry in support::walk(&fixtures) {
         if entry.extension().is_some_and(|ext| ext == "txt") {
-            let relative = entry
-                .strip_prefix(project.path())
-                .unwrap()
-                .with_extension("py");
-            let path = relative.to_string_lossy().replace('\\', "/");
+            let relative = entry.strip_prefix(&fixtures).unwrap().with_extension("py");
+            let path = format!("fixtures/{}", relative.to_string_lossy().replace('\\', "/"));
             for line in std::fs::read_to_string(&entry).unwrap().lines() {
                 let fields: Vec<&str> = line.splitn(5, ':').collect();
                 let column: u64 = fields[1].parse().unwrap();
