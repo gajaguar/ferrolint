@@ -5,7 +5,8 @@
 # other has not. PYLINT_OUT, when it names an existing file, is reused
 # instead of running Pylint, which takes ~106 s on a codebase; a missing one is
 # written, so the slow run happens once. IGNORE is a comma-separated list
-# of ferrolint rule codes the configuration ignores. PYLINT is the Pylint
+# of ferrolint rule codes the configuration ignores. PY_VERSION, when set, is
+# the configuration's py-version, like "3.14". PYLINT is the Pylint
 # command (default: pylint), run on CODE with its own .pylintrc.
 set -eu
 
@@ -34,13 +35,16 @@ done
 # `ignore` belongs at the root of the configuration, before the first
 # `[[plugins]]` table, where TOML would otherwise nest it inside the table.
 config="$work/ferrolint.toml"
+: >"$config"
+[ -z "${PY_VERSION:-}" ] || printf 'py-version = "%s"\n' "$PY_VERSION" >>"$config"
 if [ -n "${IGNORE:-}" ]; then
 	list=""
 	for code in $(printf '%s\n' "$IGNORE" | tr ',' ' '); do
 		list="$list\"$code\", "
 	done
-	printf 'ignore = [%s]\n\n' "${list%, }" >"$config"
+	printf 'ignore = [%s]\n' "${list%, }" >>"$config"
 fi
+printf '\n' >>"$config"
 for wasm in "$root"/target/wasm32-wasip2/release/ferrolint_plugin_*.wasm; do
 	[ -f "$wasm" ] || fail "no plugins under $root/target/wasm32-wasip2/release; run: make plugins"
 	case "$(basename "$wasm")" in
