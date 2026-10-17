@@ -23,9 +23,12 @@ with the author choosing which of three spellings to use.
   comment for an unknown code is inert, not an error.
 * A bare (payload-less) `# noqa` is linted as a diagnostic of its own by
   the suppression checker itself; no plugin is run under it.
-* Spread over lines: these suppressions never span function or module
-  blocks - the line is always the unit. Add the comment to every relevant
-  line to silence a multiline diagnostic's report entirely.
+* Spread over lines: `ferrolint:` and `noqa:` stay on one line. A
+  `pylint: disable=` spans a block as Pylint does: its own line covers to
+  the end of the enclosing compound statement or module, and a trailing
+  one on a def or class line covers the whole definition. A
+  `pylint: disable-next=` covers the next line. A diagnostic is silenced
+  when its first or last line is covered.
 
 Running with a suppressions-matching file twice yields identical output:
 the removed diagnostics are deducted before format-specific ordering, so

@@ -50,6 +50,4 @@ It compares the line, not the column or the message.
 
 A project may disable `redefined-builtin` in its `.pylintrc`, and the temporary
 configuration does not read that file yet, so run it with `IGNORE=NAM002`.
-With `PY_VERSION=3.14` the remaining differences are the `unused-import`
-findings that Pylint silences with a `# pylint: disable` comment on its own
-line, which ferrolint does not apply yet.
+With `PY_VERSION=3.14` the run reports no differences: both sides agree.
