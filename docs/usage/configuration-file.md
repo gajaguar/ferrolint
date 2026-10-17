@@ -24,6 +24,9 @@ sha256 = "<the file's lowercase hex SHA-256>"
 
 [per-file-ignores]
 "tests/*.py" = ["W0611"]
+
+[pylint-aliases]                     # who owns an alias two rules declare
+W0611 = "IMP001"
 ```
 
 * Relative paths and patterns resolve against the directory holding the
@@ -36,3 +39,6 @@ sha256 = "<the file's lowercase hex SHA-256>"
 * `select`, `ignore` and `per-file-ignores` accept a rule's code, its
   Pylint msg-id or its Pylint symbol. A spelling no rule answers to is an
   error, so a typo fails the run instead of disabling a check.
+* When two plugins declare the same Pylint msg-id or symbol, the run stops
+  until `pylint-aliases` names the rule that owns it; the other rule keeps
+  its code and its remaining aliases.

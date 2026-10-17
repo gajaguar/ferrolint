@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Suppression comments**: Added `usage/suppression-comments.md` - the
+  three comment forms, the line rule and the inert Pylint directives.
+
 * **Writing a plugin**: Added `usage/writing-a-plugin.md` - the SDK, the
   sample plugin and its Pylint parity fixtures.
 
