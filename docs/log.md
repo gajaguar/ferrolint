@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Report formats**: Added `usage/report-formats.md` - the four formats
+  and their shared order.
+
 * **Suppression comments**: Added `usage/suppression-comments.md` - the
   three comment forms, the line rule and the inert Pylint directives.
 

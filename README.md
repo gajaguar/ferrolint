@@ -50,7 +50,7 @@ The requirements and the design decisions live in the `docs/` OKF bundle:
 ferrolint [PATHS]...            # default: the current directory
 ferrolint --config ci.toml src  # an explicit configuration file
 ferrolint --threads 4           # 0, the default, uses every core
-ferrolint --format json         # text (default) or json
+ferrolint --format sarif        # text (default), json, sarif or junit
 ```
 
 Configuration lives in `ferrolint.toml` or the `[tool.ferrolint]` table of
