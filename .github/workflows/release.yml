@@ -1,0 +1,32 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: make release-build TARGET=${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: file target/${{ matrix.target }}/release/ferrolint | grep -E 'statically linked|static-pie linked'
+      - run: make smoke BIN=target/${{ matrix.target }}/release/ferrolint
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ferrolint-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/ferrolint
+          if-no-files-found: error

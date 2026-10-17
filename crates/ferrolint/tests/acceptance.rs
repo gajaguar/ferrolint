@@ -129,6 +129,57 @@ fn stats(run: &support::Run) -> std::collections::BTreeMap<String, usize> {
         .collect()
 }
 
+/// The fractional figures of a run's `--stats` line, by name:
+/// first-parse-ms and parallelism.
+fn stats_f64(run: &support::Run) -> std::collections::BTreeMap<String, f64> {
+    let line = run
+        .stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("ferrolint: stats: "))
+        .unwrap_or_else(|| panic!("no stats line: {run:?}"));
+    line.split(' ')
+        .filter_map(|pair| {
+            let (name, value) = pair.split_once('=').unwrap();
+            Some((name.to_owned(), value.parse().ok()?))
+        })
+        .collect()
+}
+
+/// How many lines the benchmark corpus holds: one million unless
+/// `FERROLINT_BENCH_LINES` says otherwise.
+fn bench_lines() -> usize {
+    std::env::var("FERROLINT_BENCH_LINES")
+        .ok()
+        .and_then(|lines| lines.parse().ok())
+        .unwrap_or(1_000_000)
+}
+
+/// A project holding the benchmark corpus and the ten ported checkers.
+fn bench_project() -> (Project, usize) {
+    let project = Project::new();
+    let plugins = project.ported_plugins();
+    project.write("ferrolint.toml", plugins);
+    let lines = support::write_corpus(&project, "corpus", bench_lines());
+    (project, lines)
+}
+
+/// Run and time the linter.
+fn timed_run(project: &Project, args: &[&str]) -> (support::Run, f64) {
+    let began = std::time::Instant::now();
+    let run = project.run(args);
+    (run, began.elapsed().as_secs_f64())
+}
+
+/// A repository file, read as text.
+fn repository_file(relative: &str) -> String {
+    std::fs::read_to_string(support::workspace().join(relative)).unwrap()
+}
+
+/// A repository TOML file, parsed.
+fn repository_toml(relative: &str) -> toml::Table {
+    toml::from_str(&repository_file(relative)).unwrap()
+}
+
 /// A probe project: the probe plugin, with `select` limited to `codes`.
 fn probe_project(codes: &[&str]) -> Project {
     let project = Project::new();
@@ -879,30 +930,97 @@ fn ac_25_key_part_change_invalidates() {
 // Performance (AC-26..AC-28, NFR-01, NFR-02, NFR-05)
 
 #[test]
-#[ignore = "AC-26: full-run budgets on a million lines"]
+#[ignore = "benchmark: run with make bench (minutes, and Pylint through uvx)"]
 fn ac_26_full_run_budgets_million_lines() {
-    // Given a one-million-line corpus with ten plugins run cold against Pylint,
-    // when both finish,
-    // then ferrolint is under a tenth of Pylint and ten seconds, and a warm run is five times faster again.
-    unimplemented!("AC-26");
+    let (project, lines) = bench_project();
+    let (cold, cold_secs) = timed_run(&project, &["corpus", "--no-cache", "--stats"]);
+    assert_eq!(cold.code, 1, "{}", cold.stderr);
+    project.run(&["corpus"]);
+    let (warm, warm_secs) = timed_run(&project, &["corpus", "--stats"]);
+    assert_eq!(warm.stdout, cold.stdout);
+
+    // Pylint runs the same ten checks over the same corpus on every core.
+    let symbols: Vec<&str> = support::PORTED.iter().map(|(_, symbol)| *symbol).collect();
+    let pylint = |args: &[&str]| {
+        std::process::Command::new("uvx")
+            .args(["--quiet", "pylint==4.1.3"])
+            .args(args)
+            .current_dir(project.path())
+            .output()
+            .unwrap()
+    };
+    pylint(&["--version"]);
+    let began = std::time::Instant::now();
+    let enable = format!("--enable={}", symbols.join(","));
+    let output = pylint(&[
+        "--disable=all",
+        &enable,
+        "-j",
+        "0",
+        "--persistent=n",
+        "--score=n",
+        "corpus",
+    ]);
+    let pylint_secs = began.elapsed().as_secs_f64();
+    assert!(
+        output.status.code().is_some_and(|code| code < 32),
+        "pylint failed"
+    );
+
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    eprintln!(
+        "AC-26: {lines} lines, 10 plugins, {cores} cores: cold {cold_secs:.2}s, warm {warm_secs:.2}s, pylint {pylint_secs:.2}s"
+    );
+    assert!(cold_secs < 10.0, "cold run {cold_secs:.2}s");
+    assert!(
+        cold_secs * 10.0 <= pylint_secs,
+        "cold {cold_secs:.2}s against pylint {pylint_secs:.2}s"
+    );
+    assert!(
+        warm_secs * 5.0 <= cold_secs,
+        "warm {warm_secs:.2}s against cold {cold_secs:.2}s"
+    );
 }
 
 #[test]
-#[ignore = "AC-27: peak memory stays under the ceiling"]
+#[ignore = "benchmark: run with make bench (Linux: peak RSS from /proc)"]
 fn ac_27_peak_memory_under_ceiling() {
-    // Given the corpus and cold full run of AC-26,
-    // when the run completes,
-    // then peak resident RSS is below 2 GB as measured by the benchmark harness.
-    unimplemented!("AC-27");
+    let (project, lines) = bench_project();
+    let run = project.run(&["corpus", "--no-cache", "--stats"]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    let peak = stats(&run)["peak-rss-mb"];
+    eprintln!("AC-27: {lines} lines, 10 plugins: peak RSS {peak} MB");
+    assert!(peak < 2048, "peak RSS {peak} MB");
 }
 
 #[test]
-#[ignore = "AC-28: startup, compile-once and parallelism hold"]
 fn ac_28_startup_compile_once_parallelism() {
-    // Given a run with a configuration naming several plugins,
-    // when it proceeds through parse and walk,
-    // then first parse is under 100 ms, each plugin compiles once, and all eight cores carry work.
-    unimplemented!("AC-28");
+    let project = Project::new();
+    let plugins = project.ported_plugins();
+    project.write("ferrolint.toml", plugins);
+    support::write_corpus(&project, "corpus", 40_000);
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let run = project.run(&[
+        "corpus",
+        "--no-cache",
+        "--stats",
+        "--threads",
+        &cores.to_string(),
+    ]);
+    assert_eq!(run.code, 1, "{}", run.stderr);
+    let (whole, fraction) = (stats(&run), stats_f64(&run));
+    assert!(fraction["first-parse-ms"] < 100.0, "{run:?}");
+    assert_eq!(
+        whole["compiles"], 10,
+        "each plugin compiles once: {}",
+        run.stderr
+    );
+    assert_eq!(
+        whole["idle-workers"], 0,
+        "every core carries work: {}",
+        run.stderr
+    );
+    assert!(fraction["parallelism"] > 0.5, "{}", run.stderr);
 }
 
 // Sandbox (AC-29..AC-30, NFR-03)
@@ -1011,28 +1129,139 @@ fn ac_31_deterministic_across_schedules() {
 // Platforms (AC-32..AC-34, NFR-06, NFR-07, NFR-08)
 
 #[test]
-#[ignore = "AC-32: one static binary per target"]
 fn ac_32_static_binary_per_target() {
-    // Given the three release targets (linux x86_64, linux aarch64, macos aarch64),
-    // when a release build runs,
-    // then each static binary starts run, help and config validation with no system package or runtime.
-    unimplemented!("AC-32");
+    // The release workflow builds each target on its own runner, checks
+    // the Linux binaries are static, and smoke-tests every binary.
+    let targets = [
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "aarch64-apple-darwin",
+    ];
+    let workflow = repository_file(".github/workflows/release.yml");
+    let mise = repository_file("mise.toml");
+    for target in targets {
+        assert!(
+            workflow.contains(&format!("target: {target}")),
+            "{target} in the release matrix"
+        );
+        assert!(
+            mise.contains(&format!("\"{target}\"")),
+            "{target} pinned in mise.toml"
+        );
+    }
+    assert!(workflow.contains("statically linked"));
+    assert!(workflow.contains("make smoke BIN="));
+
+    // The same smoke check passes on this machine's binary.
+    let output = std::process::Command::new(support::workspace().join("tools/smoke.sh"))
+        .arg(env!("CARGO_BIN_EXE_ferrolint"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
-#[ignore = "AC-33: Ruff crates move only one-way"]
 fn ac_33_ruff_crates_single_pin() {
-    // Given the three re-used Ruff parser crates,
-    // when `cargo tree` is resolved,
-    // then every use goes through the single git-tag pin and the upgrade procedure is tag-plus-fixtures.
-    unimplemented!("AC-33");
+    let manifest = repository_toml("Cargo.toml");
+    let dependencies = manifest["workspace"]["dependencies"].as_table().unwrap();
+    let ruff: Vec<(&String, &toml::Value)> = dependencies
+        .iter()
+        .filter(|(name, _)| name.starts_with("ruff_"))
+        .collect();
+    assert!(ruff.len() >= 3, "{ruff:?}");
+    let pins: std::collections::BTreeSet<(String, String)> = ruff
+        .iter()
+        .map(|(_, spec)| {
+            (
+                spec["git"].as_str().unwrap().to_owned(),
+                spec["tag"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(pins.len(), 1, "one git tag for every Ruff crate: {pins:?}");
+    let (url, tag) = pins.into_iter().next().unwrap();
+
+    // Cargo resolves every Ruff package, direct or not, through that pin.
+    let lock = repository_toml("Cargo.lock");
+    let sources: std::collections::BTreeSet<&str> = lock["package"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|package| package["name"].as_str().unwrap().starts_with("ruff_"))
+        .map(|package| package["source"].as_str().unwrap())
+        .collect();
+    assert_eq!(sources.len(), 1, "{sources:?}");
+    let source = sources.into_iter().next().unwrap();
+    assert!(
+        source.starts_with(&format!("git+{url}?tag={tag}#")),
+        "{source}"
+    );
+
+    // The upgrade procedure lives in one note, which names the current tag.
+    let procedure = repository_file("docs/toolchain/ruff-upgrade.md");
+    assert!(
+        procedure.contains(&format!("`{tag}`")),
+        "the note records {tag}"
+    );
 }
 
 #[test]
-#[ignore = "AC-34: the gate is green over the whole workspace"]
 fn ac_34_gate_green_whole_workspace() {
-    // Given `make check` and `make test` on a workspace identical to a release's,
-    // when both run,
-    // then they pass on every plugin, the SDK crate and the linter with pedantic clippy and cargo-deny.
-    unimplemented!("AC-34");
+    // The gate's settings hold for every crate; CI runs `make check` and
+    // `make test`, which run them.
+    let manifest = repository_toml("Cargo.toml");
+    let clippy = manifest["workspace"]["lints"]["clippy"].as_table().unwrap();
+    assert_eq!(clippy["pedantic"]["level"].as_str(), Some("warn"));
+    for lint in ["unwrap_used", "expect_used", "dbg_macro", "todo"] {
+        assert_eq!(clippy[lint].as_str(), Some("warn"), "{lint}");
+    }
+    assert_eq!(
+        manifest["workspace"]["lints"]["rust"]["unsafe_code"].as_str(),
+        Some("forbid")
+    );
+
+    let members = manifest["workspace"]["members"].as_array().unwrap();
+    let mut crates = 0;
+    for member in members {
+        let pattern = member.as_str().unwrap().trim_end_matches("/*");
+        for entry in std::fs::read_dir(support::workspace().join(pattern)).unwrap() {
+            let crate_manifest = entry.unwrap().path().join("Cargo.toml");
+            let table: toml::Table =
+                toml::from_str(&std::fs::read_to_string(&crate_manifest).unwrap()).unwrap();
+            assert_eq!(
+                table
+                    .get("lints")
+                    .and_then(|lints| lints.get("workspace"))
+                    .and_then(toml::Value::as_bool),
+                Some(true),
+                "{} inherits the workspace lints",
+                crate_manifest.display()
+            );
+            crates += 1;
+        }
+    }
+    assert!(
+        crates >= 13,
+        "the linter, the core, the SDK and every plugin: {crates}"
+    );
+
+    let rust_mk = repository_file("mk/rust.mk");
+    assert!(rust_mk.contains("clippy --locked --all-targets -- -D warnings"));
+    assert!(
+        rust_mk.contains("clippy --locked --target $(WASM_TARGET) $(WASM_PACKAGES) -- -D warnings")
+    );
+    assert!(rust_mk.contains("LANG_CHECK_TARGETS   += clippy fmt-check deny"));
+    assert!(
+        repository_file("Makefile")
+            .contains("$(LANG_CHECK_TARGETS) ## Run the full read-only validation gate")
+    );
+    let deny = repository_toml("deny.toml");
+    assert!(deny.contains_key("licenses") && deny.contains_key("sources"));
+    let ci = repository_file(".github/workflows/rust.yml");
+    assert!(ci.contains("make check") && ci.contains("make test"));
 }

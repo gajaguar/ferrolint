@@ -64,3 +64,5 @@ apos
 fffe
 fffd
 ACMR
+falsiness
+nocapture

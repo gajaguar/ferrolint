@@ -24,6 +24,7 @@ ruff_python_stdlib = { workspace = true }
 ruff_text_size = { workspace = true }
 
 [dev-dependencies]
+toml = { workspace = true }
 jsonschema = { workspace = true }
 roxmltree = { workspace = true }
 serde_json = { workspace = true }

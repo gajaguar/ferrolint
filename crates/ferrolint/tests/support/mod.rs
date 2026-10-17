@@ -33,7 +33,16 @@ pub fn sha256(bytes: &[u8]) -> String {
 
 /// The workspace's plugin packages the tests load.
 const PLUGIN_PACKAGES: &[&str] = &[
+    "ferrolint-plugin-bare-except",
+    "ferrolint-plugin-global-statement",
+    "ferrolint-plugin-pointless-statement",
+    "ferrolint-plugin-redefined-builtin",
+    "ferrolint-plugin-self-assigning-variable",
+    "ferrolint-plugin-singleton-comparison",
+    "ferrolint-plugin-undefined-variable",
+    "ferrolint-plugin-unnecessary-pass",
     "ferrolint-plugin-unused-import",
+    "ferrolint-plugin-unused-variable",
     "ferrolint-test-probe",
     "ferrolint-test-sandbox",
     "ferrolint-test-runaway",
@@ -96,6 +105,111 @@ pub fn workspace() -> PathBuf {
 pub fn plugin_bytes(name: &str) -> Vec<u8> {
     let file = format!("{}.wasm", name.replace('-', "_"));
     fs::read(plugin_dir().join(file)).unwrap()
+}
+
+/// The ten ported Pylint checkers: plugin package and Pylint symbol.
+pub const PORTED: &[(&str, &str)] = &[
+    ("ferrolint-plugin-bare-except", "bare-except"),
+    ("ferrolint-plugin-global-statement", "global-statement"),
+    (
+        "ferrolint-plugin-pointless-statement",
+        "pointless-statement",
+    ),
+    ("ferrolint-plugin-redefined-builtin", "redefined-builtin"),
+    (
+        "ferrolint-plugin-self-assigning-variable",
+        "self-assigning-variable",
+    ),
+    (
+        "ferrolint-plugin-singleton-comparison",
+        "singleton-comparison",
+    ),
+    ("ferrolint-plugin-undefined-variable", "undefined-variable"),
+    ("ferrolint-plugin-unnecessary-pass", "unnecessary-pass"),
+    ("ferrolint-plugin-unused-import", "unused-import"),
+    ("ferrolint-plugin-unused-variable", "unused-variable"),
+];
+
+/// One module of the benchmark corpus; `{i}` makes each one distinct.
+const CORPUS_MODULE: &str = r##""""Module {i}."""
+import os
+import sys
+import json
+from collections import OrderedDict, defaultdict
+
+
+GLOBAL_{i} = {i}
+
+
+class Widget{i}:
+    """A widget."""
+
+    def __init__(self, name, size=3):
+        self.name = name
+        self.size = size
+        self.items = []
+
+    def add(self, item):
+        if item == None:
+            return False
+        self.items.append(item)
+        return True
+
+    def total(self):
+        result = 0
+        for item in self.items:
+            if isinstance(item, int):
+                result += item
+            elif isinstance(item, str):
+                result += len(item)
+            else:
+                result += 1
+        return result
+
+
+def helper_{i}(values, factor=2):
+    data = defaultdict(list)
+    unused = factor * 2
+    for index, value in enumerate(values):
+        key = value % 7
+        data[key].append(index * factor)
+    try:
+        payload = json.dumps(data)
+    except (TypeError, ValueError) as error:
+        payload = str(error)
+    return payload
+
+
+def process_{i}(path):
+    lines = []
+    with open(path) as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            lines.append(stripped)
+    counts = {word: len(word) for word in lines}
+    squares = [n * n for n in range(10) if n % 2]
+    return counts, squares, sys.argv
+
+
+async def fetch_{i}(client, url):
+    response = await client.get(url)
+    if response.status != 200:
+        raise RuntimeError(f"bad status {response.status}")
+    return await response.json()
+"##;
+
+/// Write a corpus of at least `lines` lines of Python under `dir`, 500
+/// modules per package directory; returns the line count.
+pub fn write_corpus(project: &Project, dir: &str, lines: usize) -> usize {
+    let per_module = CORPUS_MODULE.lines().count();
+    let modules = lines.div_ceil(per_module);
+    for index in 0..modules {
+        let text = CORPUS_MODULE.replace("{i}", &index.to_string());
+        project.write(&format!("{dir}/pkg{}/m{index}.py", index / 500), text);
+    }
+    modules * per_module
 }
 
 /// The outcome of one run of the binary.
@@ -175,6 +289,16 @@ impl Project {
             self.write(&format!("{to}/{relative}"), fs::read(&file).unwrap());
         }
         self
+    }
+
+    /// Copy every ported checker into the project and return their
+    /// `[[plugins]]` tables.
+    pub fn ported_plugins(&self) -> String {
+        PORTED
+            .iter()
+            .map(|(package, symbol)| self.plugin(package, &format!("{symbol}.wasm")))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     pub fn remove(&self, relative: &str) -> &Self {

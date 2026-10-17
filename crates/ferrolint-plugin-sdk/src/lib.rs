@@ -17,8 +17,8 @@
 //!         Info::new("no-print", "0.1.0").rule(Rule::new("NP001", "print-call", "print() is called."))
 //!     }
 //!
-//!     fn visit(&mut self, node: &Node, cx: &mut Context<'_>) {
-//!         if node.kind == NodeKind::Name && node.name.as_deref() == Some("print") {
+//!     fn visit(&mut self, node: &Node<'_>, cx: &mut Context<'_>) {
+//!         if node.kind == NodeKind::Name && node.name == Some("print") {
 //!             cx.report(Diagnostic::new("NP001", "print() is called", node.range));
 //!         }
 //!     }

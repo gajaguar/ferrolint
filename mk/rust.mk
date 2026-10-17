@@ -44,6 +44,15 @@ build: ## Build the crate into target/
 plugins: ## Build the workspace plugins as WASM components into target/wasm32-wasip2/release/
 	$(CARGO) build --locked --release --target $(WASM_TARGET) $(WASM_PACKAGES)
 
+release-build: ## Build the release binary for TARGET (a target pinned in mise.toml)
+	$(CARGO) build --locked --release --target $(TARGET) -p ferrolint
+
+smoke: ## Smoke-test the binary BIN: version, help, config validation, exit codes and start-up time
+	tools/smoke.sh $(BIN)
+
+bench: ## Run the release benchmarks (AC-26, AC-27): a million lines, ten plugins, against Pylint
+	$(CARGO) test --locked --release --test acceptance -- --ignored --nocapture --test-threads=1 ac_26 ac_27
+
 sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixture in its .txt sibling
 	@for file in $$(find $(SAMPLE_FIXTURES) -name '*.py' | sort); do \
 		{ $(PYLINT_W0611) "$$file" || test $$? -lt 32; } | { grep ':W0611:' || true; } | sort -t: -k1,1n -k2,2n \
@@ -57,4 +66,4 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 	git rev-parse --quiet --verify "refs/tags/$$tag" >/dev/null && { echo "release-tag: $$tag already exists"; exit 1; }; \
 	git tag -a "$$tag" -m "$$tag" && git push origin "$$tag"
 
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins sample-fixtures release-tag
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build smoke bench sample-fixtures release-tag
