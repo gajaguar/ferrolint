@@ -12,18 +12,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::engine::hex;
+use crate::suppress::Span;
 
 /// Bumped when an entry's layout or meaning changes.
-const LAYOUT: &str = "v1";
+const LAYOUT: &str = "v2";
 
 /// What a file's entry stores: everything a replay needs without parsing.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Entry {
     /// The host rules' diagnostics.
     pub host: Vec<Diagnostic>,
-    /// Each suppression comment's codes as spelled, by line; resolved
+    /// Each suppression comment's codes as spelled, over the lines it covers; resolved
     /// against the registry at replay.
-    pub suppressions: BTreeMap<u32, Vec<String>>,
+    pub suppressions: Vec<Span>,
     /// Each plugin's diagnostics, by the plugin binary's SHA-256.
     pub plugins: BTreeMap<String, Vec<Diagnostic>>,
     /// The file does not parse, so no plugin runs on it.
@@ -154,9 +155,13 @@ mod tests {
         let cache = Cache::new(dir.path());
         let key = cache.key(&["abc", "FL002"]);
         let mut entry = Entry::default();
-        entry.suppressions.insert(3, vec!["W0611".into()]);
+        entry.suppressions.push(Span {
+            first: 3,
+            last: 3,
+            codes: vec!["W0611".into()],
+        });
         cache.store_entry(&key, &entry);
-        assert_eq!(cache.entry(&key).unwrap().suppressions[&3], ["W0611"]);
+        assert_eq!(cache.entry(&key).unwrap().suppressions[0].codes, ["W0611"]);
 
         let path = cache.path("files", &key);
         let text = fs::read_to_string(&path).unwrap().replace("W0611", "W0612");

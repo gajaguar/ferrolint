@@ -1,11 +1,12 @@
 //! Comment directives: the line-level suppressions a comment carries
 //! (`# ferrolint: disable=`, `# pylint: disable=` and `# noqa:`).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 
 use ferrolint_core::{Diagnostic, LineIndex, Registry};
 use ruff_python_ast::token::{TokenKind, Tokens};
 use ruff_text_size::Ranged;
+use serde::{Deserialize, Serialize};
 
 use crate::checks;
 
@@ -134,11 +135,19 @@ fn is_code_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '_'
 }
 
-/// The codes each suppression comment names as spelled, by line. Only a
-/// comment that shares its line with code counts; one on a line of its own
-/// suppresses nothing.
-pub fn spelled(source: &str, tokens: &Tokens, index: &LineIndex) -> BTreeMap<u32, Vec<String>> {
-    let mut lines: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+/// The codes a suppression comment names as spelled, over the lines it covers.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Span {
+    pub first: u32,
+    pub last: u32,
+    pub codes: Vec<String>,
+}
+
+/// The codes each suppression comment names as spelled, one span per
+/// comment line. Only a comment that shares its line with code counts; one
+/// on a line of its own suppresses nothing.
+pub fn spelled(source: &str, tokens: &Tokens, index: &LineIndex) -> Vec<Span> {
+    let mut spans = Vec::new();
     for comment in comments(source, tokens) {
         let line_start = source[..comment.start as usize]
             .rfind(['\n', '\r'])
@@ -148,36 +157,39 @@ pub fn spelled(source: &str, tokens: &Tokens, index: &LineIndex) -> BTreeMap<u32
         }
         let codes = disabled_codes(comment.text);
         if !codes.is_empty() {
-            lines
-                .entry(index.line(comment.start))
-                .or_default()
-                .extend(codes.into_iter().map(str::to_owned));
+            let line = index.line(comment.start);
+            spans.push(Span {
+                first: line,
+                last: line,
+                codes: codes.into_iter().map(str::to_owned).collect(),
+            });
         }
     }
-    lines
+    spans
 }
 
-/// The suppressions of one file: the rule codes silenced on each line.
+/// The suppressions of one file: the rule codes silenced over line ranges.
 #[derive(Default)]
 pub struct Suppressions {
-    lines: HashMap<u32, HashSet<String>>,
+    ranges: Vec<(u32, u32, HashSet<String>)>,
 }
 
 impl Suppressions {
     /// Resolve each spelled code to its rule code; an unknown one is inert.
-    pub fn resolve(spelled: &BTreeMap<u32, Vec<String>>, registry: &Registry) -> Self {
-        let lines = spelled
+    pub fn resolve(spelled: &[Span], registry: &Registry) -> Self {
+        let ranges = spelled
             .iter()
-            .map(|(line, codes)| {
-                let codes = codes
+            .map(|span| {
+                let codes = span
+                    .codes
                     .iter()
                     .filter_map(|spelling| registry.resolve(spelling))
                     .map(str::to_owned)
                     .collect();
-                (*line, codes)
+                (span.first, span.last, codes)
             })
             .collect();
-        Self { lines }
+        Self { ranges }
     }
 
     /// Whether a comment on the first or last line of the diagnostic names
@@ -194,10 +206,11 @@ impl Suppressions {
         } else {
             range.end.line
         };
-        [range.start.line, last].iter().any(|line| {
-            self.lines
-                .get(line)
-                .is_some_and(|codes| codes.contains(&diagnostic.code))
+        self.ranges.iter().any(|(first, end, codes)| {
+            codes.contains(&diagnostic.code)
+                && [range.start.line, last]
+                    .iter()
+                    .any(|line| (*first..=*end).contains(line))
         })
     }
 }
