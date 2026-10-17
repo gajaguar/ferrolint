@@ -1,10 +1,12 @@
 //! One run: load the configuration and the plugins, select the files, lint
-//! them in parallel and gather the findings into one deterministic order.
+//! them in parallel (or replay them from the cache) and gather the findings
+//! into one deterministic order.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
 use rayon::prelude::*;
@@ -12,15 +14,16 @@ use ruff_python_ast::{ModModule, PySourceType};
 use ruff_python_parser::Parsed;
 use sha2::{Digest, Sha256};
 
+use crate::cache::{Cache, Entry};
 use crate::checks;
 use crate::config::{self, Config};
 use crate::discover::{self, Excludes};
 use crate::error::{Error, Result};
-use crate::host::{FileData, Host, LoadedPlugin, Outcome};
+use crate::host::{FileData, Host, LoadedPlugin, Outcome, PluginSource};
 use crate::selection::Selection;
 use crate::semantic::Model;
-use crate::suppress::Suppressions;
-use crate::{ast, wit};
+use crate::suppress::{self, Suppressions};
+use crate::{ast, diff, wit};
 
 /// What a run hands to its report.
 pub struct Report {
@@ -28,6 +31,9 @@ pub struct Report {
     /// Every linted file, as reports show its path, in path order.
     pub files: Vec<String>,
     pub registry: Registry,
+    /// The `--diff-base` ref, when the run linted only changed files.
+    pub diff_base: Option<String>,
+    pub stats: Stats,
 }
 
 impl Report {
@@ -39,17 +45,35 @@ impl Report {
     }
 }
 
+/// What a run did, for `--stats`.
+#[derive(Debug, Default)]
+pub struct Stats {
+    pub files: usize,
+    /// Files replayed from the cache without parsing.
+    pub cached: usize,
+    pub parsed: usize,
+    pub plugin_runs: usize,
+    pub compiles: usize,
+}
+
 /// What a run was asked to do.
 pub struct Options {
     pub paths: Vec<PathBuf>,
     pub config: Option<PathBuf>,
     pub threads: usize,
+    pub diff_base: Option<String>,
+    pub cache: bool,
 }
 
 pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let config = config::load(cwd, options.config.as_deref())?;
-    let plugin_bytes = read_plugins(&config)?;
-    let host = Host::load(plugin_bytes)?;
+    let changed = match &options.diff_base {
+        Some(reference) => Some(diff::changed_files(cwd, reference)?),
+        None => None,
+    };
+    let plugins = read_plugins(&config)?;
+    let cache = options.cache.then(|| Cache::new(cwd));
+    let host = Host::load(plugins, cache.as_ref())?;
     let rules = checks::host_rules().into_iter().chain(
         host.plugins
             .iter()
@@ -59,7 +83,13 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         .map_err(|err| Error::config(err.to_string()))?;
     let selection = Selection::new(&registry, &config)?;
     let excludes = Excludes::new(&config)?;
-    let files = discover::discover(cwd, &options.paths, &excludes)?;
+    let mut files = discover::discover(cwd, &options.paths, &excludes)?;
+    if let Some(changed) = &changed {
+        files.retain(|file| {
+            let file = fs::canonicalize(file).unwrap_or_else(|_| file.clone());
+            changed.contains(&file)
+        });
+    }
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(options.threads)
@@ -69,6 +99,9 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         selection: &selection,
         registry: &registry,
         host: &host,
+        cache: cache.as_ref(),
+        owners: owners_key(&config),
+        counters: Counters::default(),
     };
     let displays: Vec<String> = files
         .iter()
@@ -89,16 +122,25 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     // The same string order as the findings', which sort by path first.
     let mut files = displays;
     files.sort();
+    let stats = Stats {
+        files: files.len(),
+        cached: linter.counters.cached.load(Ordering::Relaxed),
+        parsed: linter.counters.parsed.load(Ordering::Relaxed),
+        plugin_runs: linter.counters.plugin_runs.load(Ordering::Relaxed),
+        compiles: host.compiles(),
+    };
     Ok(Report {
         findings,
         files,
         registry,
+        diff_base: options.diff_base.clone(),
+        stats,
     })
 }
 
 /// Read every plugin and check it against its pinned SHA-256 before any
 /// file is linted.
-fn read_plugins(config: &Config) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
     config
         .plugins
         .iter()
@@ -114,9 +156,24 @@ fn read_plugins(config: &Config) -> Result<Vec<(PathBuf, Vec<u8>)>> {
                     plugin.sha256
                 )));
             }
-            Ok((plugin.path.clone(), bytes))
+            Ok(PluginSource {
+                path: plugin.path.clone(),
+                bytes,
+                sha256: actual,
+            })
         })
         .collect()
+}
+
+/// The `pylint-aliases` table as one string, part of every cache key: it
+/// decides which rule a suppression's alias silences.
+fn owners_key(config: &Config) -> String {
+    config
+        .pylint_aliases
+        .iter()
+        .map(|(alias, code)| format!("{alias}={code}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -127,10 +184,20 @@ pub fn hex(bytes: &[u8]) -> String {
     })
 }
 
+#[derive(Default)]
+struct Counters {
+    cached: AtomicUsize,
+    parsed: AtomicUsize,
+    plugin_runs: AtomicUsize,
+}
+
 struct Linter<'a> {
     selection: &'a Selection,
     registry: &'a Registry,
     host: &'a Host,
+    cache: Option<&'a Cache>,
+    owners: String,
+    counters: Counters,
 }
 
 impl Linter<'_> {
@@ -138,44 +205,6 @@ impl Linter<'_> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
         let enabled = self.selection.for_file(path);
-        let diagnostics = match String::from_utf8(bytes) {
-            Ok(source) => self.check_source(path, display, &source, &enabled),
-            Err(_) => vec![checks::not_utf8()],
-        };
-        Ok(self.place(display, diagnostics, &enabled))
-    }
-
-    fn check_source(
-        &self,
-        path: &Path,
-        display: &str,
-        source: &str,
-        enabled: &BTreeSet<String>,
-    ) -> Vec<Diagnostic> {
-        let parsed = ruff_python_parser::parse_unchecked_source(source, PySourceType::Python);
-        let index = LineIndex::new(source);
-        let mut diagnostics = checks::check(source, &parsed, &index);
-        if parsed.has_no_syntax_errors() {
-            diagnostics.extend(self.run_plugins(path, display, source, &index, &parsed, enabled));
-        }
-        if !diagnostics.is_empty() {
-            let suppressions = Suppressions::new(source, parsed.tokens(), &index, self.registry);
-            diagnostics.retain(|diagnostic| !suppressions.suppresses(diagnostic));
-        }
-        diagnostics
-    }
-
-    /// Run, in configuration order, every plugin with a rule that reports
-    /// for this file.
-    fn run_plugins(
-        &self,
-        path: &Path,
-        display: &str,
-        source: &str,
-        index: &LineIndex,
-        parsed: &Parsed<ModModule>,
-        enabled: &BTreeSet<String>,
-    ) -> Vec<Diagnostic> {
         let wanted: Vec<usize> = self
             .host
             .plugins
@@ -184,29 +213,140 @@ impl Linter<'_> {
             .filter(|(_, plugin)| plugin.rules.iter().any(|rule| enabled.contains(&rule.code)))
             .map(|(position, _)| position)
             .collect();
-        if wanted.is_empty() {
-            return Vec::new();
-        }
-        let nodes = ast::flatten(source, index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &nodes, source, index);
-        let data = Arc::new(FileData { nodes, model });
-        let file = wit::File {
-            path: display.to_owned(),
-            module: module_name(path),
-            source: source.to_owned(),
+        let key = self.cache.map(|_| {
+            let configuration = format!(
+                "{}|{}",
+                enabled.iter().cloned().collect::<Vec<_>>().join(","),
+                self.owners
+            );
+            Cache::key(&hex(&Sha256::digest(&bytes)), &configuration)
+        });
+        let stored = self
+            .cache
+            .zip(key.as_deref())
+            .and_then(|(cache, key)| cache.entry(key));
+        let complete = stored.as_ref().is_some_and(|entry| {
+            entry.unparsable
+                || wanted.iter().all(|&position| {
+                    entry
+                        .plugins
+                        .contains_key(&self.host.plugins[position].sha256)
+                })
+        });
+        let (entry, aborts) = match stored {
+            Some(entry) if complete => {
+                self.counters.cached.fetch_add(1, Ordering::Relaxed);
+                (entry, Vec::new())
+            }
+            stored => {
+                self.counters.parsed.fetch_add(1, Ordering::Relaxed);
+                let (entry, aborts) = self.check(path, display, bytes, &wanted, stored);
+                if let (Some(cache), Some(key)) = (self.cache, key.as_deref()) {
+                    cache.store_entry(key, &entry);
+                }
+                (entry, aborts)
+            }
         };
-        let mut diagnostics = Vec::new();
-        for position in wanted {
-            let plugin = &self.host.plugins[position];
-            match self.host.check(position, &file, &data) {
-                Outcome::Diagnostics(reported) => match accept(plugin, reported, source, index) {
-                    Ok(accepted) => diagnostics.extend(accepted),
-                    Err(reason) => diagnostics.push(aborted(plugin, &reason)),
-                },
-                Outcome::Aborted(reason) => diagnostics.push(aborted(plugin, &reason)),
+        let mut diagnostics = entry.host;
+        for &position in &wanted {
+            if let Some(reported) = entry.plugins.get(&self.host.plugins[position].sha256) {
+                diagnostics.extend(reported.iter().cloned());
             }
         }
-        diagnostics
+        let suppressions = Suppressions::resolve(&entry.suppressions, self.registry);
+        diagnostics.retain(|diagnostic| !suppressions.suppresses(diagnostic));
+        diagnostics.extend(aborts);
+        Ok(self.place(display, diagnostics, &enabled))
+    }
+
+    /// Parse the file and run the wanted plugins a stored entry lacks. An
+    /// aborted plugin's output is not stored, so the next run retries it.
+    fn check(
+        &self,
+        path: &Path,
+        display: &str,
+        bytes: Vec<u8>,
+        wanted: &[usize],
+        stored: Option<Entry>,
+    ) -> (Entry, Vec<Diagnostic>) {
+        let mut entry = stored.unwrap_or_default();
+        let Ok(source) = String::from_utf8(bytes) else {
+            entry.host = vec![checks::not_utf8()];
+            entry.suppressions = BTreeMap::new();
+            entry.unparsable = true;
+            return (entry, Vec::new());
+        };
+        let parsed = ruff_python_parser::parse_unchecked_source(&source, PySourceType::Python);
+        let index = LineIndex::new(&source);
+        entry.host = checks::check(&source, &parsed, &index);
+        entry.suppressions = suppress::spelled(&source, parsed.tokens(), &index);
+        entry.unparsable = parsed.has_syntax_errors();
+        let missing: Vec<usize> = wanted
+            .iter()
+            .copied()
+            .filter(|&position| {
+                !entry
+                    .plugins
+                    .contains_key(&self.host.plugins[position].sha256)
+            })
+            .collect();
+        let mut aborts = Vec::new();
+        if parsed.has_no_syntax_errors() && !missing.is_empty() {
+            let context = PluginContext {
+                path,
+                display,
+                source: &source,
+                index: &index,
+                parsed: &parsed,
+            };
+            for (position, outcome) in self.run_plugins(&context, &missing) {
+                let plugin = &self.host.plugins[position];
+                match outcome {
+                    Ok(diagnostics) => {
+                        entry.plugins.insert(plugin.sha256.clone(), diagnostics);
+                    }
+                    Err(abort) => aborts.push(abort),
+                }
+            }
+        }
+        (entry, aborts)
+    }
+
+    /// Run the plugins at `positions`, in configuration order, on one file:
+    /// each one's diagnostics, or the abort it ended in.
+    fn run_plugins(
+        &self,
+        context: &PluginContext<'_>,
+        positions: &[usize],
+    ) -> Vec<(usize, std::result::Result<Vec<Diagnostic>, Diagnostic>)> {
+        let nodes = ast::flatten(context.source, context.index, context.parsed.syntax());
+        let model = Model::build(
+            context.parsed.syntax(),
+            &nodes,
+            context.source,
+            context.index,
+        );
+        let data = Arc::new(FileData { nodes, model });
+        let file = wit::File {
+            path: context.display.to_owned(),
+            module: module_name(context.path),
+            source: context.source.to_owned(),
+        };
+        positions
+            .iter()
+            .map(|&position| {
+                let plugin = &self.host.plugins[position];
+                self.counters.plugin_runs.fetch_add(1, Ordering::Relaxed);
+                let outcome = match self.host.check(position, &file, &data) {
+                    Outcome::Diagnostics(reported) => {
+                        accept(plugin, reported, context.source, context.index)
+                            .map_err(|reason| aborted(plugin, &reason))
+                    }
+                    Outcome::Aborted(reason) => Err(aborted(plugin, &reason)),
+                };
+                (position, outcome)
+            })
+            .collect()
     }
 
     /// Keep the diagnostics whose code reports for this file and attach the
@@ -229,6 +369,15 @@ impl Linter<'_> {
             })
             .collect()
     }
+}
+
+/// What a plugin run needs of the file.
+struct PluginContext<'a> {
+    path: &'a Path,
+    display: &'a str,
+    source: &'a str,
+    index: &'a LineIndex,
+    parsed: &'a Parsed<ModModule>,
 }
 
 /// The dotted module name Python imports a file under: its stem, prefixed

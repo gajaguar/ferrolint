@@ -3,8 +3,8 @@
 //! fuel budget, an epoch deadline and a memory cap.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ use wasmtime_wasi::{
     WasiView,
 };
 
+use crate::cache::{Cache, PluginMeta};
 use crate::error::{Error, Result};
 use crate::semantic::Model;
 use crate::wit::{self, Binding, Diagnostic, File, Node, Plugin, PluginPre, Scope};
@@ -138,10 +139,21 @@ impl wit::ferrolint::plugin::semantic::Host for State {
 }
 
 /// A plugin compiled and checked against the contract.
+/// A plugin file read and checked against its pinned SHA-256.
+pub struct PluginSource {
+    pub path: PathBuf,
+    pub bytes: Vec<u8>,
+    pub sha256: String,
+}
+
+/// A plugin whose rules are known. It compiles on first use when its
+/// rules came from the cache, so a fully warm run compiles nothing.
 pub struct LoadedPlugin {
     pub name: String,
     pub rules: Vec<RuleInfo>,
-    pre: PluginPre<State>,
+    pub sha256: String,
+    source: PluginSource,
+    pre: OnceLock<std::result::Result<PluginPre<State>, String>>,
 }
 
 /// How a check call ended.
@@ -159,14 +171,17 @@ struct Live {
 
 pub struct Host {
     engine: Engine,
+    linker: Linker<State>,
     pub plugins: Vec<LoadedPlugin>,
-    ticker: Option<Ticker>,
+    ticker: OnceLock<Ticker>,
+    compiles: AtomicUsize,
 }
 
 impl Host {
-    /// Compile each plugin once, link it against the contract and read its
-    /// rules. `plugins` holds each plugin's path and bytes, in run order.
-    pub fn load(plugins: Vec<(PathBuf, Vec<u8>)>) -> Result<Self> {
+    /// Link the contract and learn each plugin's rules: from the cache when
+    /// it knows the plugin's SHA-256, otherwise by compiling the plugin and
+    /// asking it. `plugins` are in run order.
+    pub fn load(plugins: Vec<PluginSource>, cache: Option<&Cache>) -> Result<Self> {
         let mut config = wasmtime::Config::new();
         config
             .wasm_component_model(true)
@@ -180,13 +195,34 @@ impl Host {
                 Plugin::add_to_linker::<State, HasSelf<State>>(&mut linker, |state| state)
             })
             .map_err(|err| Error::plugin(format!("cannot link the plugin contract: {err}")))?;
+        let compiles = AtomicUsize::new(0);
 
-        let compiled: Vec<Result<LoadedPlugin>> = std::thread::scope(|scope| {
+        let loaded: Vec<Result<LoadedPlugin>> = std::thread::scope(|scope| {
             let handles: Vec<_> = plugins
                 .into_iter()
-                .map(|(path, bytes)| {
-                    let (engine, linker) = (&engine, &linker);
-                    scope.spawn(move || load_one(engine, linker, &path, &bytes))
+                .map(|source| {
+                    let (engine, linker, compiles) = (&engine, &linker, &compiles);
+                    scope.spawn(move || {
+                        if let Some(meta) = cache.and_then(|cache| cache.plugin(&source.sha256)) {
+                            return Ok(LoadedPlugin {
+                                name: meta.name,
+                                rules: meta.rules,
+                                sha256: source.sha256.clone(),
+                                source,
+                                pre: OnceLock::new(),
+                            });
+                        }
+                        compiles.fetch_add(1, Ordering::Relaxed);
+                        let plugin = load_one(engine, linker, source)?;
+                        if let Some(cache) = cache {
+                            let meta = PluginMeta {
+                                name: plugin.name.clone(),
+                                rules: plugin.rules.clone(),
+                            };
+                            cache.store_plugin(&plugin.sha256, &meta);
+                        }
+                        Ok(plugin)
+                    })
                 })
                 .collect();
             handles
@@ -198,13 +234,34 @@ impl Host {
                 })
                 .collect()
         });
-        let plugins = compiled.into_iter().collect::<Result<Vec<_>>>()?;
-        let ticker = (!plugins.is_empty()).then(|| Ticker::start(engine.clone()));
+        let plugins = loaded.into_iter().collect::<Result<Vec<_>>>()?;
         Ok(Self {
             engine,
+            linker,
             plugins,
-            ticker,
+            ticker: OnceLock::new(),
+            compiles,
         })
+    }
+
+    /// How many plugins this run compiled.
+    pub fn compiles(&self) -> usize {
+        self.compiles.load(Ordering::Relaxed)
+    }
+
+    /// The plugin's pre-linked component, compiling it on first use.
+    fn pre<'a>(
+        &self,
+        loaded: &'a LoadedPlugin,
+    ) -> std::result::Result<&'a PluginPre<State>, String> {
+        loaded
+            .pre
+            .get_or_init(|| {
+                self.compiles.fetch_add(1, Ordering::Relaxed);
+                link(&self.engine, &self.linker, &loaded.source).map_err(|err| err.message)
+            })
+            .as_ref()
+            .map_err(Clone::clone)
     }
 
     /// Run one plugin's check on one file in a fresh instance, so nothing a
@@ -212,7 +269,13 @@ impl Host {
     /// files the same thread checked before it.
     pub fn check(&self, plugin: usize, file: &File, data: &Arc<FileData>) -> Outcome {
         let loaded = &self.plugins[plugin];
-        let mut instance = match instantiate(&self.engine, &loaded.pre) {
+        let pre = match self.pre(loaded) {
+            Ok(pre) => pre,
+            Err(reason) => return Outcome::Aborted(reason),
+        };
+        self.ticker
+            .get_or_init(|| Ticker::start(self.engine.clone()));
+        let mut instance = match instantiate(&self.engine, pre) {
             Ok(instance) => instance,
             Err(err) => return Outcome::Aborted(describe(&err)),
         };
@@ -239,22 +302,29 @@ impl Drop for Host {
     }
 }
 
-fn load_one(
+/// Compile and link a plugin against the contract.
+fn link(
     engine: &Engine,
     linker: &Linker<State>,
-    path: &Path,
-    bytes: &[u8],
-) -> Result<LoadedPlugin> {
+    source: &PluginSource,
+) -> Result<PluginPre<State>> {
     let fail = |what: &str, err: &dyn std::fmt::Display| {
-        Error::plugin(format!("{}: {what}: {err:#}", path.display()))
+        Error::plugin(format!("{}: {what}: {err:#}", source.path.display()))
     };
     let component =
-        Component::new(engine, bytes).map_err(|err| fail("not a WASM component", &err))?;
+        Component::new(engine, &source.bytes).map_err(|err| fail("not a WASM component", &err))?;
     let pre = linker
         .instantiate_pre(&component)
         .map_err(|err| fail("imports outside the plugin contract", &err))?;
-    let pre =
-        PluginPre::new(pre).map_err(|err| fail("does not implement the plugin contract", &err))?;
+    PluginPre::new(pre).map_err(|err| fail("does not implement the plugin contract", &err))
+}
+
+/// Compile a plugin and ask it for its rules.
+fn load_one(engine: &Engine, linker: &Linker<State>, source: PluginSource) -> Result<LoadedPlugin> {
+    let pre = link(engine, linker, &source)?;
+    let fail = |what: &str, err: &dyn std::fmt::Display| {
+        Error::plugin(format!("{}: {what}: {err:#}", source.path.display()))
+    };
     let mut instance = instantiate(engine, &pre).map_err(|err| fail("cannot instantiate", &err))?;
     let info = arm(&mut instance.store)
         .and_then(|()| {
@@ -264,11 +334,13 @@ fn load_one(
                 .call_info(&mut instance.store)
         })
         .map_err(|err| fail("info() failed", &describe(&err)))?;
-    let rules = rules(path, &info)?;
+    let rules = rules(&source.path, &info)?;
     Ok(LoadedPlugin {
         name: info.name,
         rules,
-        pre,
+        sha256: source.sha256.clone(),
+        source,
+        pre: OnceLock::from(Ok(pre)),
     })
 }
 

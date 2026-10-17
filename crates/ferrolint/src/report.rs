@@ -62,8 +62,13 @@ pub fn text(report: &Report) -> String {
 }
 
 fn summary(report: &Report) -> String {
+    let mode = report
+        .diff_base
+        .as_ref()
+        .map(|reference| format!(" (diff mode against {reference})"))
+        .unwrap_or_default();
     format!(
-        "{} linted, {}.",
+        "{} linted{mode}, {}.",
         plural(report.files.len(), "file"),
         plural(report.findings.len(), "finding")
     )
@@ -81,13 +86,19 @@ fn plural(count: usize, noun: &str) -> String {
 /// are sorted and the output is compact, so it is canonical JSON.
 pub fn json(report: &Report) -> String {
     let diagnostics: Vec<Value> = report.findings.iter().map(json_finding).collect();
-    let document = json!({
+    let mut document = json!({
         "diagnostics": diagnostics,
         "summary": {
             "files": report.files.len(),
             "findings": report.findings.len(),
+            "mode": if report.diff_base.is_some() { "diff" } else { "full" },
         },
     });
+    if let (Some(reference), Some(summary)) =
+        (&report.diff_base, document["summary"].as_object_mut())
+    {
+        summary.insert("diff-base".into(), json!(reference));
+    }
     let mut out = document.to_string();
     out.push('\n');
     out

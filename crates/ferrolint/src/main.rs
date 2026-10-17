@@ -1,6 +1,8 @@
 mod ast;
+mod cache;
 mod checks;
 mod config;
+mod diff;
 mod discover;
 mod engine;
 mod error;
@@ -39,6 +41,20 @@ struct Args {
     /// The report format.
     #[arg(long, value_enum, default_value_t)]
     format: report::Format,
+
+    /// Lint only the files changed since the merge base of this git ref
+    /// and HEAD, plus untracked files.
+    #[arg(long, value_name = "REF")]
+    diff_base: Option<String>,
+
+    /// Neither read nor write the result cache in .ferrolint-cache/.
+    #[arg(long)]
+    no_cache: bool,
+
+    /// Print what the run did (files, cache hits, parses, plugin runs and
+    /// compiles) to stderr.
+    #[arg(long)]
+    stats: bool,
 }
 
 fn main() -> ExitCode {
@@ -55,10 +71,19 @@ fn main() -> ExitCode {
         paths: args.paths,
         config: args.config,
         threads: args.threads,
+        diff_base: args.diff_base,
+        cache: !args.no_cache,
     };
     match engine::run(&cwd, &options) {
         Ok(report) => {
             let out = report::render(&report, args.format);
+            if args.stats {
+                let stats = &report.stats;
+                eprintln!(
+                    "ferrolint: stats: files={} cached={} parsed={} plugin-runs={} compiles={}",
+                    stats.files, stats.cached, stats.parsed, stats.plugin_runs, stats.compiles
+                );
+            }
             if std::io::stdout().lock().write_all(out.as_bytes()).is_err() {
                 return ExitCode::from(2);
             }

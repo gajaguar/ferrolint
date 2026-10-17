@@ -113,6 +113,22 @@ fn output_project() -> Project {
     project
 }
 
+/// The `--stats` line of a run: files, cached, parsed, plugin-runs and
+/// compiles, by name.
+fn stats(run: &support::Run) -> std::collections::BTreeMap<String, usize> {
+    let line = run
+        .stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("ferrolint: stats: "))
+        .unwrap_or_else(|| panic!("no stats line: {run:?}"));
+    line.split(' ')
+        .map(|pair| {
+            let (name, value) = pair.split_once('=').unwrap();
+            (name.to_owned(), value.parse().unwrap())
+        })
+        .collect()
+}
+
 /// A probe project: the probe plugin, with `select` limited to `codes`.
 fn probe_project(codes: &[&str]) -> Project {
     let project = Project::new();
@@ -521,7 +537,7 @@ fn ac_15_json_output_machine_parseable() {
     assert_eq!(keys, ["diagnostics", "summary"]);
     assert_eq!(
         report["summary"],
-        serde_json::json!({"files": 4, "findings": 5})
+        serde_json::json!({"files": 4, "findings": 5, "mode": "full"})
     );
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 5);
@@ -724,41 +740,140 @@ fn ac_21_broken_run_exits_two() {
 // Diff mode (AC-22..AC-23, FR-08)
 
 #[test]
-#[ignore = "AC-22: --diff-base lints only changed files"]
 fn ac_22_diff_base_lints_only_changed() {
-    // Given a tree with changed, added and untouched files since the merge base of `--diff-base`,
-    // when a run starts with that argument,
-    // then only changed and added files are walked and report, and the summary names diff mode and count.
-    unimplemented!("AC-22");
+    let project = Project::git();
+    let plugin = project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm");
+    project
+        .write(".gitignore", ".home/\n.ferrolint-cache/\nignored.py\n")
+        .write("ferrolint.toml", &plugin)
+        .write("untouched.py", "import os\n")
+        .write("committed.py", "import os\n")
+        .write("worktree.py", "import os\n");
+    project.commit("base");
+    project.write("committed.py", "import os\nimport sys\n");
+    project.commit("change");
+    project
+        .write("worktree.py", "import os\nimport re\n")
+        .write("added.py", "import json\n")
+        .write("ignored.py", "import csv\n");
+
+    let run = project.run(&["--diff-base", "HEAD~1", "--stats"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let paths: std::collections::BTreeSet<&str> = run
+        .finding_lines()
+        .iter()
+        .map(|line| line.split(':').next().unwrap())
+        .collect();
+    assert_eq!(paths, ["added.py", "committed.py", "worktree.py"].into());
+    assert_eq!(
+        run.summary(),
+        "3 files linted (diff mode against HEAD~1), 5 findings."
+    );
+    assert_eq!(
+        stats(&run)["parsed"],
+        3,
+        "only the changed files are parsed"
+    );
+    let json = project.run(&["--diff-base", "HEAD~1", "--format", "json"]);
+    let report: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_eq!(report["summary"]["mode"], "diff");
+    assert_eq!(report["summary"]["diff-base"], "HEAD~1");
 }
 
 #[test]
-#[ignore = "AC-23: an unresolvable diff base is a usage error"]
 fn ac_23_unresolvable_diff_base_usage_error() {
-    // Given `--diff-base` naming a ref that does not resolve,
-    // when the argument is processed,
-    // then no file is linted, the failure is on stderr, and the exit code is 2.
-    unimplemented!("AC-23");
+    let project = Project::git();
+    project.write("a.py", BARE_NOQA);
+    project.commit("base");
+    let run = project.run(&["--diff-base", "no-such-ref", "--stats"]);
+    assert_eq!(run.code, 2, "{run:?}");
+    assert!(run.stdout.is_empty(), "{run:?}");
+    assert!(
+        run.stderr
+            .contains("--diff-base no-such-ref: does not resolve to a commit"),
+        "{run:?}"
+    );
+    assert!(!run.stderr.contains("stats:"), "no file is linted: {run:?}");
 }
 
 // Cache (AC-24..AC-25, FR-09)
 
 #[test]
-#[ignore = "AC-24: a warm run replays unchanged files"]
 fn ac_24_warm_run_replays_unchanged() {
-    // Given a first run over a tree and a second identical run,
-    // when cache keys match for unchanged files,
-    // then they skip parse and plugins and replay diagnostics, with a byte-identical report.
-    unimplemented!("AC-24");
+    let project = output_project();
+    let cold = project.run(&["--stats"]);
+    let cold_stats = stats(&cold);
+    assert_eq!(
+        (cold_stats["cached"], cold_stats["parsed"]),
+        (0, 4),
+        "{cold:?}"
+    );
+    let warm = project.run(&["--stats"]);
+    let warm_stats = stats(&warm);
+    assert_eq!(warm.stdout, cold.stdout, "a warm report is byte-identical");
+    assert_eq!(warm.code, cold.code);
+    assert_eq!(
+        (
+            warm_stats["cached"],
+            warm_stats["parsed"],
+            warm_stats["plugin-runs"],
+            warm_stats["compiles"]
+        ),
+        (4, 0, 0, 0),
+        "{warm:?}"
+    );
 }
 
 #[test]
-#[ignore = "AC-25: each key-part change invalidates"]
 fn ac_25_key_part_change_invalidates() {
-    // Given a warm cache and variants changing one key part each (file bytes, plugin binary, config),
-    // when each variant runs,
-    // then touched files re-lint, untouched files keep stored diagnostics, and the report equals a cold run.
-    unimplemented!("AC-25");
+    let project = output_project();
+    let warm = |project: &Project| project.run(&["--stats"]);
+    let cold = |project: &Project| project.run(&["--no-cache"]).stdout;
+    warm(&project);
+
+    // The bytes of one file.
+    project.write("b.py", "import os\n");
+    let run = warm(&project);
+    assert_eq!(
+        (stats(&run)["parsed"], stats(&run)["cached"]),
+        (1, 3),
+        "{run:?}"
+    );
+    assert_eq!(run.stdout, cold(&project));
+
+    // The configuration of one file: a per-file ignore.
+    let plugin = project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm");
+    project.write(
+        "ferrolint.toml",
+        format!("[per-file-ignores]\n\"a.py\" = [\"FL002\"]\n\n{plugin}"),
+    );
+    let run = warm(&project);
+    assert_eq!(
+        (stats(&run)["parsed"], stats(&run)["cached"]),
+        (1, 3),
+        "{run:?}"
+    );
+    assert_eq!(run.stdout, cold(&project));
+
+    // The plugin's binary: a custom section changes its bytes, not its rules.
+    let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
+    bytes.extend([0x00, 0x05, 0x04]);
+    bytes.extend(b"test");
+    let digest = support::sha256(&bytes);
+    project.write("changed.wasm", &bytes).write(
+        "ferrolint.toml",
+        format!(
+            "[per-file-ignores]\n\"a.py\" = [\"FL002\"]\n\n[[plugins]]\npath = \"changed.wasm\"\nsha256 = \"{digest}\"\n"
+        ),
+    );
+    let run = warm(&project);
+    let changed = stats(&run);
+    assert_eq!((changed["compiles"], changed["cached"]), (1, 1), "{run:?}");
+    assert_eq!(
+        changed["plugin-runs"], 3,
+        "every file that parses reruns it: {run:?}"
+    );
+    assert_eq!(run.stdout, cold(&project));
 }
 
 // Performance (AC-26..AC-28, NFR-01, NFR-02, NFR-05)
@@ -877,7 +992,12 @@ fn ac_31_deterministic_across_schedules() {
     for run_number in 0..50_usize {
         let threads = (run_number % 8 + 1).to_string();
         let slot = run_number % formats.len();
-        let run = project.run(&["--threads", &threads, "--format", formats[slot]]);
+        // The first half runs without the cache, the second half against it.
+        let mut args = vec!["--threads", &threads, "--format", formats[slot]];
+        if run_number < 25 {
+            args.push("--no-cache");
+        }
+        let run = project.run(&args);
         assert_eq!(run.code, 1, "{run:?}");
         match &first[slot] {
             None => first[slot] = Some(run.stdout),

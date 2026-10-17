@@ -1,7 +1,7 @@
 //! Comment directives: the line-level suppressions a comment carries
 //! (`# ferrolint: disable=`, `# pylint: disable=` and `# noqa:`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ferrolint_core::{Diagnostic, LineIndex, Registry};
 use ruff_python_ast::token::{TokenKind, Tokens};
@@ -134,6 +134,29 @@ fn is_code_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '_'
 }
 
+/// The codes each suppression comment names as spelled, by line. Only a
+/// comment that shares its line with code counts; one on a line of its own
+/// suppresses nothing.
+pub fn spelled(source: &str, tokens: &Tokens, index: &LineIndex) -> BTreeMap<u32, Vec<String>> {
+    let mut lines: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+    for comment in comments(source, tokens) {
+        let line_start = source[..comment.start as usize]
+            .rfind(['\n', '\r'])
+            .map_or(0, |at| at + 1);
+        if source[line_start..comment.start as usize].trim().is_empty() {
+            continue;
+        }
+        let codes = disabled_codes(comment.text);
+        if !codes.is_empty() {
+            lines
+                .entry(index.line(comment.start))
+                .or_default()
+                .extend(codes.into_iter().map(str::to_owned));
+        }
+    }
+    lines
+}
+
 /// The suppressions of one file: the rule codes silenced on each line.
 #[derive(Default)]
 pub struct Suppressions {
@@ -141,30 +164,19 @@ pub struct Suppressions {
 }
 
 impl Suppressions {
-    /// Read the directives of every comment that shares its line with
-    /// code, resolving each listed spelling to its rule code; a comment on
-    /// a line of its own suppresses nothing.
-    pub fn new(source: &str, tokens: &Tokens, index: &LineIndex, registry: &Registry) -> Self {
-        let mut lines: HashMap<u32, HashSet<String>> = HashMap::new();
-        for comment in comments(source, tokens) {
-            let line_start = source[..comment.start as usize]
-                .rfind(['\n', '\r'])
-                .map_or(0, |at| at + 1);
-            if source[line_start..comment.start as usize].trim().is_empty() {
-                continue;
-            }
-            let codes: HashSet<String> = disabled_codes(comment.text)
-                .into_iter()
-                .filter_map(|spelling| registry.resolve(spelling))
-                .map(str::to_owned)
-                .collect();
-            if !codes.is_empty() {
-                lines
-                    .entry(index.line(comment.start))
-                    .or_default()
-                    .extend(codes);
-            }
-        }
+    /// Resolve each spelled code to its rule code; an unknown one is inert.
+    pub fn resolve(spelled: &BTreeMap<u32, Vec<String>>, registry: &Registry) -> Self {
+        let lines = spelled
+            .iter()
+            .map(|(line, codes)| {
+                let codes = codes
+                    .iter()
+                    .filter_map(|spelling| registry.resolve(spelling))
+                    .map(str::to_owned)
+                    .collect();
+                (*line, codes)
+            })
+            .collect();
         Self { lines }
     }
 
