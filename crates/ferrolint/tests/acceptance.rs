@@ -582,7 +582,7 @@ fn ac_17_junit_output_test_report() {
     let root = document.root_element();
     assert!(root.has_tag_name("testsuites"));
     assert_eq!(root.attribute("tests"), Some("4"));
-    assert_eq!(root.attribute("failures"), Some("5"));
+    assert_eq!(root.attribute("failures"), Some("3"), "three files fail");
     let cases: Vec<roxmltree::Node> = root
         .descendants()
         .filter(|node| node.has_tag_name("testcase"))
@@ -872,14 +872,15 @@ fn ac_31_deterministic_across_schedules() {
             format!("import os\ndef f{index}(x):\n    return x\n"),
         );
     }
-    let mut first: Vec<Option<String>> = vec![None, None];
+    let formats = ["text", "json", "sarif", "junit"];
+    let mut first: Vec<Option<String>> = vec![None; formats.len()];
     for run_number in 0..50_usize {
         let threads = (run_number % 8 + 1).to_string();
-        let format = ["text", "json"][run_number % 2];
-        let run = project.run(&["--threads", &threads, "--format", format]);
+        let slot = run_number % formats.len();
+        let run = project.run(&["--threads", &threads, "--format", formats[slot]]);
         assert_eq!(run.code, 1, "{run:?}");
-        match &first[run_number % 2] {
-            None => first[run_number % 2] = Some(run.stdout),
+        match &first[slot] {
+            None => first[slot] = Some(run.stdout),
             Some(expected) => {
                 assert_eq!(&run.stdout, expected, "run {run_number}, {threads} threads");
             }

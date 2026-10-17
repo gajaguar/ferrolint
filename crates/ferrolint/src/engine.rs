@@ -66,15 +66,19 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         .build()
         .map_err(|err| Error::io(format!("cannot start worker threads: {err}")))?;
     let linter = Linter {
-        cwd,
         selection: &selection,
         registry: &registry,
         host: &host,
     };
+    let displays: Vec<String> = files
+        .iter()
+        .map(|path| discover::display_path(cwd, path))
+        .collect();
     let per_file: Vec<Result<Vec<Finding>>> = pool.install(|| {
         files
             .par_iter()
-            .map(|path| linter.lint_file(path))
+            .zip(&displays)
+            .map(|(path, display)| linter.lint_file(path, display))
             .collect()
     });
     let mut findings = Vec::new();
@@ -83,10 +87,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     }
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
-    let mut files: Vec<String> = files
-        .iter()
-        .map(|path| discover::display_path(cwd, path))
-        .collect();
+    let mut files = displays;
     files.sort();
     Ok(Report {
         findings,
@@ -127,23 +128,21 @@ pub fn hex(bytes: &[u8]) -> String {
 }
 
 struct Linter<'a> {
-    cwd: &'a Path,
     selection: &'a Selection,
     registry: &'a Registry,
     host: &'a Host,
 }
 
 impl Linter<'_> {
-    fn lint_file(&self, path: &Path) -> Result<Vec<Finding>> {
+    fn lint_file(&self, path: &Path, display: &str) -> Result<Vec<Finding>> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
         let enabled = self.selection.for_file(path);
-        let display = discover::display_path(self.cwd, path);
         let diagnostics = match String::from_utf8(bytes) {
-            Ok(source) => self.check_source(path, &display, &source, &enabled),
+            Ok(source) => self.check_source(path, display, &source, &enabled),
             Err(_) => vec![checks::not_utf8()],
         };
-        Ok(self.place(&display, diagnostics, &enabled))
+        Ok(self.place(display, diagnostics, &enabled))
     }
 
     fn check_source(

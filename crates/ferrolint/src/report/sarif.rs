@@ -1,6 +1,7 @@
 //! The SARIF 2.1.0 report: one run, the rules of the registry, one result
 //! per finding.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use ferrolint_core::{Finding, Range, RuleInfo, Severity};
@@ -13,10 +14,15 @@ const SCHEMA: &str =
 
 pub fn render(report: &Report) -> String {
     let rules: Vec<&RuleInfo> = report.registry.rules().collect();
+    let indices: HashMap<&str, usize> = rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| (rule.code.as_str(), index))
+        .collect();
     let results: Vec<Value> = report
         .findings
         .iter()
-        .map(|finding| result(finding, &rules))
+        .map(|finding| result(finding, &indices))
         .collect();
     let document = json!({
         "$schema": SCHEMA,
@@ -27,7 +33,10 @@ pub fn render(report: &Report) -> String {
                     "name": "ferrolint",
                     "version": env!("CARGO_PKG_VERSION"),
                     "informationUri": "https://github.com/gajaguar/ferrolint",
-                    "rules": rules.iter().map(|rule| descriptor(rule)).collect::<Vec<_>>(),
+                    "rules": rules
+                        .iter()
+                        .map(|rule| descriptor(rule, &report.registry.aliases(&rule.code)))
+                        .collect::<Vec<_>>(),
                 }
             },
             "columnKind": "unicodeCodePoints",
@@ -47,8 +56,9 @@ fn level(severity: Severity) -> &'static str {
     }
 }
 
-fn descriptor(rule: &RuleInfo) -> Value {
-    let mut properties = json!({ "aliases": rule.aliases() });
+/// A rule's descriptor; `aliases` are the ones the registry gives it.
+fn descriptor(rule: &RuleInfo, aliases: &[String]) -> Value {
+    let mut properties = json!({ "aliases": aliases });
     if let (Some(plugin), Some(map)) = (&rule.plugin, properties.as_object_mut()) {
         map.insert("plugin".into(), json!(plugin));
     }
@@ -61,7 +71,7 @@ fn descriptor(rule: &RuleInfo) -> Value {
     })
 }
 
-fn result(finding: &Finding, rules: &[&RuleInfo]) -> Value {
+fn result(finding: &Finding, indices: &HashMap<&str, usize>) -> Value {
     let d = &finding.diagnostic;
     let uri = uri(&finding.path);
     let mut result = json!({
@@ -79,7 +89,7 @@ fn result(finding: &Finding, rules: &[&RuleInfo]) -> Value {
     let Some(map) = result.as_object_mut() else {
         return result;
     };
-    if let Some(index) = rules.iter().position(|rule| rule.code == d.code) {
+    if let Some(index) = indices.get(d.code.as_str()) {
         map.insert("ruleIndex".into(), json!(index));
     }
     if let Some(fix) = &d.fix {
@@ -109,11 +119,20 @@ fn region(range: &Range) -> Value {
     })
 }
 
-/// A relative path as a URI reference: `/`-separated, with every byte
-/// outside the unreserved set percent-encoded.
+/// A report path as a URI: a relative path stays a relative reference, an
+/// absolute one (`/tmp/x.py`, `D:/x.py`) becomes a `file` URI, and every
+/// byte outside the unreserved set is percent-encoded.
 fn uri(path: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    for byte in path.bytes() {
+    let bytes = path.as_bytes();
+    let drive = bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && &bytes[1..3] == b":/";
+    let (mut out, rest) = if drive {
+        (format!("file:///{}", &path[..2]), &path[2..])
+    } else if path.starts_with('/') {
+        ("file://".to_owned(), path)
+    } else {
+        (String::with_capacity(path.len()), path)
+    };
+    for byte in rest.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
             out.push(char::from(byte));
         } else {
@@ -131,5 +150,7 @@ mod tests {
     fn paths_become_uri_references() {
         assert_eq!(uri("pkg/mod.py"), "pkg/mod.py");
         assert_eq!(uri("my dir/é.py"), "my%20dir/%C3%A9.py");
+        assert_eq!(uri("/tmp/x.py"), "file:///tmp/x.py");
+        assert_eq!(uri("D:/other/x.py"), "file:///D:/other/x.py");
     }
 }
