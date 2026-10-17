@@ -40,6 +40,8 @@ pub enum RegistryError {
         first: String,
         second: String,
     },
+    /// An owner names a rule that does not declare the alias.
+    BadOwner { alias: String, code: String },
 }
 
 impl fmt::Display for RegistryError {
@@ -50,7 +52,16 @@ impl fmt::Display for RegistryError {
                 spelling,
                 first,
                 second,
-            } => write!(f, "{spelling} names both rule {first} and rule {second}"),
+            } => write!(
+                f,
+                "{spelling} names both rule {first} and rule {second}; pick one in pylint-aliases"
+            ),
+            Self::BadOwner { alias, code } => {
+                write!(
+                    f,
+                    "pylint-aliases gives {alias} to {code}, which does not declare it"
+                )
+            }
         }
     }
 }
@@ -67,27 +78,71 @@ pub struct Registry {
 
 impl Registry {
     pub fn new(rules: impl IntoIterator<Item = RuleInfo>) -> Result<Self, RegistryError> {
+        Self::with_owners(rules, &BTreeMap::new())
+    }
+
+    /// The table with `owners` deciding which rule a Pylint alias claimed
+    /// by several rules belongs to: alias to rule code.
+    pub fn with_owners(
+        rules: impl IntoIterator<Item = RuleInfo>,
+        owners: &BTreeMap<String, String>,
+    ) -> Result<Self, RegistryError> {
         let mut registry = Self::default();
         for rule in rules {
             if registry.rules.contains_key(&rule.code) {
                 return Err(RegistryError::DuplicateCode { code: rule.code });
             }
-            for spelling in std::iter::once(rule.code.clone()).chain(rule.aliases()) {
-                if let Some(first) = registry.spellings.get(&spelling) {
-                    if *first != rule.code {
+            registry.rules.insert(rule.code.clone(), rule);
+        }
+        for (alias, code) in owners {
+            let declares = registry
+                .rules
+                .get(code)
+                .is_some_and(|rule| rule.aliases().contains(alias));
+            if !declares {
+                return Err(RegistryError::BadOwner {
+                    alias: alias.clone(),
+                    code: code.clone(),
+                });
+            }
+        }
+        for rule in registry.rules.values() {
+            registry
+                .spellings
+                .insert(rule.code.clone(), rule.code.clone());
+        }
+        for rule in registry.rules.values() {
+            for alias in rule.aliases() {
+                if let Some(owner) = owners.get(&alias) {
+                    registry.spellings.insert(alias, owner.clone());
+                    continue;
+                }
+                match registry.spellings.get(&alias) {
+                    Some(first) if *first != rule.code => {
                         return Err(RegistryError::AmbiguousSpelling {
-                            spelling,
+                            spelling: alias,
                             first: first.clone(),
                             second: rule.code.clone(),
                         });
                     }
-                    continue;
+                    _ => {
+                        registry.spellings.insert(alias, rule.code.clone());
+                    }
                 }
-                registry.spellings.insert(spelling, rule.code.clone());
             }
-            registry.rules.insert(rule.code.clone(), rule);
         }
         Ok(registry)
+    }
+
+    /// The Pylint aliases that resolve to `code`, msg-id first.
+    pub fn aliases(&self, code: &str) -> Vec<String> {
+        self.rules
+            .get(code)
+            .map(RuleInfo::aliases)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|alias| self.resolve(alias) == Some(code))
+            .collect()
     }
 
     /// The rule code a plugin code, msg-id or symbol names.
@@ -138,6 +193,24 @@ mod tests {
         ])
         .unwrap_err();
         assert!(matches!(error, RegistryError::AmbiguousSpelling { .. }));
+    }
+
+    #[test]
+    fn owners_settle_a_shared_alias() {
+        let owners = BTreeMap::from([("W0611".to_owned(), "X2".to_owned())]);
+        let registry = Registry::with_owners(
+            [
+                rule("X1", Some("W0611"), Some("unused-import")),
+                rule("X2", Some("W0611"), None),
+            ],
+            &owners,
+        )
+        .unwrap();
+        assert_eq!(registry.resolve("W0611"), Some("X2"));
+        assert_eq!(registry.aliases("X1"), ["unused-import"]);
+        assert_eq!(registry.aliases("X2"), ["W0611"]);
+        let bad = BTreeMap::from([("W0612".to_owned(), "X1".to_owned())]);
+        assert!(Registry::with_owners([rule("X1", Some("W0611"), None)], &bad).is_err());
     }
 
     #[test]

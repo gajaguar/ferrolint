@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, RuleInfo, Severity, sort_findings};
+use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
 use rayon::prelude::*;
 use ruff_python_ast::{ModModule, PySourceType};
 use ruff_python_parser::Parsed;
@@ -19,6 +19,7 @@ use crate::error::{Error, Result};
 use crate::host::{FileData, Host, LoadedPlugin, Outcome};
 use crate::selection::Selection;
 use crate::semantic::Model;
+use crate::suppress::Suppressions;
 use crate::{ast, wit};
 
 /// What a run hands to its report.
@@ -52,7 +53,8 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
             .iter()
             .flat_map(|plugin| plugin.rules.iter().cloned()),
     );
-    let registry = Registry::new(rules).map_err(|err| Error::config(err.to_string()))?;
+    let registry = Registry::with_owners(rules, &config.pylint_aliases)
+        .map_err(|err| Error::config(err.to_string()))?;
     let selection = Selection::new(&registry, &config)?;
     let excludes = Excludes::new(&config)?;
     let files = discover::discover(cwd, &options.paths, &excludes)?;
@@ -148,6 +150,8 @@ impl Linter<'_> {
         if parsed.has_no_syntax_errors() {
             diagnostics.extend(self.run_plugins(path, display, source, &index, &parsed, enabled));
         }
+        let suppressions = Suppressions::new(source, parsed.tokens(), &index);
+        diagnostics.retain(|diagnostic| !suppressions.suppresses(self.registry, diagnostic));
         diagnostics
     }
 
@@ -210,11 +214,7 @@ impl Linter<'_> {
             })
             .map(|diagnostic| Finding {
                 path: display.to_owned(),
-                aliases: self
-                    .registry
-                    .get(&diagnostic.code)
-                    .map(RuleInfo::aliases)
-                    .unwrap_or_default(),
+                aliases: self.registry.aliases(&diagnostic.code),
                 diagnostic,
             })
             .collect()

@@ -19,6 +19,8 @@ pub struct Config {
     pub ignore: Vec<String>,
     pub exclude: Vec<String>,
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
+    /// Which rule owns a Pylint alias several rules declare.
+    pub pylint_aliases: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,6 +41,8 @@ struct RawConfig {
     exclude: Vec<String>,
     #[serde(default)]
     per_file_ignores: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pylint_aliases: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +139,7 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         ignore: raw.ignore,
         exclude: raw.exclude,
         per_file_ignores: raw.per_file_ignores,
+        pylint_aliases: raw.pylint_aliases,
     }
 }
 

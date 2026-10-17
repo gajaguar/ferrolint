@@ -18,6 +18,44 @@ fn json_diagnostics(stdout: &str) -> Vec<Value> {
     report["diagnostics"].as_array().unwrap().clone()
 }
 
+/// A project loading the unused-import sample plugin, with `config` on
+/// top of the plugin table.
+fn sample_project(config: &str) -> Project {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm");
+    project.write("ferrolint.toml", format!("{config}\n{plugin}"));
+    project
+}
+
+/// The (line, code) pairs a run reports, read from both the text and the
+/// JSON report, which must agree.
+fn reported(project: &Project, args: &[&str]) -> Vec<(u64, String)> {
+    let text = project.run(args);
+    let mut json_args = args.to_vec();
+    json_args.extend(["--format", "json"]);
+    let json = project.run(&json_args);
+    let from_json: Vec<(u64, String)> = json_diagnostics(&json.stdout)
+        .iter()
+        .map(|d| {
+            (
+                d["range"]["start"]["line"].as_u64().unwrap(),
+                d["code"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let from_text: Vec<(u64, String)> = text
+        .finding_lines()
+        .iter()
+        .map(|line| {
+            let fields: Vec<&str> = line.split(' ').collect();
+            let line_number = fields[0].split(':').nth(1).unwrap().parse().unwrap();
+            (line_number, fields[2].to_owned())
+        })
+        .collect();
+    assert_eq!(from_text, from_json, "text and json agree");
+    from_json
+}
+
 /// A probe project: the probe plugin, with `select` limited to `codes`.
 fn probe_project(codes: &[&str]) -> Project {
     let project = Project::new();
@@ -355,30 +393,45 @@ fn ac_10_sample_plugin_matches_pylint_checker() {
 // Suppressions (AC-11..AC-13, FR-05)
 
 #[test]
-#[ignore = "AC-11: ferrolint-disable comments suppress their codes"]
 fn ac_11_ferrolint_disable_suppresses() {
-    // Given a fixture line whose comment is `# ferrolint: disable=CODE` for the finding's code,
-    // when a run reports,
-    // then that finding is absent and a second code on the line is suppressed only if listed.
-    unimplemented!("AC-11");
+    let project = sample_project("");
+    project.write(
+        "a.py",
+        "import os  # ferrolint: disable=IMP001\nimport sys  # ferrolint: disable=IMP001  # noqa\nimport re  # ferrolint: disable=IMP001,FL002  # noqa\nimport json\n",
+    );
+    assert_eq!(
+        reported(&project, &[]),
+        [(2, "FL002".to_owned()), (4, "IMP001".to_owned())],
+        "a listed code is gone, an unlisted one on the same line stays"
+    );
 }
 
 #[test]
-#[ignore = "AC-12: pylint-disable comments suppress their codes"]
 fn ac_12_pylint_disable_suppresses() {
-    // Given the same fixture line with `# pylint: disable=CODE` in msg-id, symbol or plugin spelling,
-    // when a run reports,
-    // then the finding is suppressed identically to the ferrolint spelling of the same code.
-    unimplemented!("AC-12");
+    let project = sample_project("");
+    project.write(
+        "a.py",
+        "import os  # pylint: disable=W0611\nimport sys  # pylint: disable=unused-import\nimport re  # pylint: disable=IMP001\nimport json  # pylint: disable=W0612\nimport csv  # Pylint: disable = unused-import, W0612\n",
+    );
+    assert_eq!(reported(&project, &[]), [(4, "IMP001".to_owned())]);
 }
 
 #[test]
-#[ignore = "AC-13: noqa comments suppress their codes"]
 fn ac_13_noqa_suppresses() {
-    // Given the same fixture line with `# noqa: CODE` and a two-code comma variant,
-    // when a run reports,
-    // then exactly the listed findings are suppressed and inert comments suppress nothing.
-    unimplemented!("AC-13");
+    let project = probe_project(&["PRB002", "PRB004"]);
+    project.write(
+        "a.py",
+        "def one(): return len  # noqa: PRB004\ndef two(): return len  # noqa: PRB004, PRB002\ndef three(): return len  # noqa: NOPE999\n",
+    );
+    assert_eq!(
+        reported(&project, &[]),
+        [
+            (1, "PRB002".to_owned()),
+            (3, "PRB004".to_owned()),
+            (3, "PRB002".to_owned()),
+        ],
+        "exactly the listed codes are suppressed; an unknown code is inert"
+    );
 }
 
 // Output (AC-14..AC-18, FR-06, FR-10)
@@ -420,12 +473,30 @@ fn ac_17_junit_output_test_report() {
 }
 
 #[test]
-#[ignore = "AC-18: Pylint aliases resolve through the run"]
 fn ac_18_pylint_aliases_resolve() {
-    // Given a `select` citing a ported checker by Pylint msg-id and symbol,
-    // when a firing fixture is linted and reported in every format,
-    // then findings carry plugin code plus both aliases, and `ignore` removes them by any spelling.
-    unimplemented!("AC-18");
+    let source = "import os\nimport sys\n\nprint(sys)\n";
+    for select in ["W0611", "unused-import"] {
+        let project = sample_project(&format!("select = [\"{select}\"]"));
+        project.write("a.py", source);
+        let text = project.run(&[]);
+        assert_eq!(
+            text.finding_lines(),
+            ["a.py:1:1: warning IMP001 (W0611, unused-import) Unused import os"],
+            "{select}: {text:?}"
+        );
+        let json = project.run(&["--format", "json"]);
+        let diagnostics = json_diagnostics(&json.stdout);
+        assert_eq!(diagnostics[0]["code"], "IMP001");
+        assert_eq!(
+            diagnostics[0]["aliases"],
+            serde_json::json!(["W0611", "unused-import"])
+        );
+    }
+    for ignore in ["W0611", "unused-import", "IMP001"] {
+        let project = sample_project(&format!("ignore = [\"{ignore}\"]"));
+        project.write("a.py", source);
+        assert!(reported(&project, &[]).is_empty(), "{ignore}");
+    }
 }
 
 // Exit codes (AC-19..AC-21, FR-07)
