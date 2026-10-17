@@ -25,8 +25,10 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
 
 * `CODE`: the directory to lint. Both linters run inside it, so Pylint reads
   its own `.pylintrc`.
-* `PYLINT`: the Pylint command, which may be several words. Defaults to
-  `pylint`.
+* `PYLINT`: the Pylint command, which may be several words, so it can set the
+  environment Pylint needs: `PYLINT="env DJANGO_SETTINGS_MODULE=app.settings
+  pylint"`. Defaults to `pylint`. The tool fails if Pylint ends without its
+  rating line, since a crash prints no findings and would look like parity.
 * `PYLINT_OUT`: a file with Pylint's output. If it exists it is reused; if
   not, Pylint writes it.
 * `IGNORE`: ferrolint rule codes, separated by commas, that the temporary

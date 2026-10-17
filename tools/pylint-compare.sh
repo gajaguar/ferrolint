@@ -72,9 +72,16 @@ else
 	pylint_out="${PYLINT_OUT:-$work/pylint.out}"
 	set +e
 	# Unquoted: PYLINT may be several words, e.g. "poetry run pylint".
-	$PYLINT --msg-template='{path}:{line}:{msg_id}' . >"$pylint_out"
+	$PYLINT --msg-template='{path}:{line}:{msg_id}' . >"$pylint_out" 2>"$work/pylint.err"
 	code=$?
 	set -e
+	# A crash (a missing DJANGO_SETTINGS_MODULE, say) exits 1 with no findings,
+	# which would read as parity; a rating line proves Pylint finished.
+	if ! grep -q 'has been rated at' "$work/pylint.err"; then
+		rm -f "$pylint_out"
+		sed 's/^/  /' "$work/pylint.err" | tail -5 >&2
+		fail "pylint did not finish; set its environment in PYLINT, e.g. PYLINT=\"env DJANGO_SETTINGS_MODULE=app.settings pylint\""
+	fi
 	# 32 is Pylint's usage error; below it the bits only count findings.
 	if [ "$code" -ge 32 ]; then
 		rm -f "$pylint_out"
