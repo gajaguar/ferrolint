@@ -335,7 +335,6 @@ fn engine(workers: usize) -> Result<Engine> {
     let mut pooled = config.clone();
     pooled.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
     Engine::new(&pooled)
-        .inspect_err(|err| eprintln!("POOL FAILED: {err}"))
         .or_else(|_| Engine::new(&config))
         .map_err(|err| Error::plugin(format!("cannot start the WASM engine: {err}")))
 }
