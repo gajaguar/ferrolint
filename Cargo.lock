@@ -708,7 +708,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferrolint"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "ferrolint-core",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
 ]
@@ -745,28 +745,28 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-plugin-unused-import"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-probe"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-runaway"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-sandbox"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
