@@ -23,8 +23,16 @@ import sys  # noqa: IMP001
   symbol. A code no rule answers to suppresses nothing and is not an
   error.
 * The comment applies to a finding that starts or ends on its line, so a
-  multi-line finding can be silenced at either end. A comment on a line
-  of its own applies to nothing.
+  multi-line finding can be silenced at either end. A `ferrolint:` or
+  `noqa:` comment on a line of its own applies to nothing.
+* A `pylint: disable=` on a line of its own covers from that line to the
+  end of the innermost compound statement (`def`, `class`, `if`, `for`,
+  `while`, `with`, `try`, `match`) that contains it, or to the end of the
+  module. Placed before a def's or class's first statement (after any
+  docstring), or before the module's first statement, it covers from the
+  def or class line, or from line 1. Trailing a `def` or `class` line, it
+  covers the whole definition; trailing any other line, only that line.
+* A `pylint: disable-next=` covers the next line only.
 * A bare `# noqa` suppresses nothing and is itself reported as `FL002`.
 * An `FL001` plugin abort is never suppressed.
 
@@ -32,6 +40,5 @@ import sys  # noqa: IMP001
   followed by prose; a `noqa:` list may also use spaces and ends at the
   first word that has no digit, `-` or `_`.
 
-Pylint's other directives suppress nothing here: `disable-next=`,
-`enable=`, and a `# pylint: disable=` on a line of its own, which Pylint
-applies to the rest of the block. ferrolint's unit is always one line.
+Pylint's other directives suppress nothing here: `enable=`, `skip-file`,
+and `disable-all`.

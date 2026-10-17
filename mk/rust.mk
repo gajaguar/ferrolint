@@ -67,6 +67,6 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 	test "$$version" && test "$$(git rev-parse --abbrev-ref HEAD)" = "$$base" && test -z "$$(git status --porcelain)" || { echo "release-tag: run it from a clean $$base, which must have a version in Cargo.toml"; exit 1; }; \
 	git fetch --quiet origin && test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/$$base)" || { echo "release-tag: $$base is not at origin/$$base"; exit 1; }; \
 	git rev-parse --quiet --verify "refs/tags/$$tag" >/dev/null && { echo "release-tag: $$tag already exists"; exit 1; }; \
-	git tag -a "$$tag" -m "$$tag" && git push origin "$$tag"
+	git tag -s "$$tag" -m "$$tag" && git push origin "$$tag"
 
 .PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build smoke bench sample-fixtures pylint-compare release-tag

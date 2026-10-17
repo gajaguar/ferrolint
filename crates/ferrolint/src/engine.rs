@@ -2,7 +2,7 @@
 //! them in parallel (or replay them from the cache) and gather the findings
 //! into one deterministic order.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -470,12 +470,12 @@ impl Linter<'_> {
         } = prepared
         else {
             entry.host = vec![checks::not_utf8()];
-            entry.suppressions = BTreeMap::new();
+            entry.suppressions = Vec::new();
             entry.unparsable = true;
             return Ok((entry, Vec::new()));
         };
         entry.host = checks::check(&source, &parsed, &index);
-        entry.suppressions = suppress::spelled(&source, parsed.tokens(), &index);
+        entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted
             .iter()

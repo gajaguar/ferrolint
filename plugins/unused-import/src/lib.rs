@@ -5,8 +5,8 @@
 //! it binds into, or in a scope nested under it, finds that name there:
 //! the check is by name, not by binding, so `import json; json = 1;
 //! print(json)` uses the import. On top of name reads it counts `del`,
-//! names listed in a module's `__all__`, and names inside string
-//! annotations. It leaves alone what Pylint leaves alone with its default
+//! the target of an augmented assignment, names listed in a module's
+//! `__all__`, and names inside string annotations. It leaves alone what Pylint leaves alone with its default
 //! options: `__future__` imports, imports bound to `_`, imports in a class
 //! body, imports under `if TYPE_CHECKING:`, and every import of an
 //! `__init__.py`.
@@ -49,6 +49,22 @@ impl Checker for UnusedImport {
             NodeKind::Alias => self.collect(node, cx),
             NodeKind::Name if matches!(node.context, ExprContext::Load | ExprContext::Del) => {
                 if let (Some(name), Some(binding)) = (node.name, cx.resolve(node)) {
+                    self.used.insert((binding.scope, name.to_owned()));
+                }
+            }
+            // Pylint reads the target of `name += ...` as a use of `name`.
+            NodeKind::Name
+                if node.context == ExprContext::Store
+                    && cx
+                        .parent(node)
+                        .is_some_and(|parent| parent.kind == NodeKind::AugAssign) =>
+            {
+                let name = node.name.unwrap_or_default();
+                if let Some(binding) = cx
+                    .visible_bindings(node)
+                    .into_iter()
+                    .find(|binding| binding.name == name)
+                {
                     self.used.insert((binding.scope, name.to_owned()));
                 }
             }

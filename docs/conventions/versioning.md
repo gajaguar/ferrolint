@@ -30,9 +30,9 @@ Before `1.0.0` the contract is not frozen, so a breaking change bumps minor.
 
 ## Tags
 
-- A minor or major bump gets an annotated tag `vX.Y.Z` on the merge commit of
-  the base branch, created after the merge and pushed to the remote:
-  `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
+- A minor or major bump gets a signed annotated tag `vX.Y.Z` on the merge
+  commit of the base branch, created after the merge and pushed to the remote:
+  `git tag -s vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
 - A patch bump gets no tag. It is tagged only when someone asks to publish
   that patch.
 - Where the `Makefile` defines `make release-tag`, use it: it tags the base
