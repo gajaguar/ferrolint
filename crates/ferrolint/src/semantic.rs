@@ -120,6 +120,17 @@ impl Model {
             .map(|resolved| self.output(resolved))
     }
 
+    /// Whether `binding` is the only binding of its name in its scope.
+    pub fn is_sole_binding(&self, binding: u32) -> bool {
+        let Some(data) = self.bindings.get(binding as usize) else {
+            return false;
+        };
+        self.scopes[data.scope as usize]
+            .names
+            .get(&data.name)
+            .is_some_and(|ids| ids.len() == 1)
+    }
+
     pub fn visible_bindings(&self, flat: &Flat, node: u32) -> Vec<Binding> {
         let (Some(scope), Some(target)) = (self.scope_of_node(node), flat.nodes.get(node as usize))
         else {

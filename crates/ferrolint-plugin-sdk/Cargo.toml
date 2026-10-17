@@ -2,7 +2,7 @@
 name = "ferrolint-plugin-sdk"
 # The SDK's version is the WIT contract's version, not the workspace's: a
 # plugin pins both, and they move together.
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description = "Guest-side SDK for ferrolint WASM plugins"
 license.workspace = true

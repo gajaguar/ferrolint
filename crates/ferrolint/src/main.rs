@@ -7,6 +7,7 @@ mod discover;
 mod engine;
 mod error;
 mod host;
+mod infer;
 mod report;
 mod selection;
 mod semantic;

@@ -511,7 +511,12 @@ impl Linter<'_> {
             context.index,
         );
         let ast = flat.pack();
-        let data = Arc::new(FileData { flat, ast, model });
+        let data = Arc::new(FileData {
+            flat,
+            ast,
+            model,
+            source: context.source.to_owned(),
+        });
         let file = wit::File {
             path: context.display.to_owned(),
             module: context.module.to_owned(),

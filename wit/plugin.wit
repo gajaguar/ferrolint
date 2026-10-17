@@ -1,4 +1,4 @@
-package ferrolint:plugin@0.2.0;
+package ferrolint:plugin@0.2.1;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -252,6 +252,47 @@ interface semantic {
     resolve: func(node: u32) -> option<binding>;
 }
 
+/// Phase 2: what the host infers about the type of an expression. Best
+/// effort: a plugin should stay silent on an unresolved answer. A host of
+/// 0.2.1 still loads a plugin built against 0.2.0, which imports nothing
+/// of this interface.
+@since(version = 0.2.1)
+interface inference {
+    /// Where an inferred type comes from.
+    variant origin {
+        /// A literal or display of the type: `1`, `"s"`, `[...]`, `x == y`.
+        literal,
+        /// A builtin, by name.
+        builtin(string),
+        /// An import, by what it imports: `os.path`, `os.path.join`.
+        %import(string),
+        /// A class definition, by its node.
+        class-def(u32),
+        /// A function definition, by its node.
+        function-def(u32),
+        /// What a call returns, by the call's node.
+        call-return(u32),
+        /// An annotation, by its node.
+        annotation(u32),
+        /// Nothing the engine could follow.
+        unknown,
+    }
+
+    /// An inferred type.
+    record inferred {
+        /// The type: `int`, `str`, `type[Widget]` for the class itself,
+        /// `Widget` for an instance, `module`, `function`; `unknown` when
+        /// unresolved.
+        name: string,
+        origin: origin,
+        /// False when the engine gave up on a dynamic pattern.
+        resolved: bool,
+    }
+
+    /// The inferred type of the expression at `node`.
+    infer: func(node: u32) -> inferred;
+}
+
 /// The plugin's exports.
 interface checker {
     use types.{ast, diagnostic, file, plugin-info};
@@ -267,5 +308,7 @@ interface checker {
 /// World contract for a ferrolint plugin.
 world plugin {
     import semantic;
+    @since(version = 0.2.1)
+    import inference;
     export checker;
 }

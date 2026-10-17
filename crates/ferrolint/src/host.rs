@@ -23,6 +23,7 @@ use crate::ast::Flat;
 use crate::cache::{Cache, PluginMeta};
 use crate::error::{Error, Result};
 use crate::semantic::Model;
+use crate::wit::ferrolint::plugin::inference::Inferred;
 use crate::wit::{self, Binding, Diagnostic, File, Plugin, PluginPre, Scope};
 
 /// Instructions one plugin may run on one file.
@@ -42,6 +43,8 @@ pub struct FileData {
     /// The packed form of `flat` the plugins receive.
     pub ast: wit::Ast,
     pub model: Model,
+    /// The source text, for the inference queries.
+    pub source: String,
 }
 
 /// Per-store host state.
@@ -143,6 +146,18 @@ impl wit::ferrolint::plugin::semantic::Host for State {
     fn resolve(&mut self, node: u32) -> wasmtime::Result<Option<Binding>> {
         let file = self.check_node(node)?;
         Ok(file.model.resolve(&file.flat, node))
+    }
+}
+
+impl wit::ferrolint::plugin::inference::Host for State {
+    fn infer(&mut self, node: u32) -> wasmtime::Result<Inferred> {
+        let file = self.check_node(node)?;
+        Ok(crate::infer::infer(
+            &file.flat,
+            &file.model,
+            &file.source,
+            node,
+        ))
     }
 }
 

@@ -109,6 +109,29 @@ fn unnecessary_pass() {
 }
 
 #[test]
+fn not_callable_reports_resolved_builtin_instances() {
+    let source = "x = 1\nx()\nname: str = 'a'\nname()\nNone()\nitems = [x]\nitems()\n\ndef f(y):\n    return y()\n";
+    assert_eq!(
+        findings("ferrolint-plugin-not-callable", source),
+        [
+            "2: x is not callable",
+            "4: name is not callable",
+            "5: None is not callable",
+            "7: items is not callable",
+        ]
+    );
+}
+
+#[test]
+fn not_callable_stays_silent_when_the_type_is_unresolved() {
+    let source = "import random\nfrom os import sep\n\nclass C:\n    pass\n\ndef make() -> C:\n    return C()\n\nfn = random.choice([len, 1])\nfn()\nsep()\nC()\nmake()\nlen('a')\nint('1')\na, b = 1, 2\na()\ntry:\n    from _speedups import fast\nexcept ImportError:\n    fast = None\nfast()\ncallback: Callable[[], None] | None = None\ncallback()\nflag = 1 == 2\nflag()\n";
+    assert_eq!(
+        findings("ferrolint-plugin-not-callable", source),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn singleton_comparison() {
     let source =
         "x = None\nif x == None:\n    pass\nif x != True:\n    pass\nif x is None:\n    pass\n";
@@ -128,4 +151,39 @@ fn self_assigning_variable() {
         findings("ferrolint-plugin-self-assigning-variable", source),
         ["2: Assigning the same variable 'x' to itself"]
     );
+}
+
+#[test]
+fn a_plugin_built_against_contract_0_2_0_still_loads() {
+    // The same component with every `@0.2.1` interface name spelled
+    // `@0.2.0`, as a build against the 0.2.0 SDK names them; the strings
+    // have one length, so the binary stays valid.
+    let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
+    let (prefix, version) = (b"ferrolint:plugin/", b"@0.2.1");
+    let mut rewritten = 0;
+    for start in 0..bytes.len() {
+        if bytes[start..].starts_with(prefix)
+            && let Some(at) = bytes[start..]
+                .iter()
+                .take(48)
+                .position(|&byte| byte == b'@')
+            && bytes[start + at..].starts_with(version)
+        {
+            bytes[start + at + 5] = b'0';
+            rewritten += 1;
+        }
+    }
+    assert!(rewritten > 0);
+    let project = Project::new();
+    let sha = support::sha256(&bytes);
+    project
+        .write("old.wasm", &bytes)
+        .write(
+            "ferrolint.toml",
+            format!("[[plugins]]\npath = \"old.wasm\"\nsha256 = \"{sha}\"\n"),
+        )
+        .write("case.py", "import os\n");
+    let run = project.run(&["--no-cache"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert_eq!(run.finding_lines().len(), 1, "{run:?}");
 }

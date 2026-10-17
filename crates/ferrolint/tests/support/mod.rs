@@ -35,6 +35,7 @@ pub fn sha256(bytes: &[u8]) -> String {
 const PLUGIN_PACKAGES: &[&str] = &[
     "ferrolint-plugin-bare-except",
     "ferrolint-plugin-global-statement",
+    "ferrolint-plugin-not-callable",
     "ferrolint-plugin-pointless-statement",
     "ferrolint-plugin-redefined-builtin",
     "ferrolint-plugin-self-assigning-variable",

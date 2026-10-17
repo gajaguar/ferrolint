@@ -1,10 +1,10 @@
 //! Guest-side SDK for ferrolint WASM plugins.
 //!
 //! A plugin is a [`Checker`]: it declares its rules, receives the visitor
-//! events of each file in source order, asks the host scope and binding
-//! questions through its [`Context`], and reports [`Diagnostic`]s. The
-//! [`export_checker!`] macro turns it into a `wasm32-wasip2` component that
-//! implements the `ferrolint:plugin` contract:
+//! events of each file in source order, asks the host scope, binding and
+//! type questions through its [`Context`], and reports [`Diagnostic`]s.
+//! The [`export_checker!`] macro turns it into a `wasm32-wasip2` component
+//! that implements the `ferrolint:plugin` contract:
 //!
 //! ```ignore
 //! use ferrolint_plugin_sdk::prelude::*;
@@ -36,6 +36,7 @@ pub use context::{Context, Semantic};
 pub use model::{Diagnostic, Fix, Info, Node, Rule};
 
 /// The contract's data types, as the host sends them.
+pub use bindings::ferrolint::plugin::inference::{Inferred, Origin};
 pub use bindings::ferrolint::plugin::semantic::{Binding, BindingKind, Scope, ScopeKind};
 pub use bindings::ferrolint::plugin::types::{
     Ast, ExprContext, File, NodeKind, Position, Range, Severity,
@@ -44,8 +45,8 @@ pub use bindings::ferrolint::plugin::types::{
 /// Everything a checker needs, for a glob import.
 pub mod prelude {
     pub use crate::{
-        Binding, BindingKind, Checker, Context, Diagnostic, ExprContext, File, Fix, Info, Node,
-        NodeKind, Position, Range, Rule, Scope, ScopeKind, Severity, export_checker,
+        Binding, BindingKind, Checker, Context, Diagnostic, ExprContext, File, Fix, Inferred, Info,
+        Node, NodeKind, Origin, Position, Range, Rule, Scope, ScopeKind, Severity, export_checker,
     };
 }
 

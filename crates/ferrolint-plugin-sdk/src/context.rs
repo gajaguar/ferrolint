@@ -1,7 +1,7 @@
 //! What a checker sees of the current file, and how it asks the host.
 
 use crate::bindings::ferrolint::plugin::semantic;
-use crate::{Binding, Diagnostic, File, Node, NodeKind, Scope};
+use crate::{Binding, Diagnostic, File, Inferred, Node, NodeKind, Origin, Scope};
 
 /// The scope and binding queries the host answers about the current file.
 /// Plugins use the host's answers; a native test can supply its own.
@@ -12,6 +12,15 @@ pub trait Semantic {
     fn visible_bindings(&self, node: u32) -> Vec<Binding>;
     /// What the name at `node` resolves to.
     fn resolve(&self, node: u32) -> Option<Binding>;
+    /// The host's best-effort type of the expression at `node`. A native
+    /// test that does not care answers that nothing is known.
+    fn infer(&self, _node: u32) -> Inferred {
+        Inferred {
+            name: "unknown".into(),
+            origin: Origin::Unknown,
+            resolved: false,
+        }
+    }
 }
 
 /// The host's answers, through the contract's `semantic` import.
@@ -28,6 +37,10 @@ impl Semantic for HostSemantic {
 
     fn resolve(&self, node: u32) -> Option<Binding> {
         semantic::resolve(node)
+    }
+
+    fn infer(&self, node: u32) -> Inferred {
+        crate::bindings::ferrolint::plugin::inference::infer(node)
     }
 }
 
@@ -118,6 +131,12 @@ impl<'a> Context<'a> {
 
     pub fn resolve(&self, node: &Node<'_>) -> Option<Binding> {
         self.semantic.resolve(node.id)
+    }
+
+    /// The host's best-effort type of the expression at `node`; check
+    /// `resolved` before trusting it.
+    pub fn infer(&self, node: &Node<'_>) -> Inferred {
+        self.semantic.infer(node.id)
     }
 
     /// Whether the node is a statement.

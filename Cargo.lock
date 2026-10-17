@@ -788,6 +788,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrolint-plugin-not-callable"
+version = "0.8.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
 name = "ferrolint-plugin-pointless-statement"
 version = "0.8.0"
 dependencies = [
@@ -803,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-plugin-sdk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]
