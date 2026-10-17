@@ -16,6 +16,8 @@ status: stable
   three supported targets: Linux x86_64, Linux aarch64 and macOS
   aarch64. The binary embeds everything the run needs - the WASM runtime
   included - and needs no system package or interpreter at runtime.
+* Releases also ship a PyPI wheel per platform that contains the binary
+  (see [Release builds](../toolchain/release-builds.md)).
 * Cross-compilation and CI build the same set; every release commit
   passes targets with the pinning in `mise.toml` (see
   [Compile target source](../rust/compile-target-source.md)).

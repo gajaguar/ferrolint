@@ -25,6 +25,8 @@ markdownlint
 maturin
 mise
 musllinux
+pypa
+retagged
 ncols
 negativa
 noul

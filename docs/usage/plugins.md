@@ -36,3 +36,15 @@ answers to its Pylint msg-id and symbol as well as its code.
   inference and reports only calls of a resolved builtin instance such
   as an `int` or a `list`. It is not one of the ten plugins the
   benchmarks load.
+
+## Bundled by default
+
+A release binary embeds these eleven plugins and loads them before any
+configured plugin, so every bundled rule is active with no `[[plugins]]`
+table: `select` and `ignore` work on their codes and Pylint spellings
+alone. `make release-build` and `make wheel` build the binary this way.
+A binary from `cargo build`, such as the one the tests run, bundles none.
+
+Errors name a bundled plugin as `<bundled>/<file>`. A `[[plugins]]` entry
+that repeats one fails with the duplicate rule code error; `[[plugins]]`
+is for external plugins, which still need `path` and `sha256`.
