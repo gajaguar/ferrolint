@@ -16,5 +16,5 @@ from `ferrolint --help` alone.
 * [Result cache](result-cache.md) - what `.ferrolint-cache/` stores and
   what invalidates it.
 * [Diff mode](diff-mode.md) - the files `--diff-base` lints.
-* [Bundled plugins](plugins.md) - the ten ported Pylint checkers, their
+* [Bundled plugins](plugins.md) - the ported Pylint checkers, their
   codes and aliases.

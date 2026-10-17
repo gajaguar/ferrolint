@@ -11,3 +11,5 @@ considered, what was chosen, and what the choice puts on future us.
   under its own caps for every file.
 * [Packed AST](packed-ast.md) - why contract 0.2.0 sends the AST as `u32`
   words and one string blob.
+* [Type inference query](type-inference-query.md) - the phase 2
+  `inference` interface of contract 0.2.1 and what the host infers.

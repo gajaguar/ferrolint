@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Type inference query**: Added `decisions/type-inference-query.md` -
+  the phase 2 `inference` interface and what the host infers.
+
 * **Performance and releases**: Added `toolchain/ruff-upgrade.md`,
   `toolchain/release-builds.md`, `usage/plugins.md` and
   `decisions/packed-ast.md`.

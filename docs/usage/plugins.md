@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Bundled plugins
-description: The ten Pylint checkers ported as plugins in this repository, with their codes, aliases and what they leave out.
+description: The Pylint checkers ported as plugins in this repository, with their codes, aliases and what they leave out.
 tags: [plugins, rules]
 status: stable
 ---
@@ -24,6 +24,7 @@ answers to its Pylint msg-id and symbol as well as its code.
 | `bare-except`             | `EXC001` | `W0702` `bare-except`             | no  |
 | `singleton-comparison`    | `CMP001` | `C0121` `singleton-comparison`    | yes |
 | `self-assigning-variable` | `ASG001` | `W0127` `self-assigning-variable` | no  |
+| `not-callable`            | `CAL001` | `E1102` `not-callable`            | no  |
 
 * `unused-import` is the SDK's sample and matches Pylint 4.1.3 on its
   fixtures (acceptance test AC-10).
@@ -31,3 +32,7 @@ answers to its Pylint msg-id and symbol as well as its code.
   doc comment lists what it leaves out, such as loop variables for
   `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
+* `not-callable` is the phase 2 sample: it asks the host's type
+  inference and reports only calls of a resolved builtin instance such
+  as an `int` or a `list`. It is not one of the ten plugins the
+  benchmarks load.
