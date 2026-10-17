@@ -35,6 +35,8 @@ struct ScopeData {
     name: Option<String>,
     node: u32,
     parent: Option<u32>,
+    /// Where a comprehension scope ends; 0 for any other scope.
+    end: u32,
     /// The bindings of each name, in source order.
     names: BTreeMap<String, Vec<u32>>,
     globals: HashSet<String>,
@@ -159,11 +161,14 @@ impl Model {
     }
 
     /// Python's lookup for `name` used at `offset` inside `scope`.
-    fn resolve_name(&self, name: &str, scope: u32, offset: u32) -> Option<Resolved> {
+    fn resolve_name(&self, name: &str, scope: u32, mut offset: u32) -> Option<Resolved> {
         let mut current = scope;
         let mut deferred = false;
         loop {
             let data = &self.scopes[current as usize];
+            // A comprehension evaluates its element after its `for` and `if`
+            // clauses, so a use inside it follows all of its bindings.
+            offset = offset.max(data.end);
             if data.globals.contains(name) && current != 0 {
                 return self
                     .pick(0, name, offset, true, false)
@@ -312,6 +317,7 @@ impl Builder<'_> {
             name,
             node,
             parent,
+            end: 0,
             names: BTreeMap::new(),
             globals: HashSet::new(),
             nonlocals: HashSet::new(),
@@ -463,6 +469,7 @@ impl Builder<'_> {
     fn visit_comprehension_scope(
         &mut self,
         node: u32,
+        end: u32,
         generators: &[ast::Comprehension],
         elements: &[&Expr],
     ) {
@@ -470,7 +477,8 @@ impl Builder<'_> {
             return;
         };
         self.visit_expr(&first.iter);
-        self.push_scope(ScopeKind::Comprehension, None, node);
+        let scope = self.push_scope(ScopeKind::Comprehension, None, node);
+        self.model.scopes[scope as usize].end = end;
         for (index, generator) in generators.iter().enumerate() {
             self.mark(generator);
             self.with_store_kind(BindingKind::ComprehensionVar, |this| {
@@ -736,6 +744,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::ListComp(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -743,6 +752,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::SetComp(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -750,6 +760,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::Generator(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -763,6 +774,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
                     .collect();
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &elements,
                 );
@@ -909,6 +921,26 @@ mod tests {
         let f = fixture("x = 0\nys = [x for x in range(3)]\nz = x\n");
         assert_eq!(f.resolve("x", 0), Some((BindingKind::ComprehensionVar, 2)));
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn a_comprehension_element_sees_a_walrus_in_its_condition() {
+        let f = fixture("xs = []\nvs = {v for r in xs if (v := r)}\n");
+        assert_eq!(f.resolve("v", 0), Some((BindingKind::NamedExpr, 2)));
+    }
+
+    #[test]
+    fn a_nested_comprehension_sees_the_outer_variable() {
+        let f = fixture("y = z = []\nws = [[i] + [i for _ in y] for i, v in enumerate(z)]\n");
+        assert_eq!(f.resolve("i", 0), Some((BindingKind::ComprehensionVar, 2)));
+        assert_eq!(f.resolve("i", 1), Some((BindingKind::ComprehensionVar, 2)));
+    }
+
+    #[test]
+    fn a_use_before_the_comprehension_binding_stays_undefined() {
+        let f = fixture("xs = []\nu = v\nws = [v for r in xs if (v := r)]\n");
+        assert_eq!(f.resolve("v", 0), None);
+        assert_eq!(f.resolve("v", 1), Some((BindingKind::NamedExpr, 3)));
     }
 
     #[test]
