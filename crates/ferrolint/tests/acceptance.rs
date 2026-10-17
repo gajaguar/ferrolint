@@ -27,33 +27,90 @@ fn sample_project(config: &str) -> Project {
     project
 }
 
-/// The (line, code) pairs a run reports, read from both the text and the
-/// JSON report, which must agree.
-fn reported(project: &Project, args: &[&str]) -> Vec<(u64, String)> {
-    let text = project.run(args);
-    let mut json_args = args.to_vec();
-    json_args.extend(["--format", "json"]);
-    let json = project.run(&json_args);
-    let from_json: Vec<(u64, String)> = json_diagnostics(&json.stdout)
+/// The (path, line, code) of every finding of a run, read from each of the
+/// four formats, which must agree one for one.
+fn every_format(project: &Project, args: &[&str]) -> Vec<(String, u64, String)> {
+    let run = |format: &str| {
+        let mut with_format = args.to_vec();
+        with_format.extend(["--format", format]);
+        project.run(&with_format).stdout
+    };
+    let text: Vec<(String, u64, String)> = project
+        .run(args)
+        .finding_lines()
+        .iter()
+        .map(|line| text_finding(line))
+        .collect();
+    let json: Vec<(String, u64, String)> = json_diagnostics(&run("json"))
         .iter()
         .map(|d| {
             (
+                d["path"].as_str().unwrap().to_owned(),
                 d["range"]["start"]["line"].as_u64().unwrap(),
                 d["code"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
-    let from_text: Vec<(u64, String)> = text
-        .finding_lines()
+    let sarif: Value = serde_json::from_str(&run("sarif")).unwrap();
+    let sarif: Vec<(String, u64, String)> = sarif["runs"][0]["results"]
+        .as_array()
+        .unwrap()
         .iter()
-        .map(|line| {
-            let fields: Vec<&str> = line.split(' ').collect();
-            let line_number = fields[0].split(':').nth(1).unwrap().parse().unwrap();
-            (line_number, fields[2].to_owned())
+        .map(|r| {
+            let location = &r["locations"][0]["physicalLocation"];
+            (
+                location["artifactLocation"]["uri"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+                location["region"]["startLine"].as_u64().unwrap(),
+                r["ruleId"].as_str().unwrap().to_owned(),
+            )
         })
         .collect();
-    assert_eq!(from_text, from_json, "text and json agree");
-    from_json
+    let junit_xml = run("junit");
+    let junit_doc = roxmltree::Document::parse(&junit_xml).unwrap();
+    let junit: Vec<(String, u64, String)> = junit_doc
+        .descendants()
+        .filter(|node| node.has_tag_name("failure"))
+        .map(|failure| {
+            let (path, line, _) = text_finding(failure.text().unwrap());
+            (path, line, failure.attribute("type").unwrap().to_owned())
+        })
+        .collect();
+    assert_eq!(text, json, "text and json agree");
+    assert_eq!(json, sarif, "json and sarif agree");
+    assert_eq!(json, junit, "json and junit agree");
+    json
+}
+
+/// The path, line and code of one text report line.
+fn text_finding(line: &str) -> (String, u64, String) {
+    let fields: Vec<&str> = line.split(' ').collect();
+    let mut location = fields[0].split(':');
+    let path = location.next().unwrap().to_owned();
+    let line_number = location.next().unwrap().parse().unwrap();
+    (path, line_number, fields[2].to_owned())
+}
+
+/// The (line, code) pairs a run reports in every format.
+fn reported(project: &Project, args: &[&str]) -> Vec<(u64, String)> {
+    every_format(project, args)
+        .into_iter()
+        .map(|(_, line, code)| (line, code))
+        .collect()
+}
+
+/// The run every output format test shares: the sample plugin and the host
+/// rules firing over four files, one of them clean.
+fn output_project() -> Project {
+    let project = sample_project("");
+    project
+        .write("a.py", "import os\nimport sys  # noqa\n")
+        .write("b.py", "print(1)\n")
+        .write("pkg/c.py", "from typing import Any\n")
+        .write("d.py", SYNTAX_ERROR);
+    project
 }
 
 /// A probe project: the probe plugin, with `select` limited to `codes`.
@@ -137,17 +194,11 @@ fn ac_04_select_and_ignore_filter_findings() {
         )
         .write("inside/both.py", &both)
         .write("outside/both.py", &both);
-    let run = project.run(&[]);
-    assert_eq!(run.code, 1, "{run:?}");
-    assert!(
-        !run.stdout.contains("FL003"),
-        "ignored code never reports: {run:?}"
-    );
-    let lines = run.finding_lines();
-    assert_eq!(lines.len(), 1, "{run:?}");
-    assert!(
-        lines[0].starts_with("outside/both.py:") && lines[0].contains("FL002"),
-        "{run:?}"
+    assert_eq!(project.run(&[]).code, 1);
+    assert_eq!(
+        every_format(&project, &[]),
+        [("outside/both.py".to_owned(), 3, "FL002".to_owned())],
+        "the ignored code never reports, the selected one only outside the glob"
     );
 }
 
@@ -437,39 +488,130 @@ fn ac_13_noqa_suppresses() {
 // Output (AC-14..AC-18, FR-06, FR-10)
 
 #[test]
-#[ignore = "AC-14: text output is the default and per-diagnostic"]
 fn ac_14_text_output_default() {
-    // Given a run with findings and no `--format` argument,
-    // when the report prints,
-    // then one line per diagnostic plus a summary line, and `--format text` prints the same bytes.
-    unimplemented!("AC-14");
+    let project = output_project();
+    let default = project.run(&[]);
+    let text = project.run(&["--format", "text"]);
+    assert_eq!(default.code, 1, "{default:?}");
+    assert_eq!(default.stdout, text.stdout, "--format text is the default");
+    assert_eq!(
+        default.finding_lines(),
+        [
+            "a.py:1:1: warning IMP001 (W0611, unused-import) Unused import os",
+            "a.py:2:1: warning IMP001 (W0611, unused-import) Unused import sys",
+            "a.py:2:13: warning FL002 `# noqa` without codes suppresses nothing; name the codes",
+            "d.py:1:12: error FL003 (E0001, syntax-error) Expected a parameter or the end of the parameter list",
+            "pkg/c.py:1:1: warning IMP001 (W0611, unused-import) Unused Any imported from typing",
+        ]
+    );
+    assert_eq!(default.summary(), "4 files linted, 5 findings.");
 }
 
 #[test]
-#[ignore = "AC-15: json output is machine-parseable"]
 fn ac_15_json_output_machine_parseable() {
-    // Given the same run with `--format json`,
-    // when the report is produced,
-    // then it is canonical JSON with one object per diagnostic and a summary, no extra top-level keys.
-    unimplemented!("AC-15");
+    let project = output_project();
+    let run = project.run(&["--format", "json"]);
+    let report: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(
+        serde_json::to_string(&report).unwrap() + "\n",
+        run.stdout,
+        "sorted keys, no whitespace: canonical JSON"
+    );
+    let keys: Vec<&String> = report.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["diagnostics", "summary"]);
+    assert_eq!(
+        report["summary"],
+        serde_json::json!({"files": 4, "findings": 5})
+    );
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 5);
+    for diagnostic in diagnostics {
+        for key in ["code", "message", "range", "severity", "path", "aliases"] {
+            assert!(diagnostic.get(key).is_some(), "{key} in {diagnostic}");
+        }
+    }
 }
 
 #[test]
-#[ignore = "AC-16: sarif output is SARIF 2.1.0 shaped"]
 fn ac_16_sarif_output_sarif_2_1() {
-    // Given the same run with `--format sarif`,
-    // when the report is produced,
-    // then a SARIF 2.1.0 reader parses it with rule reference, location and mapped severity per result.
-    unimplemented!("AC-16");
+    let project = output_project();
+    let run = project.run(&["--format", "sarif"]);
+    let sarif: Value = serde_json::from_str(&run.stdout).unwrap();
+    let schema_path =
+        support::workspace().join("crates/ferrolint/tests/data/sarif-schema-2.1.0.json");
+    let schema: Value =
+        serde_json::from_str(&std::fs::read_to_string(schema_path).unwrap()).unwrap();
+    let validator = jsonschema::draft4::new(&schema).unwrap();
+    let errors: Vec<String> = validator
+        .iter_errors(&sarif)
+        .map(|e| e.to_string())
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+
+    let json = project.run(&["--format", "json"]);
+    let diagnostics = json_diagnostics(&json.stdout);
+    let sarif_run = &sarif["runs"][0];
+    let rules = sarif_run["tool"]["driver"]["rules"].as_array().unwrap();
+    let results = sarif_run["results"].as_array().unwrap();
+    assert_eq!(results.len(), diagnostics.len());
+    for (result, diagnostic) in results.iter().zip(&diagnostics) {
+        assert_eq!(result["ruleId"], diagnostic["code"]);
+        let index = usize::try_from(result["ruleIndex"].as_u64().unwrap()).unwrap();
+        assert_eq!(rules[index]["id"], diagnostic["code"]);
+        let level = match diagnostic["severity"].as_str().unwrap() {
+            "error" => "error",
+            "warning" => "warning",
+            _ => "note",
+        };
+        assert_eq!(result["level"], level);
+        let location = &result["locations"][0]["physicalLocation"];
+        assert_eq!(location["artifactLocation"]["uri"], diagnostic["path"]);
+        assert_eq!(
+            location["region"]["startLine"],
+            diagnostic["range"]["start"]["line"]
+        );
+        assert_eq!(result["properties"]["aliases"], diagnostic["aliases"]);
+    }
 }
 
 #[test]
-#[ignore = "AC-17: junit output reads as a test report"]
 fn ac_17_junit_output_test_report() {
-    // Given the same run with `--format junit`,
-    // when the report is produced,
-    // then it parses as JUnit XML, one testcase per file with one failure per diagnostic, CI-consistent.
-    unimplemented!("AC-17");
+    let project = output_project();
+    let run = project.run(&["--format", "junit"]);
+    let document = roxmltree::Document::parse(&run.stdout).unwrap();
+    let root = document.root_element();
+    assert!(root.has_tag_name("testsuites"));
+    assert_eq!(root.attribute("tests"), Some("4"));
+    assert_eq!(root.attribute("failures"), Some("5"));
+    let cases: Vec<roxmltree::Node> = root
+        .descendants()
+        .filter(|node| node.has_tag_name("testcase"))
+        .collect();
+    let names: Vec<&str> = cases
+        .iter()
+        .map(|case| case.attribute("name").unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["a.py", "b.py", "d.py", "pkg/c.py"],
+        "one testcase per linted file"
+    );
+
+    let json = project.run(&["--format", "json"]);
+    for case in cases {
+        let path = case.attribute("name").unwrap();
+        let failures: Vec<&str> = case
+            .children()
+            .filter(|node| node.has_tag_name("failure"))
+            .map(|failure| failure.attribute("type").unwrap())
+            .collect();
+        let expected: Vec<String> = json_diagnostics(&json.stdout)
+            .iter()
+            .filter(|d| d["path"] == path)
+            .map(|d| d["code"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(failures, expected, "{path}");
+    }
 }
 
 #[test]
@@ -714,12 +856,35 @@ fn ac_30_runaway_plugin_aborts() {
 // Determinism (AC-31, NFR-04)
 
 #[test]
-#[ignore = "AC-31: same input, same output, any schedule"]
 fn ac_31_deterministic_across_schedules() {
-    // Given one tree and configuration, run 50 times with varying threads, a warm cache in the second half,
-    // when the reports are compared,
-    // then every text and json report is byte-identical, including plugin order, across two machines.
-    unimplemented!("AC-31");
+    let project = output_project();
+    project.write(
+        "ferrolint.toml",
+        format!(
+            "{}{}",
+            project.plugin("ferrolint-test-probe", "probe.wasm"),
+            project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm")
+        ),
+    );
+    for index in 0..20 {
+        project.write(
+            &format!("many/m{index:02}.py"),
+            format!("import os\ndef f{index}(x):\n    return x\n"),
+        );
+    }
+    let mut first: Vec<Option<String>> = vec![None, None];
+    for run_number in 0..50_usize {
+        let threads = (run_number % 8 + 1).to_string();
+        let format = ["text", "json"][run_number % 2];
+        let run = project.run(&["--threads", &threads, "--format", format]);
+        assert_eq!(run.code, 1, "{run:?}");
+        match &first[run_number % 2] {
+            None => first[run_number % 2] = Some(run.stdout),
+            Some(expected) => {
+                assert_eq!(&run.stdout, expected, "run {run_number}, {threads} threads");
+            }
+        }
+    }
 }
 
 // Platforms (AC-32..AC-34, NFR-06, NFR-07, NFR-08)

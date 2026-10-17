@@ -25,7 +25,9 @@ use crate::{ast, wit};
 /// What a run hands to its report.
 pub struct Report {
     pub findings: Vec<Finding>,
-    pub files: usize,
+    /// Every linted file, as reports show its path, in path order.
+    pub files: Vec<String>,
+    pub registry: Registry,
 }
 
 impl Report {
@@ -80,9 +82,16 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         findings.extend(result?);
     }
     sort_findings(&mut findings);
+    // The same string order as the findings', which sort by path first.
+    let mut files: Vec<String> = files
+        .iter()
+        .map(|path| discover::display_path(cwd, path))
+        .collect();
+    files.sort();
     Ok(Report {
         findings,
-        files: files.len(),
+        files,
+        registry,
     })
 }
 

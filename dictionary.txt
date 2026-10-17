@@ -59,3 +59,7 @@ sarif
 serde
 asname
 splitn
+roxmltree
+apos
+fffe
+fffd

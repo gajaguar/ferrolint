@@ -1,4 +1,8 @@
-//! Report formats.
+//! Report formats. Every format carries the same findings in the same
+//! order; only the packaging differs.
+
+mod junit;
+mod sarif;
 
 use std::fmt::Write;
 
@@ -13,36 +17,45 @@ pub enum Format {
     #[default]
     Text,
     Json,
+    Sarif,
+    Junit,
 }
 
 pub fn render(report: &Report, format: Format) -> String {
     match format {
         Format::Text => text(report),
         Format::Json => json(report),
+        Format::Sarif => sarif::render(report),
+        Format::Junit => junit::render(report),
     }
+}
+
+/// A finding as one line of text: path, line, column, severity, code with
+/// its aliases, and message.
+fn line(finding: &Finding) -> String {
+    let d = &finding.diagnostic;
+    let aliases = if finding.aliases.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", finding.aliases.join(", "))
+    };
+    format!(
+        "{}:{}:{}: {} {}{} {}",
+        finding.path,
+        d.range.start.line,
+        d.range.start.column,
+        d.severity.as_str(),
+        d.code,
+        aliases,
+        d.message
+    )
 }
 
 /// The default format: one line per diagnostic, then a summary line.
 pub fn text(report: &Report) -> String {
     let mut out = String::new();
     for finding in &report.findings {
-        let d = &finding.diagnostic;
-        let aliases = if finding.aliases.is_empty() {
-            String::new()
-        } else {
-            format!(" ({})", finding.aliases.join(", "))
-        };
-        let _ = writeln!(
-            out,
-            "{}:{}:{}: {} {}{} {}",
-            finding.path,
-            d.range.start.line,
-            d.range.start.column,
-            d.severity.as_str(),
-            d.code,
-            aliases,
-            d.message
-        );
+        let _ = writeln!(out, "{}", line(finding));
     }
     let _ = writeln!(out, "{}", summary(report));
     out
@@ -51,7 +64,7 @@ pub fn text(report: &Report) -> String {
 fn summary(report: &Report) -> String {
     format!(
         "{} linted, {}.",
-        plural(report.files, "file"),
+        plural(report.files.len(), "file"),
         plural(report.findings.len(), "finding")
     )
 }
@@ -71,7 +84,7 @@ pub fn json(report: &Report) -> String {
     let document = json!({
         "diagnostics": diagnostics,
         "summary": {
-            "files": report.files,
+            "files": report.files.len(),
             "findings": report.findings.len(),
         },
     });
