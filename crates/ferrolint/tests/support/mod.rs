@@ -33,6 +33,7 @@ pub fn sha256(bytes: &[u8]) -> String {
 
 /// The workspace's plugin packages the tests load.
 const PLUGIN_PACKAGES: &[&str] = &[
+    "ferrolint-plugin-unused-import",
     "ferrolint-test-probe",
     "ferrolint-test-sandbox",
     "ferrolint-test-runaway",
@@ -70,6 +71,11 @@ fn plugin_dir() -> &'static Path {
         );
         target.join("wasm32-wasip2/release")
     })
+}
+
+/// The repository's root directory.
+pub fn workspace() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 /// The built component of the plugin package `name`.
@@ -142,6 +148,20 @@ impl Project {
         let digest = sha256(&bytes);
         self.write(file, bytes);
         format!("[[plugins]]\npath = \"{file}\"\nsha256 = \"{digest}\"\n")
+    }
+
+    /// Copy a directory of the repository into the project, recursively.
+    pub fn copy_dir(&self, from: &Path, to: &str) -> &Self {
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = format!("{to}/{}", entry.file_name().to_string_lossy());
+            if entry.file_type().unwrap().is_dir() {
+                self.copy_dir(&entry.path(), &target);
+            } else {
+                self.write(&target, fs::read(entry.path()).unwrap());
+            }
+        }
+        self
     }
 
     pub fn remove(&self, relative: &str) -> &Self {

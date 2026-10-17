@@ -4,6 +4,10 @@ CARGO_DENY_VERSION := 0.20.2
 # the host-only linter and its core types.
 WASM_TARGET := wasm32-wasip2
 WASM_PACKAGES := --workspace --exclude ferrolint --exclude ferrolint-core
+# The Pylint the sample plugin's fixtures are recorded against. Pinned: a
+# checker's verdict changes between versions.
+PYLINT ?= uvx pylint@4.1.3
+SAMPLE_FIXTURES := plugins/unused-import/fixtures
 
 LANG_INSTALL_TARGETS += install-rust
 LANG_CHECK_TARGETS   += clippy fmt-check deny
@@ -38,6 +42,13 @@ build: ## Build the crate into target/
 plugins: ## Build the workspace plugins as WASM components into target/wasm32-wasip2/release/
 	$(CARGO) build --locked --release --target $(WASM_TARGET) $(WASM_PACKAGES)
 
+sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixture in its .txt sibling
+	@for file in $$(find $(SAMPLE_FIXTURES) -name '*.py' | sort); do \
+		{ $(PYLINT) --disable=all --enable=unused-import,unused-variable --score=n --persistent=n \
+			--msg-template '{line}:{column}:{msg_id}:{symbol}:{msg}' "$$file" || test $$? -lt 32; } \
+			| { grep ':W0611:' || true; } | sort -t: -k1,1n -k2,2n > "$${file%.py}.txt"; \
+	done
+
 release-tag: ## Tag the base branch as v<package.version> and push the tag (minor and major bumps)
 	@version=$$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1); base=$(BASE:origin/%=%); tag=v$$version; \
 	test "$$version" && test "$$(git rev-parse --abbrev-ref HEAD)" = "$$base" && test -z "$$(git status --porcelain)" || { echo "release-tag: run it from a clean $$base, which must have a version in Cargo.toml"; exit 1; }; \
@@ -45,4 +56,4 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 	git rev-parse --quiet --verify "refs/tags/$$tag" >/dev/null && { echo "release-tag: $$tag already exists"; exit 1; }; \
 	git tag -a "$$tag" -m "$$tag" && git push origin "$$tag"
 
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-tag
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins sample-fixtures release-tag

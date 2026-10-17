@@ -1,0 +1,5 @@
+2:0:W0611:unused-import:Unused import shutil
+3:0:W0611:unused-import:Unused import logging
+4:0:W0611:unused-import:Unused import logging.handlers
+19:4:W0611:unused-import:Unused import base64
+20:4:W0611:unused-import:Unused unpack imported from struct

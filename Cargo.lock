@@ -744,6 +744,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrolint-plugin-unused-import"
+version = "0.3.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
 name = "ferrolint-test-probe"
 version = "0.3.0"
 dependencies = [

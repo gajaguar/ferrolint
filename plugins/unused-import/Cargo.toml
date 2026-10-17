@@ -1,0 +1,18 @@
+[package]
+name = "ferrolint-plugin-unused-import"
+version.workspace = true
+edition.workspace = true
+description = "Sample ferrolint plugin: a port of Pylint's unused-import checker (W0611)"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pinned exactly: the SDK's version is the contract version this plugin
+# implements.
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.1.0" }
+
+[lints]
+workspace = true

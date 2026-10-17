@@ -18,6 +18,20 @@ fn json_diagnostics(stdout: &str) -> Vec<Value> {
     report["diagnostics"].as_array().unwrap().clone()
 }
 
+/// Every file under `dir`, recursively.
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
 /// A probe project: the probe plugin, with `select` limited to `codes`.
 fn probe_project(codes: &[&str]) -> Project {
     let project = Project::new();
@@ -296,12 +310,63 @@ fn ac_09_diagnostic_records_full_field_set() {
 }
 
 #[test]
-#[ignore = "AC-10: the sample plugin matches its real Pylint checker"]
 fn ac_10_sample_plugin_matches_pylint_checker() {
-    // Given the sample plugin ported from the designated Pylint checker and annotated fixtures,
-    // when findings are resolved through the code mapping,
-    // then every expected finding appears mapped, no unexpected ones, asserted in `make test`.
-    unimplemented!("AC-10");
+    // Each fixture's `.txt` sibling holds Pylint's own W0611 findings on it,
+    // recorded by `make sample-fixtures`: line:column:msg-id:symbol:message.
+    let fixtures = support::workspace().join("plugins/unused-import/fixtures");
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .copy_dir(&fixtures, "fixtures");
+
+    let mut expected = Vec::new();
+    for entry in walk(&project.join("fixtures")) {
+        if entry.extension().is_some_and(|ext| ext == "txt") {
+            let relative = entry
+                .strip_prefix(project.path())
+                .unwrap()
+                .with_extension("py");
+            let path = relative.to_string_lossy().replace('\\', "/");
+            for line in std::fs::read_to_string(&entry).unwrap().lines() {
+                let fields: Vec<&str> = line.splitn(5, ':').collect();
+                let column: u64 = fields[1].parse().unwrap();
+                expected.push(format!(
+                    "{path}:{}:{}:{}:{}:{}",
+                    fields[0],
+                    column + 1,
+                    fields[2],
+                    fields[3],
+                    fields[4]
+                ));
+            }
+        }
+    }
+    expected.sort();
+    assert!(
+        expected.len() >= 20,
+        "the fixtures exercise the checker: {expected:?}"
+    );
+
+    let run = project.run(&["fixtures", "--format", "json"]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let mut actual: Vec<String> = json_diagnostics(&run.stdout)
+        .iter()
+        .map(|d| {
+            let aliases = d["aliases"].as_array().unwrap();
+            format!(
+                "{}:{}:{}:{}:{}:{}",
+                d["path"].as_str().unwrap(),
+                d["range"]["start"]["line"],
+                d["range"]["start"]["column"],
+                aliases[0].as_str().unwrap(),
+                aliases[1].as_str().unwrap(),
+                d["message"].as_str().unwrap()
+            )
+        })
+        .collect();
+    actual.sort();
+    assert_eq!(actual, expected);
 }
 
 // Suppressions (AC-11..AC-13, FR-05)
