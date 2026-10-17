@@ -22,7 +22,9 @@ katex
 klass
 kwonlyargs
 markdownlint
+maturin
 mise
+musllinux
 ncols
 negativa
 noul
