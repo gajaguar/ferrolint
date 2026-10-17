@@ -1,7 +1,9 @@
 //! A port of Pylint's `pointless-statement` (W0104): an expression
-//! statement with no effect, such as a bare name, attribute, literal or
-//! comparison. Calls, awaits, yields, strings (docstrings and Pylint's
-//! W0105) and `...` are left alone.
+//! statement with no effect, such as a bare name, attribute, literal,
+//! comparison or arithmetic. Left alone: anything that calls, awaits or
+//! yields (Pylint's W0106 covers some of those), strings (docstrings and
+//! W0105), `...`, and the only statement of a `try` body, which is there
+//! to raise.
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -25,6 +27,21 @@ impl Checker for PointlessStatement {
         let Some(value) = cx.children(node).next() else {
             return;
         };
+        let effects = (node.id..=node.last)
+            .filter_map(|id| cx.node(id))
+            .any(|inner| {
+                matches!(
+                    inner.kind,
+                    NodeKind::Call
+                        | NodeKind::Await
+                        | NodeKind::Yield
+                        | NodeKind::YieldFrom
+                        | NodeKind::Named
+                )
+            });
+        if effects || sole_try_statement(node, cx) {
+            return;
+        }
         let pointless = matches!(
             value.kind,
             NodeKind::Name
@@ -34,6 +51,7 @@ impl Checker for PointlessStatement {
                 | NodeKind::BooleanLiteral
                 | NodeKind::NoneLiteral
                 | NodeKind::Compare
+                | NodeKind::BinOp
                 | NodeKind::UnaryOp
                 | NodeKind::List
                 | NodeKind::Tuple
@@ -49,6 +67,23 @@ impl Checker for PointlessStatement {
             ));
         }
     }
+}
+
+/// Whether the statement is the whole body of a `try`: the statements
+/// before the first `except` handler.
+fn sole_try_statement(node: &Node<'_>, cx: &Context<'_>) -> bool {
+    let Some(parent) = cx
+        .parent(node)
+        .filter(|parent| parent.kind == NodeKind::Try)
+    else {
+        return false;
+    };
+    let body: Vec<u32> = cx
+        .children(parent)
+        .take_while(|child| child.kind != NodeKind::ExceptHandler)
+        .map(|child| child.id)
+        .collect();
+    body == [node.id]
 }
 
 export_checker!(PointlessStatement);

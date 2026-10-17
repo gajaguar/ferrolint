@@ -43,6 +43,14 @@ impl Checker for UnusedVariable {
                 let Some(binding) = cx.resolve(node) else {
                     return;
                 };
+                // A store that reaches another scope through `nonlocal` or
+                // `global`, and an augmented assignment, both read the name.
+                let augmented = cx
+                    .parent(node)
+                    .is_some_and(|parent| parent.kind == NodeKind::AugAssign);
+                if augmented || cx.scope(node).id != binding.scope {
+                    self.read.insert((binding.scope, name.to_owned()));
+                }
                 let local = matches!(
                     binding.kind,
                     BindingKind::Assignment | BindingKind::Annotation

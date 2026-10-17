@@ -1,6 +1,9 @@
 //! A port of Pylint's `redefined-builtin` (W0622): a module or function
 //! binds a name that shadows a builtin, such as `list = []` or a
-//! parameter named `id`.
+//! parameter named `id`. Each name reports once per scope, and imports
+//! from `builtins` or `__future__` are left alone.
+
+use std::collections::HashSet;
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -162,7 +165,11 @@ const BUILTINS: &[&str] = &[
 ];
 
 #[derive(Default)]
-struct RedefinedBuiltin;
+struct RedefinedBuiltin {
+    /// (scope, name) pairs already reported: Pylint reports a name once
+    /// per scope.
+    reported: HashSet<(u32, String)>,
+}
 
 impl Checker for RedefinedBuiltin {
     fn info() -> Info {
@@ -193,6 +200,19 @@ impl Checker for RedefinedBuiltin {
             return;
         }
         if cx.scope(node).kind == ScopeKind::Class {
+            return;
+        }
+        // `from builtins import str` and `from __future__ import ...` keep
+        // the builtin, so Pylint lets them be.
+        if node.kind == NodeKind::Alias
+            && cx.parent(node).is_some_and(|statement| {
+                statement.kind == NodeKind::ImportFrom
+                    && matches!(statement.detail, Some("builtins" | "__future__"))
+            })
+        {
+            return;
+        }
+        if !self.reported.insert((binding.scope, binding.name.clone())) {
             return;
         }
         let message = format!("Redefining built-in '{}'", binding.name);

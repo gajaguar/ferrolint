@@ -57,7 +57,8 @@ pub struct Stats {
     pub compiles: usize,
     /// Milliseconds from process start to the first parse.
     pub first_parse_ms: Option<f64>,
-    /// The share of the workers' time spent on files while linting.
+    /// The share of the workers' time spent on files once the plugins
+    /// were ready.
     pub parallelism: f64,
     /// Workers that linted no file.
     pub idle_workers: usize,
@@ -97,6 +98,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     // Plugins compile on their own thread while the files are discovered
     // and the first ones parse; a file waits for them only to run them.
     let setup: OnceLock<Result<Setup>> = OnceLock::new();
+    let loaded_at: OnceLock<Instant> = OnceLock::new();
     let linter = Linter {
         setup: &setup,
         cache: cache.as_ref(),
@@ -105,7 +107,13 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     };
     let (displays, per_file, lint_time) = std::thread::scope(|scope| {
         scope.spawn(|| {
-            let _ = setup.set(Setup::new(plugins, cache.as_ref(), workers, &config));
+            // A panic must still fill the cell, or every waiting worker hangs.
+            let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Setup::new(plugins, cache.as_ref(), workers, &config)
+            }))
+            .unwrap_or_else(|_| Err(Error::plugin("loading the plugins panicked")));
+            let _ = setup.set(loaded);
+            let _ = loaded_at.set(Instant::now());
         });
         // The walk feeds the workers as it goes.
         let (sender, receiver) = mpsc::channel();
@@ -119,25 +127,31 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
                 }
             })
         });
-        let began = Instant::now();
-        let per_file: Vec<(String, Result<Vec<Finding>>)> = pool.install(|| {
+        let mut per_file: Vec<(String, Result<Vec<Finding>>)> = pool.install(|| {
             receiver
                 .into_iter()
                 .par_bridge()
                 .map(|path| {
                     let display = discover::display_path(cwd, &path);
-                    let findings = linter.timed(|| linter.lint_file(&path, &display));
+                    let findings = linter.lint_file(&path, &display);
                     (display, findings)
                 })
                 .collect()
         });
-        let lint_time = began.elapsed();
+        // Files finish in any order; the first error reported is the one
+        // of the first path, whatever the schedule.
+        per_file.sort_by(|a, b| a.0.cmp(&b.0));
+        let ended = Instant::now();
         let _ = setup.wait();
         walker
             .join()
             .unwrap_or_else(|_| Err(Error::io("the file walk panicked")))?;
         let (displays, per_file): (Vec<String>, Vec<Result<Vec<Finding>>>) =
             per_file.into_iter().unzip();
+        // Parallelism counts from the moment the plugins are ready.
+        let lint_time = loaded_at
+            .get()
+            .map_or(Duration::ZERO, |at| ended.saturating_duration_since(*at));
         Ok::<_, Error>((displays, per_file, lint_time))
     })?;
     let compiles = setup
@@ -317,17 +331,14 @@ enum Prepared {
 }
 
 impl Linter<'_> {
-    /// Run `work` on the current worker and count the time as busy.
-    fn timed<T>(&self, work: impl FnOnce() -> T) -> T {
-        let began = Instant::now();
-        let result = work();
+    /// Count `time` as busy for the current worker.
+    fn busy(&self, time: Duration) {
         if let Some(slot) =
             rayon::current_thread_index().and_then(|index| self.counters.busy.get(index))
         {
-            let nanos = u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let nanos = u64::try_from(time.as_nanos()).unwrap_or(u64::MAX);
             slot.fetch_add(nanos, Ordering::Relaxed);
         }
-        result
     }
 
     /// Decode and parse a file, noting when the run's first parse began.
@@ -347,6 +358,7 @@ impl Linter<'_> {
         }
     }
 
+    /// Lint one file; the time after the plugins are ready counts as busy.
     fn lint_file(&self, path: &Path, display: &str) -> Result<Vec<Finding>> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
@@ -355,6 +367,20 @@ impl Linter<'_> {
         let Ok(setup) = self.setup.wait() else {
             return Ok(Vec::new());
         };
+        let resumed = Instant::now();
+        let findings = self.lint_loaded(setup, path, display, &bytes, early);
+        self.busy(resumed.elapsed());
+        findings
+    }
+
+    fn lint_loaded(
+        &self,
+        setup: &Setup,
+        path: &Path,
+        display: &str,
+        bytes: &[u8],
+        early: Option<Prepared>,
+    ) -> Result<Vec<Finding>> {
         let enabled = setup.selection.for_file(path);
         let wanted: Vec<usize> = setup
             .host
@@ -367,7 +393,7 @@ impl Linter<'_> {
         let module = module_name(path);
         let key = self.cache.map(|cache| {
             let rules = enabled.iter().cloned().collect::<Vec<_>>().join(",");
-            cache.key(&[&hex(&Sha256::digest(&bytes)), display, &module, &rules])
+            cache.key(&[&hex(&Sha256::digest(bytes)), display, &module, &rules])
         });
         let stored = self
             .cache
@@ -388,7 +414,7 @@ impl Linter<'_> {
             }
             stored => {
                 self.counters.parsed.fetch_add(1, Ordering::Relaxed);
-                let prepared = early.unwrap_or_else(|| self.prepare(&bytes));
+                let prepared = early.unwrap_or_else(|| self.prepare(bytes));
                 let file = FileRef {
                     display,
                     module: &module,

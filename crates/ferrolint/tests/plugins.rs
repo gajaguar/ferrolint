@@ -48,20 +48,20 @@ fn undefined_variable() {
 
 #[test]
 fn redefined_builtin() {
-    let source = "list = []\n\ndef f(id, value):\n    max = value\n    return id, max\n\nclass C:\n    type = 1\n";
+    let source = "from builtins import str\nlist = []\nlist = [1]\n\ndef f(id, value):\n    max = value\n    return id, max\n\nclass C:\n    type = 1\n";
     assert_eq!(
         findings("ferrolint-plugin-redefined-builtin", source),
         [
-            "1: Redefining built-in 'list'",
-            "3: Redefining built-in 'id'",
-            "4: Redefining built-in 'max'",
+            "2: Redefining built-in 'list'",
+            "5: Redefining built-in 'id'",
+            "6: Redefining built-in 'max'",
         ]
     );
 }
 
 #[test]
 fn unused_variable() {
-    let source = "def f(values):\n    total = 0\n    unused = 1\n    _ignored = 2\n    for item in values:\n        total += item\n    return total\n\ndef g():\n    hidden = 1\n    return locals()\n";
+    let source = "def f(values):\n    total = 0\n    unused = 1\n    _ignored = 2\n    for item in values:\n        total += item\n    return total\n\ndef g():\n    hidden = 1\n    return locals()\n\ndef counter():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    return inc\n";
     assert_eq!(
         findings("ferrolint-plugin-unused-variable", source),
         ["3: Unused variable 'unused'"]

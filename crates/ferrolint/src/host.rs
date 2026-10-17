@@ -194,7 +194,7 @@ impl Host {
     /// `workers` is how many threads check files at once, which sizes the
     /// pool of instance slots.
     pub fn load(plugins: Vec<PluginSource>, cache: Option<&Cache>, workers: usize) -> Result<Self> {
-        let engine = engine(workers)?;
+        let engine = engine(workers, plugins.len())?;
         let mut linker = Linker::<State>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .and_then(|()| {
@@ -312,13 +312,16 @@ impl Drop for Host {
 /// that recycles instance slots, since every file gets fresh instances.
 /// Without the address space for the pool, it falls back to allocating
 /// each instance on demand.
-fn engine(workers: usize) -> Result<Engine> {
+fn engine(workers: usize, plugins: usize) -> Result<Engine> {
     let mut config = wasmtime::Config::new();
     config
         .wasm_component_model(true)
         .consume_fuel(true)
         .epoch_interruption(true);
-    let slots = u32::try_from(workers.saturating_mul(2).max(8)).unwrap_or(u32::MAX);
+    // Every worker holds one instance at a time, and loading may hold one
+    // per plugin at once to ask for its rules.
+    let slots =
+        u32::try_from(workers.saturating_mul(2).saturating_add(plugins).max(8)).unwrap_or(u32::MAX);
     let mut pool = PoolingAllocationConfig::new();
     pool.total_component_instances(slots)
         .total_core_instances(slots.saturating_mul(16))
