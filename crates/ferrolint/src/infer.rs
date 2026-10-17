@@ -379,7 +379,7 @@ mod tests {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = LineIndex::new(source);
         let flat = flatten(source, &index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &flat.nodes, source, &index);
+        let model = Model::build(parsed.syntax(), &flat.nodes, source, &index, None);
         let node = flat
             .nodes
             .iter()
