@@ -21,6 +21,8 @@ pub struct Config {
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
     /// Which rule owns a Pylint alias several rules declare.
     pub pylint_aliases: BTreeMap<String, String>,
+    /// The Python `(major, minor)` the code targets, from `py-version`.
+    pub py_version: Option<(u32, u32)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,6 +45,23 @@ struct RawConfig {
     per_file_ignores: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pylint_aliases: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "version")]
+    py_version: Option<(u32, u32)>,
+}
+
+/// Parse `"MAJOR.MINOR"`, the spelling Pylint's `py-version` uses.
+fn version<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> std::result::Result<Option<(u32, u32)>, D::Error> {
+    let text = String::deserialize(de)?;
+    text.split_once('.')
+        .and_then(|(major, minor)| Some((major.parse().ok()?, minor.parse().ok()?)))
+        .map(Some)
+        .ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "py-version must be MAJOR.MINOR, like \"3.14\", not \"{text}\""
+            ))
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +159,7 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         exclude: raw.exclude,
         per_file_ignores: raw.per_file_ignores,
         pylint_aliases: raw.pylint_aliases,
+        py_version: raw.py_version,
     }
 }
 
@@ -153,6 +173,20 @@ mod tests {
         fs::write(dir.path().join("ferrolint.toml"), "unknown-key = []\n").unwrap();
         let error = load(dir.path(), None).unwrap_err();
         assert!(error.message.contains("unknown-key"), "{error}");
+    }
+
+    #[test]
+    fn py_version_is_major_dot_minor() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ferrolint.toml");
+        fs::write(&file, "py-version = \"3.14\"\n").unwrap();
+        assert_eq!(load(dir.path(), None).unwrap().py_version, Some((3, 14)));
+        for bad in ["\"3\"", "\"3.x\"", "3.14"] {
+            fs::write(&file, format!("py-version = {bad}\n")).unwrap();
+            assert!(load(dir.path(), None).is_err(), "{bad}");
+        }
+        fs::write(&file, "").unwrap();
+        assert_eq!(load(dir.path(), None).unwrap().py_version, None);
     }
 
     #[test]

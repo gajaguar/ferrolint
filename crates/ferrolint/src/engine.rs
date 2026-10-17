@@ -186,6 +186,7 @@ struct Setup {
     host: Host,
     registry: Registry,
     selection: Selection,
+    py_version: Option<(u32, u32)>,
 }
 
 impl Setup {
@@ -208,6 +209,7 @@ impl Setup {
             host,
             registry,
             selection,
+            py_version: config.py_version,
         })
     }
 }
@@ -393,7 +395,14 @@ impl Linter<'_> {
         let module = module_name(path);
         let key = self.cache.map(|cache| {
             let rules = enabled.iter().cloned().collect::<Vec<_>>().join(",");
-            cache.key(&[&hex(&Sha256::digest(bytes)), display, &module, &rules])
+            let version = format!("{:?}", setup.py_version);
+            cache.key(&[
+                &hex(&Sha256::digest(bytes)),
+                display,
+                &module,
+                &rules,
+                &version,
+            ])
         });
         let stored = self
             .cache
@@ -481,6 +490,7 @@ impl Linter<'_> {
                 source: &source,
                 index: &index,
                 parsed: &parsed,
+                py_version: setup.py_version,
             };
             for (position, outcome) in self.run_plugins(host, &context, &missing)? {
                 let plugin = &host.plugins[position];
@@ -509,6 +519,7 @@ impl Linter<'_> {
             &flat.nodes,
             context.source,
             context.index,
+            context.py_version,
         );
         let ast = flat.pack();
         let data = Arc::new(FileData {
@@ -578,6 +589,7 @@ struct PluginContext<'a> {
     source: &'a str,
     index: &'a LineIndex,
     parsed: &'a Parsed<ModModule>,
+    py_version: Option<(u32, u32)>,
 }
 
 /// The dotted module name Python imports a file under: its stem, prefixed

@@ -17,6 +17,7 @@ take the same keys, and an unknown key is an error:
 select = ["FL002", "W0611"]          # default: every known rule
 ignore = ["FL003"]                   # beats select
 exclude = ["vendor/", "*_gen.py"]    # gitignore patterns, on top of .gitignore
+py-version = "3.14"                  # default: none; MAJOR.MINOR
 
 [[plugins]]                          # one table per plugin, in run order
 path = "plugins/unused_import.wasm"

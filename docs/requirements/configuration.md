@@ -23,6 +23,13 @@ fails fast when the result does not parse.
     which findings report. `ignore` beats `select` for a given code.
   * `per-file-ignores`: a pattern (an iterable of codes) - map from file
     glob pattern to a list of codes that never report for matching files.
+  * `py-version`: the Python version the code targets, as the text
+    `"MAJOR.MINOR"` (for example `"3.14"`), as in Pylint. From 3.14 on,
+    annotations are evaluated late (PEP 649), so a name in an annotation may
+    be defined later in the scope; a module with
+    `from __future__ import annotations` gets the same treatment without the
+    key. Without the key no version is assumed. Any other spelling is a
+    configuration error.
 * Unknown keys are configuration errors, so a typo never silently disables
   a check.
 * An invalid value, an unreadable file, or a missing path in `plugins`

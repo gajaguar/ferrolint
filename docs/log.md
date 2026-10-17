@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Pylint comparison**: Added `toolchain/pylint-compare.md` - how
+  `make pylint-compare` measures parity with Pylint on a codebase.
+
 * **Type inference query**: Added `decisions/type-inference-query.md` -
   the phase 2 `inference` interface and what the host infers.
 

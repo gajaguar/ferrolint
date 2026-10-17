@@ -14,3 +14,5 @@ and why.
   in one change, and the current tag.
 * [Release builds](release-builds.md) - the three release targets, their
   smoke check, and building one locally.
+* [Pylint comparison](pylint-compare.md) - `make pylint-compare` lists the
+  findings that ferrolint and Pylint do not share on a codebase.

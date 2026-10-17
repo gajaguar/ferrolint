@@ -28,6 +28,8 @@ pub struct Model {
     node_scope: Vec<u32>,
     /// The binding each binding site creates, by node id.
     node_binding: HashMap<u32, u32>,
+    /// Name loads inside deferred annotations: they see a scope's last binding.
+    deferred: HashSet<u32>,
 }
 
 struct ScopeData {
@@ -35,6 +37,8 @@ struct ScopeData {
     name: Option<String>,
     node: u32,
     parent: Option<u32>,
+    /// Where a comprehension scope ends; 0 for any other scope.
+    end: u32,
     /// The bindings of each name, in source order.
     names: BTreeMap<String, Vec<u32>>,
     globals: HashSet<String>,
@@ -65,7 +69,17 @@ impl Model {
         nodes: &[FlatNode],
         source: &str,
         index: &LineIndex,
+        py_version: Option<(u32, u32)>,
     ) -> Self {
+        // PEP 649 (3.14) and PEP 563 (`from __future__ import annotations`)
+        // evaluate annotations after the module body ran.
+        let deferred = py_version.is_some_and(|version| version >= (3, 14))
+            || module.body.iter().any(|stmt| {
+                matches!(stmt, Stmt::ImportFrom(import)
+                    if import.level == 0
+                        && import.module.as_ref().is_some_and(|m| m.as_str() == "__future__")
+                        && import.names.iter().any(|alias| &alias.name == "annotations"))
+            });
         let mut builder = Builder {
             source,
             index,
@@ -74,10 +88,13 @@ impl Model {
                 bindings: Vec::new(),
                 node_scope: vec![UNSET; nodes.len()],
                 node_binding: HashMap::new(),
+                deferred: HashSet::new(),
             },
             current: 0,
             store_kind: BindingKind::Assignment,
             statement_end: 0,
+            deferred_annotations: deferred,
+            in_annotation: false,
         };
         builder.push_scope(ScopeKind::Module, None, 0);
         builder.model.node_scope[0] = 0;
@@ -116,7 +133,12 @@ impl Model {
         let target = flat.nodes.get(node as usize)?;
         let name = flat.string(target.name)?;
         let scope = self.scope_of_node(node)?;
-        self.resolve_name(name, scope, target.range.start.offset)
+        let offset = if self.deferred.contains(&node) {
+            UNSET
+        } else {
+            target.range.start.offset
+        };
+        self.resolve_name(name, scope, offset)
             .map(|resolved| self.output(resolved))
     }
 
@@ -136,7 +158,11 @@ impl Model {
         else {
             return Vec::new();
         };
-        let offset = target.range.start.offset;
+        let offset = if self.deferred.contains(&node) {
+            UNSET
+        } else {
+            target.range.start.offset
+        };
         let mut seen = HashSet::new();
         let mut visible = Vec::new();
         let mut current = Some(scope);
@@ -159,11 +185,14 @@ impl Model {
     }
 
     /// Python's lookup for `name` used at `offset` inside `scope`.
-    fn resolve_name(&self, name: &str, scope: u32, offset: u32) -> Option<Resolved> {
+    fn resolve_name(&self, name: &str, scope: u32, mut offset: u32) -> Option<Resolved> {
         let mut current = scope;
         let mut deferred = false;
         loop {
             let data = &self.scopes[current as usize];
+            // A comprehension evaluates its element after its `for` and `if`
+            // clauses, so a use inside it follows all of its bindings.
+            offset = offset.max(data.end);
             if data.globals.contains(name) && current != 0 {
                 return self
                     .pick(0, name, offset, true, false)
@@ -301,9 +330,27 @@ struct Builder<'s> {
     current: u32,
     store_kind: BindingKind,
     statement_end: u32,
+    deferred_annotations: bool,
+    in_annotation: bool,
 }
 
 impl Builder<'_> {
+    fn note_deferred(&mut self, name: &ast::ExprName) {
+        if self.in_annotation
+            && let Some(id) = id_of(name)
+        {
+            self.model.deferred.insert(id);
+        }
+    }
+
+    /// Visit an annotation; when annotations are deferred its names see
+    /// the whole scope.
+    fn visit_annotation(&mut self, annotation: &Expr) {
+        let outer = std::mem::replace(&mut self.in_annotation, self.deferred_annotations);
+        self.visit_expr(annotation);
+        self.in_annotation = outer;
+    }
+
     fn push_scope(&mut self, kind: ScopeKind, name: Option<String>, node: u32) -> u32 {
         let id = u32::try_from(self.model.scopes.len()).unwrap_or(UNSET);
         let parent = (!self.model.scopes.is_empty()).then_some(self.current);
@@ -312,6 +359,7 @@ impl Builder<'_> {
             name,
             node,
             parent,
+            end: 0,
             names: BTreeMap::new(),
             globals: HashSet::new(),
             nonlocals: HashSet::new(),
@@ -429,7 +477,7 @@ impl Builder<'_> {
                 self.visit_expr(default);
             }
             if let Some(annotation) = parameter.annotation() {
-                self.visit_expr(annotation);
+                self.visit_annotation(annotation);
             }
         }
     }
@@ -463,6 +511,7 @@ impl Builder<'_> {
     fn visit_comprehension_scope(
         &mut self,
         node: u32,
+        end: u32,
         generators: &[ast::Comprehension],
         elements: &[&Expr],
     ) {
@@ -470,7 +519,8 @@ impl Builder<'_> {
             return;
         };
         self.visit_expr(&first.iter);
-        self.push_scope(ScopeKind::Comprehension, None, node);
+        let scope = self.push_scope(ScopeKind::Comprehension, None, node);
+        self.model.scopes[scope as usize].end = end;
         for (index, generator) in generators.iter().enumerate() {
             self.mark(generator);
             self.with_store_kind(BindingKind::ComprehensionVar, |this| {
@@ -506,7 +556,7 @@ impl Builder<'_> {
         let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
         self.visit_parameter_values(&def.parameters);
         if let Some(returns) = &def.returns {
-            self.visit_expr(returns);
+            self.visit_annotation(returns);
         }
         self.push_scope(ScopeKind::Function, Some(def.name.to_string()), id);
         self.bind_parameters(&def.parameters);
@@ -644,7 +694,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Stmt::Global(global) => self.declare(&global.names, BindingKind::Global),
             Stmt::Nonlocal(nonlocal) => self.declare(&nonlocal.names, BindingKind::Nonlocal),
             Stmt::AnnAssign(assign) => {
-                self.visit_expr(&assign.annotation);
+                self.visit_annotation(&assign.annotation);
                 if let Some(value) = &assign.value {
                     self.visit_expr(value);
                 }
@@ -683,7 +733,13 @@ impl<'a> Visitor<'a> for Builder<'_> {
         match expr {
             Expr::Name(name) => match name.ctx {
                 Ctx::Store => {
-                    let effective = self.statement_end.max(name.range.end().to_u32());
+                    // A comprehension variable exists from its own target on,
+                    // not from the end of the statement around it.
+                    let effective = if self.store_kind == BindingKind::ComprehensionVar {
+                        name.range.end().to_u32()
+                    } else {
+                        self.statement_end.max(name.range.end().to_u32())
+                    };
                     self.bind(
                         &name.id,
                         self.store_kind,
@@ -704,7 +760,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
                         end,
                     );
                 }
-                Ctx::Load | Ctx::Invalid => {}
+                Ctx::Load | Ctx::Invalid => self.note_deferred(name),
             },
             Expr::Named(named) => {
                 self.visit_expr(&named.value);
@@ -736,6 +792,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::ListComp(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -743,6 +800,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::SetComp(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -750,6 +808,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::Generator(comp) => {
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &[&comp.elt],
                 );
@@ -763,6 +822,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
                     .collect();
                 self.visit_comprehension_scope(
                     id_of(comp).unwrap_or(0),
+                    comp.range.end().to_u32(),
                     &comp.generators,
                     &elements,
                 );
@@ -827,10 +887,14 @@ mod tests {
     }
 
     fn fixture(source: &'static str) -> Fixture {
+        fixture_for(source, None)
+    }
+
+    fn fixture_for(source: &'static str, py_version: Option<(u32, u32)>) -> Fixture {
         let parsed = ruff_python_parser::parse_module(source).unwrap();
         let index = LineIndex::new(source);
         let flat = flatten(source, &index, parsed.syntax());
-        let model = Model::build(parsed.syntax(), &flat.nodes, source, &index);
+        let model = Model::build(parsed.syntax(), &flat.nodes, source, &index, py_version);
         Fixture {
             source,
             flat,
@@ -912,6 +976,32 @@ mod tests {
     }
 
     #[test]
+    fn a_comprehension_element_sees_a_walrus_in_its_condition() {
+        let f = fixture("xs = []\nvs = {v for r in xs if (v := r)}\n");
+        assert_eq!(f.resolve("v", 0), Some((BindingKind::NamedExpr, 2)));
+    }
+
+    #[test]
+    fn a_nested_comprehension_sees_the_outer_variable() {
+        let f = fixture("y = z = []\nws = [[i] + [i for _ in y] for i, v in enumerate(z)]\n");
+        assert_eq!(f.resolve("i", 0), Some((BindingKind::ComprehensionVar, 2)));
+        assert_eq!(f.resolve("i", 1), Some((BindingKind::ComprehensionVar, 2)));
+    }
+
+    #[test]
+    fn a_comprehension_inside_a_container_sees_the_outer_variable() {
+        let f = fixture("d = []\nx = {'r': [[i for _ in d] for i in d]}\n");
+        assert_eq!(f.resolve("i", 0), Some((BindingKind::ComprehensionVar, 2)));
+    }
+
+    #[test]
+    fn a_use_before_the_comprehension_binding_stays_undefined() {
+        let f = fixture("xs = []\nu = v\nws = [v for r in xs if (v := r)]\n");
+        assert_eq!(f.resolve("v", 0), None);
+        assert_eq!(f.resolve("v", 1), Some((BindingKind::NamedExpr, 3)));
+    }
+
+    #[test]
     fn decorated_definitions_report_the_name_position() {
         let f =
             fixture("import functools\n\n@functools.cache\ndef handler():\n    return handler\n");
@@ -928,6 +1018,36 @@ mod tests {
         assert_eq!(f.resolve("T", 0), Some((BindingKind::TypeParam, 1)));
         assert_eq!(f.resolve("T", 1), Some((BindingKind::TypeParam, 1)));
         assert_eq!(f.resolve("K", 0), Some((BindingKind::TypeParam, 5)));
+    }
+
+    const LATER: &str = "def f(a: Later) -> Later: ...\nclass C:\n    x: Later\n    def m(self) -> Later: ...\nclass Later: ...\nv = Later\n";
+
+    #[test]
+    fn deferred_annotations_see_later_definitions() {
+        let future = fixture(Box::leak(
+            format!("from __future__ import annotations\n{LATER}").into_boxed_str(),
+        ));
+        let py314 = fixture_for(LATER, Some((3, 14)));
+        for f in [future, py314] {
+            for nth in 0..4 {
+                assert_eq!(
+                    f.resolve("Later", nth).map(|b| b.0),
+                    Some(BindingKind::ClassDef)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn eager_annotations_and_plain_uses_keep_their_order() {
+        for f in [fixture(LATER), fixture_for(LATER, Some((3, 13)))] {
+            for nth in 0..4 {
+                assert_eq!(f.resolve("Later", nth), None);
+            }
+        }
+        // A use outside an annotation still sees only earlier bindings.
+        let f = fixture_for("print(Later)\nclass Later: ...\n", Some((3, 14)));
+        assert_eq!(f.resolve("Later", 0), None);
     }
 
     #[test]
