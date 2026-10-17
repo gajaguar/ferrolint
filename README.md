@@ -31,8 +31,14 @@ discovers the Python files under its targets, honouring `.gitignore` and the
 configured excludes, parses them in parallel with Ruff's parser, and runs
 the host's own rules plus every configured WASM plugin against the
 [`wit/plugin.wit`](wit/plugin.wit) contract, each in an empty sandbox with
-per-file fuel and time caps. It exits `0` when clean, `1` with findings and
-`2` on a usage, configuration or plugin error.
+per-file fuel and time caps. Plugins are written in Rust against
+`ferrolint-plugin-sdk`; the sample in
+[`plugins/unused-import`](plugins/unused-import/src/lib.rs) ports Pylint's
+`unused-import` (W0611) and matches its findings on the fixtures (see
+[docs/usage/writing-a-plugin.md](docs/usage/writing-a-plugin.md)).
+
+A run exits `0` when clean, `1` with findings and `2` on a usage,
+configuration or plugin error.
 
 The requirements and the design decisions live in the `docs/` OKF bundle:
 [docs/requirements/index.md](docs/requirements/index.md) and

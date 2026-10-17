@@ -7,3 +7,5 @@ from `ferrolint --help` alone.
   and `[tool.ferrolint]`, and how paths and globs resolve.
 * [Host rules](host-rules.md) - the `FL` codes the linter reports itself,
   without any plugin.
+* [Writing a plugin](writing-a-plugin.md) - the SDK's `Checker`, building to
+  `wasm32-wasip2`, loading by SHA-256, and parity fixtures against Pylint.

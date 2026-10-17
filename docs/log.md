@@ -1,5 +1,10 @@
 # Directory Update Log
 
+## 2026-10-17
+
+* **Writing a plugin**: Added `usage/writing-a-plugin.md` - the SDK, the
+  sample plugin and its Pylint parity fixtures.
+
 ## 2026-10-16
 
 * **Plugin sandbox environment**: Added
