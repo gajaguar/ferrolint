@@ -2,6 +2,8 @@
 
 ## 2026-10-18
 
+* **release-builds.md**: Added the section on installing from source with
+  the `bundle` feature.
 * **Optional type inference engine**: Added
   `decisions/optional-type-inference-engine.md` - why ty is postponed and
   the opt-in cargo feature planned for it.

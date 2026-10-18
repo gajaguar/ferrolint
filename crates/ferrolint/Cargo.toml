@@ -5,6 +5,11 @@ edition.workspace = true
 description.workspace = true
 license.workspace = true
 
+[features]
+# Build the repository plugins into the binary: what a source install (pip,
+# Poetry) needs, since only `make wheel` supplies prebuilt ones.
+bundle = []
+
 [dependencies]
 ferrolint-core = { path = "../ferrolint-core" }
 clap = { workspace = true }
