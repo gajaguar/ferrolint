@@ -153,3 +153,23 @@ def nonlocal_assignment():
         return name
 
     return inner, reader
+
+
+from sqlalchemy import values
+
+
+class Crud:
+    @classmethod
+    async def update(
+        cls,
+        owner_id,
+        *filters,
+        **values,
+    ):
+        return values
+
+    def collect(
+        self,
+        *values,
+    ):
+        return values

@@ -451,7 +451,7 @@ impl<'a> Collector<'a, '_, '_> {
                 let mut names = Vec::new();
                 target_names(&a.target, true, &mut names);
                 for (name, range, _) in names {
-                    self.add(name, range, Bk::Aug, None);
+                    self.add(name, range, Bk::Aug, Some(&a.value));
                 }
             }
             Stmt::Import(i) => {
@@ -1305,7 +1305,13 @@ impl<'a> Walk<'a, '_> {
         let unknown = binds.iter().any(|b| match b.kind {
             Bk::Name => b.value.is_none_or(|v| self.val(v, 0) == Val::Unknown),
             Bk::FromImport | Bk::Foreign => true,
-            Bk::Aug | Bk::Def | Bk::Class | Bk::Import => false,
+            // astroid cannot infer `+=` of a display that holds a `*starred`.
+            Bk::Aug => b.value.is_some_and(|v| match v {
+                Expr::Tuple(t) => t.elts.iter().any(Expr::is_starred_expr),
+                Expr::List(l) => l.elts.iter().any(Expr::is_starred_expr),
+                _ => false,
+            }),
+            Bk::Def | Bk::Class | Bk::Import => false,
         });
         let all_exclusive = binds.len() > 1
             && binds
