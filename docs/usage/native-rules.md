@@ -456,3 +456,29 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   bound to a constant is not followed. `W0716` needs both operands to be
   classes of the file, builtins or tuples written out. `E0712` leaves a
   `|` of classes alone unless both are classes of the file or builtins.
+
+## Batch G: class hierarchy
+
+* `W0223` `abstract-method`: a class that does not override a method one
+  of its ancestors declares abstract, by a body whose first statement
+  (after the docstring) raises `NotImplementedError` or by
+  `@abc.abstractmethod` or `@abc.abstractproperty`. As in Pylint, a class
+  that is itself abstract (a protocol, an `abc.ABC` or `ABCMeta` class, or
+  one with an abstract method of its own) is not reported, the ancestors
+  are walked in C3 order, and a name the class binds in any way counts as
+  an override.
+
+Known divergences:
+
+* The ancestors come from the classes of the file, the project's modules
+  (see `native/project.rs`) and, when the `VIRTUAL_ENV` environment
+  variable names a virtual environment, its `site-packages`. A class with
+  a base from anywhere else (the standard library, an environment that is
+  not active, a base computed at run time) is skipped, so its findings are
+  missed rather than guessed. Without an active environment the base
+  classes of the dependencies (a serializer's `create`, for instance) are
+  unknown, and those findings go missing.
+* A cached result does not track the environment: after switching it,
+  lint with `--no-cache`.
+* In an ancestor other than the class itself, a name bound by an import
+  or a nested class removes an abstract method, where Pylint keeps it.

@@ -96,3 +96,5 @@ afunc
 pspec
 fstr
 dcomp
+linearization
+linearizations

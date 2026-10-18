@@ -14,6 +14,7 @@ use ruff_text_size::{Ranged, TextRange};
 use crate::ast::Flat;
 use crate::semantic::Model;
 
+mod abstract_methods;
 mod calls;
 mod classes;
 mod conditions;
@@ -71,6 +72,7 @@ pub trait Checker: Sync {
 }
 
 const CHECKERS: &[&dyn Checker] = &[
+    &abstract_methods::AbstractMethods,
     &calls::Calls,
     &classes::Classes,
     &conditions::Conditions,

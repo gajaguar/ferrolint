@@ -5,8 +5,8 @@
 //! out like a project's) and parsed on demand.
 //!
 //! shortcut: only modules that are files under those directories are read,
-//! so the standard library and the installed packages stay unknown (a base
-//! from them ends the chain); a name is followed through `import` and `from`
+//! so the standard library stays unknown, as do the installed packages but
+//! for [`Project::with_packages`] (a base from them ends the chain); a name is followed through `import` and `from`
 //! statements of the top level only; and a result that depends on another
 //! module is cached with the file, so it is stale until the file changes or
 //! the cache is cleared. Upgrade with the contract's module index.
@@ -71,6 +71,26 @@ impl Project {
         }
     }
 
+    /// As [`Project::new`], with the installed packages of the environment
+    /// that `VIRTUAL_ENV` names searched last, so a base class from a
+    /// dependency is read too.
+    pub fn with_packages(path: &Path, module: &str) -> Self {
+        let mut project = Self::new(path, module);
+        if let Some(env) = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from) {
+            // `lib/pythonX.Y/site-packages` on Unix, `Lib/site-packages` on Windows.
+            let unix = std::fs::read_dir(env.join("lib"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path().join("site-packages"));
+            project.roots.extend(
+                unix.chain([env.join("Lib").join("site-packages")])
+                    .filter(|dir| dir.is_dir()),
+            );
+        }
+        project
+    }
+
     /// `origin` of the linted file's imports with a relative module made
     /// absolute.
     pub fn absolute(&self, origin: &str) -> String {
@@ -105,17 +125,17 @@ impl Project {
 
     fn read(&self, name: &str) -> Option<Module> {
         let relative: PathBuf = name.split('.').collect();
-        let first = relative.iter().next()?;
-        // The root is the nearest directory that holds the top package.
-        let root = self.roots.iter().find(|root| {
-            root.join(first).is_dir() || root.join(first).with_extension("py").is_file()
+        // The root is the nearest directory that holds the module itself: an
+        // inner package may share the top package's name (`app/api` and `api`).
+        let (file, is_package) = self.roots.iter().find_map(|root| {
+            let file = root.join(&relative).with_extension("py");
+            let init = root.join(&relative).join("__init__.py");
+            if file.is_file() {
+                Some((file, false))
+            } else {
+                init.is_file().then_some((init, true))
+            }
         })?;
-        let file = root.join(&relative).with_extension("py");
-        let (file, is_package) = if file.is_file() {
-            (file, false)
-        } else {
-            (root.join(&relative).join("__init__.py"), true)
-        };
         let source = std::fs::read_to_string(file).ok()?;
         let parsed = ruff_python_parser::parse_module(&source).ok()?;
         let package = if is_package {
@@ -162,6 +182,11 @@ impl ClassRef {
 
     pub fn class(&self) -> Option<&StmtClassDef> {
         find_class(&self.module.parsed.syntax().body, &self.name)
+    }
+
+    /// The dotted name `expr` stands for in the class's module.
+    pub fn qualify(&self, expr: &Expr) -> Option<String> {
+        self.module.qualify(expr)
     }
 
     /// The classes that this one derives from and the project holds, and the
@@ -271,5 +296,26 @@ fn collect_imports(body: &[Stmt], package: &str, out: &mut HashMap<String, Strin
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Project;
+
+    #[test]
+    fn an_inner_package_named_like_the_top_one_does_not_hide_it() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/api/__init__.py", "");
+        write("app/views.py", "");
+        write("api/base.py", "class Base:\n    pass\n");
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let class = project.class("api.base.Base").unwrap();
+        assert_eq!(class.qname(), "api.base.Base");
     }
 }
