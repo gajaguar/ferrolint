@@ -35,6 +35,15 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
   configuration ignores.
 * `PY_VERSION`: the `py-version` of the temporary configuration, like
   `3.14`.
+* `STRIP`: set to `1` to lint a copy of the tracked files in `CODE` (and its
+  `.pylintrc` and `pyproject.toml`), from which every `# pylint:` pragma is
+  removed from the `*.py` files (line numbers stay the same; `# noqa` stays). a project's
+  pragmas hide nearly every finding, so this is how a rule is compared where
+  it fires. `PYLINT_OUT` then holds the copy's baseline: use a file other than
+  the normal one.
+* `ONLY`: an extended regular expression on the Pylint msg-id, like
+  `^(W0134|W0137)$` or `^W01`; only matching findings are compared, on both
+  sides.
 
 Pylint takes minutes on a large codebase, so keep `PYLINT_OUT` and delete it
 when the code or the Pylint configuration changes.

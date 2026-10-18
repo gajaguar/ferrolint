@@ -21,6 +21,7 @@ use crate::config::{self, Config};
 use crate::discover::{self, Excludes};
 use crate::error::{Error, Result};
 use crate::host::{FileData, Host, LoadedPlugin, Outcome, PluginSource};
+use crate::native;
 use crate::selection::Selection;
 use crate::semantic::Model;
 use crate::suppress::{self, Suppressions};
@@ -199,11 +200,14 @@ impl Setup {
         config: &Config,
     ) -> Result<Self> {
         let host = Host::load(plugins, cache, workers)?;
-        let rules = checks::host_rules().into_iter().chain(
-            host.plugins
-                .iter()
-                .flat_map(|plugin| plugin.rules.iter().cloned()),
-        );
+        let rules = checks::host_rules()
+            .into_iter()
+            .chain(native::rules())
+            .chain(
+                host.plugins
+                    .iter()
+                    .flat_map(|plugin| plugin.rules.iter().cloned()),
+            );
         let registry = Registry::with_owners(rules, &config.pylint_aliases)
             .map_err(|err| Error::config(err.to_string()))?;
         let selection = Selection::new(&registry, config)?;
@@ -442,7 +446,8 @@ impl Linter<'_> {
                     display,
                     module: &module,
                 };
-                let (entry, aborts) = self.check(setup, &file, prepared, &wanted, stored)?;
+                let (entry, aborts) =
+                    self.check(setup, &file, prepared, &wanted, &enabled, stored)?;
                 if let (Some(cache), Some(key)) = (self.cache, key.as_deref()) {
                     cache.store_entry(key, &entry);
                 }
@@ -469,6 +474,7 @@ impl Linter<'_> {
         file: &FileRef<'_>,
         prepared: Prepared,
         wanted: &[usize],
+        enabled: &BTreeSet<String>,
         stored: Option<Entry>,
     ) -> Result<(Entry, Vec<Diagnostic>)> {
         let host = &setup.host;
@@ -489,6 +495,26 @@ impl Linter<'_> {
             return Ok((entry, Vec::new()));
         };
         entry.host = checks::check(&source, &parsed, &index);
+        if parsed.has_no_syntax_errors() && native::wanted(enabled) {
+            let flat = ast::flatten(&source, &index, parsed.syntax());
+            let model = Model::build(
+                parsed.syntax(),
+                &flat.nodes,
+                &source,
+                &index,
+                setup.py_version,
+            );
+            let ctx = native::Ctx {
+                source: &source,
+                index: &index,
+                parsed: &parsed,
+                flat: &flat,
+                model: &model,
+                options: &setup.options,
+                py_version: setup.py_version,
+            };
+            entry.host.extend(native::check(&ctx, enabled));
+        }
         entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted

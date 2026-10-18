@@ -25,6 +25,7 @@ markdownlint
 maturin
 mise
 musllinux
+cpio
 dotrc
 pypa
 retagged
