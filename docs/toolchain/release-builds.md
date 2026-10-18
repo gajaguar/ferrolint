@@ -44,6 +44,20 @@ Windows wheel.
   `manylinux_2_17_<arch>.musllinux_1_2_<arch>`; pip on glibc then accepts
   them. The macOS wheel keeps its `macosx_11_0_arm64` tag.
 
+## Installing from source
+
+`pip install "git+ssh://git@github.com/<owner>/ferrolint#subdirectory=crates/ferrolint"`
+(or a Poetry git dependency with `subdirectory = "crates/ferrolint"`) builds
+with maturin and the `bundle` cargo feature, which `pyproject.toml` enables.
+
+* The feature makes `build.rs` build the repository plugins for
+  `wasm32-wasip2` into the build's own target directory and bundle them, as
+  `make wheel` does with prebuilt ones. `FERROLINT_PLUGINS` still takes
+  priority.
+* The machine needs the pinned Rust toolchain and the `wasm32-wasip2` target;
+  the first build compiles Wasmtime and takes minutes.
+* A plain `cargo build` has no `bundle` feature and an empty bundle.
+
 ## Publishing to PyPI
 
 The `publish` job runs only when a GitHub Release is published. It

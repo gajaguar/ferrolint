@@ -10,3 +10,5 @@ dynamic = ["version", "description", "license"]
 [tool.maturin]
 bindings = "bin"
 strip = true
+features = ["bundle"]
+locked = true
