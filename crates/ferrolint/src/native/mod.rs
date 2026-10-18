@@ -40,6 +40,7 @@ mod statements;
 mod strings;
 mod text;
 mod unassigned;
+mod wildcard;
 
 /// What a native rule sees of one file that parses.
 pub struct Ctx<'a> {
@@ -97,6 +98,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &statements::Statements,
     &strings::Strings,
     &text::Text,
+    &wildcard::Wildcard,
 ];
 
 /// Every native rule.
