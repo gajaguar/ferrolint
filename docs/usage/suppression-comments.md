@@ -36,9 +36,14 @@ import sys  # noqa: IMP001
 * A bare `# noqa` suppresses nothing and is itself reported as `FL002`.
 * An `FL001` plugin abort is never suppressed.
 
-* A `disable=` list is comma-separated and ends at the first entry
-  followed by prose; a `noqa:` list may also use spaces and ends at the
-  first word that has no digit, `-` or `_`.
+* A `disable=` list separates codes by commas or spaces, drops punctuation
+  after a code (`.`, `;`, `)`) and ends at the first word that is not a
+  code, such as `--`; a `noqa:` list ends at the first word that has no
+  digit, `-` or `_`.
+* Pylint's old spellings work: `pylint:: disable=`, `disable-msg=`, and the
+  renamed `broad-except` (W0703) and `blacklisted-name` (C0102).
+* A module-level `disable=too-many-lines` silences C0302, which is reported
+  on line 1, wherever it stands.
 
 Pylint's other directives suppress nothing here: `enable=`, `skip-file`,
 and `disable-all`.

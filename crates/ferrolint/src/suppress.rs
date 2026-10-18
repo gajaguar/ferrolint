@@ -82,9 +82,11 @@ pub fn noqa(comment: &str) -> Option<Noqa<'_>> {
 pub fn disabled_codes(comment: &str) -> Vec<&str> {
     let mut codes = Vec::new();
     for segment in comment.split('#').skip(1) {
-        let payload = directive(segment, "ferrolint:").or_else(|| directive(segment, "pylint:"));
+        let payload = directive(segment, "ferrolint:").or_else(|| pylint_payload(segment));
         let list = payload
-            .and_then(|payload| directive(payload, "disable"))
+            .and_then(|payload| {
+                directive(payload, "disable-msg").or_else(|| directive(payload, "disable"))
+            })
             .and_then(|rest| rest.trim_start().strip_prefix('='));
         if let Some(list) = list {
             codes.extend(disable_codes(list));
@@ -98,24 +100,18 @@ pub fn disabled_codes(comment: &str) -> Vec<&str> {
     codes
 }
 
-/// A `disable=` list: comma-separated codes, ending at the first entry
-/// followed by prose (`disable=W0612 -- because ...`).
+/// A `disable=` list: codes separated by commas or whitespace, ending at the
+/// first word that is not one (`disable=W0612 -- because ...`). Trailing
+/// punctuation after a code (`.`, `;`, `)`) is dropped, as Pylint's tokenizer
+/// skips it.
 fn disable_codes(list: &str) -> Vec<&str> {
-    let mut codes = Vec::new();
-    for entry in list.split(',') {
-        let mut words = entry.split_whitespace();
-        let Some(code) = words.next() else {
-            continue;
-        };
-        if !code.chars().all(is_code_char) {
-            break;
-        }
-        codes.push(code);
-        if words.next().is_some() {
-            break;
-        }
-    }
-    codes
+    list.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|code| !code.is_empty())
+        .map(|code| code.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_'))
+        .take_while(|code| {
+            code.chars().all(is_code_char) && code.chars().any(|c| c.is_ascii_alphanumeric())
+        })
+        .collect()
 }
 
 /// A `noqa:` list: codes separated by commas or spaces, ending at the first
@@ -138,14 +134,24 @@ fn is_code_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '_'
 }
 
-/// The codes of a comment's `pylint: <keyword>=` lists.
+/// The text after a comment segment's `pylint:` marker. Pylint's tokenizer
+/// skips what it does not know, so `pylint:: disable=` works.
+fn pylint_payload(segment: &str) -> Option<&str> {
+    directive(segment, "pylint:")
+        .map(|payload| payload.trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
+}
+
+/// The codes of a comment's `pylint: <keyword>=` lists. `disable-msg` and
+/// `enable-msg` are the old spellings of `disable` and `enable`.
 fn pylint_codes<'a>(comment: &'a str, keyword: &str) -> Vec<&'a str> {
+    let old = format!("{keyword}-msg");
     comment
         .split('#')
         .skip(1)
         .filter_map(|segment| {
-            directive(segment, "pylint:")
-                .and_then(|payload| directive(payload, keyword))
+            let payload = pylint_payload(segment)?;
+            directive(payload, &old)
+                .or_else(|| directive(payload, keyword))
                 .and_then(|rest| rest.trim_start().strip_prefix('='))
         })
         .flat_map(disable_codes)
@@ -276,7 +282,19 @@ pub fn spelled(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> V
                 .map(|block| (line, end(block)))
         };
         if let Some((first, last)) = scope {
-            push(first, last, pylint_codes(comment.text, "disable"));
+            let codes = pylint_codes(comment.text, "disable");
+            // Pylint reports too-many-lines on line 1, so a module-level
+            // pragma reaches it wherever it stands.
+            let module_level = own_line && !blocks.iter().skip(1).any(|b| b.range.contains(at));
+            if module_level {
+                let lines = codes
+                    .iter()
+                    .copied()
+                    .filter(|code| matches!(*code, "too-many-lines" | "C0302"))
+                    .collect();
+                push(1, last, lines);
+            }
+            push(first, last, codes);
         }
     }
     spans
@@ -288,6 +306,14 @@ pub struct Suppressions {
     ranges: Vec<(u32, u32, HashSet<String>)>,
 }
 
+/// Pylint's renamed messages: the old symbol or id, and the current id.
+const OLD_NAMES: &[(&str, &str)] = &[
+    ("broad-except", "W0718"),
+    ("W0703", "W0718"),
+    ("blacklisted-name", "C0104"),
+    ("C0102", "C0104"),
+];
+
 impl Suppressions {
     /// Resolve each spelled code to its rule code; an unknown one is inert.
     pub fn resolve(spelled: &[Span], registry: &Registry) -> Self {
@@ -297,7 +323,13 @@ impl Suppressions {
                 let codes = span
                     .codes
                     .iter()
-                    .filter_map(|spelling| registry.resolve(spelling))
+                    .filter_map(|spelling| {
+                        let current = OLD_NAMES
+                            .iter()
+                            .find(|(old, _)| old == spelling)
+                            .map_or(spelling.as_str(), |(_, id)| id);
+                        registry.resolve(current)
+                    })
                     .map(str::to_owned)
                     .collect();
                 (span.first, span.last, codes)
@@ -364,6 +396,13 @@ mod tests {
             disabled_codes("# type: ignore  # pylint: disable=W0611  # noqa: F401"),
             ["W0611", "F401"]
         );
+        assert_eq!(disabled_codes("# pylint:: disable=W0611"), ["W0611"]);
+        assert_eq!(disabled_codes("# pylint: disable-msg=W0611"), ["W0611"]);
+        assert_eq!(
+            disabled_codes("# pylint: disable=W0611 W0612;"),
+            ["W0611", "W0612"]
+        );
+        assert_eq!(disabled_codes("# pylint: disable=W0611)"), ["W0611"]);
         assert_eq!(disabled_codes("# noqa"), Vec::<&str>::new());
         assert_eq!(
             disabled_codes("# noqa: E501  # noqa: IMP001"),
@@ -443,6 +482,14 @@ mod tests {
         assert_eq!(
             lines("x = 1  # pylint: disable-next=W0611\nimport os\n"),
             [(2, 2)]
+        );
+    }
+
+    #[test]
+    fn module_pragma_for_too_many_lines_reaches_line_one() {
+        assert_eq!(
+            lines("import os\n# pylint: disable=too-many-lines\nx = 1\n"),
+            [(1, 4), (2, 4)]
         );
     }
 
