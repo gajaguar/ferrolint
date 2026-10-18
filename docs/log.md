@@ -2,6 +2,8 @@
 
 ## 2026-10-18
 
+* **suppression-comments.md**: Added the pragma spellings Pylint accepts and
+  the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with
   the `bundle` feature.
 * **Optional type inference engine**: Added
