@@ -41,6 +41,5 @@ Contract 0.3.0 added `options` to the file record. That changes the
 record's shape, so a host of 0.3.0 refuses a plugin built against 0.2.x
 (rebuild it with SDK 0.3.0), unlike the additive 0.2.1.
 
-Type inference is out of scope for v1 queries; the interface grows the
-type query API in phase 2 (see
-[Type inference query](type-inference-query.md)).
+The type inference query is a separate interface, added in contract 0.2.1
+(see [Type inference query](type-inference-query.md)).

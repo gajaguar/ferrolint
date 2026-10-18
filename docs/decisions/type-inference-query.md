@@ -1,7 +1,7 @@
 ---
 type: decision
 title: Type inference query
-description: How contract 0.2.1 adds the phase 2 type query as a new interface, what the host infers, and why an unresolved answer is the default.
+description: How contract 0.2.1 adds the type inference query as a new interface, what the host infers, and why an unresolved answer is the default.
 tags: [plugins, inference]
 status: stable
 ---

@@ -26,7 +26,7 @@ x86_64 and aarch64 plus macOS aarch64.
 
 ## Status
 
-In progress, epic by epic (see [docs/backlog.md](docs/backlog.md)). A run
+A run
 discovers the Python files under its targets, honouring `.gitignore` and the
 configured excludes, parses them in parallel with Ruff's parser, and runs
 the host's own rules plus every configured WASM plugin against the
@@ -41,7 +41,7 @@ A run exits `0` when clean, `1` with findings and `2` on a usage,
 configuration or plugin error. Results are cached per file in
 `.ferrolint-cache/`, and `--diff-base` lints only what changed.
 
-On a million lines with the ten bundled plugins
+On a million lines with the ten plugins the benchmark loads
 ([docs/usage/plugins.md](docs/usage/plugins.md)), a cold run takes about
 6.5 s on four cores, a warm run 0.25 s, and Pylint running the same ten
 checks 167 s; `make bench` measures it.

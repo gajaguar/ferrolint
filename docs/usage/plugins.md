@@ -32,10 +32,10 @@ answers to its Pylint msg-id and symbol as well as its code.
   doc comment lists what it leaves out, such as loop variables for
   `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
-* `not-callable` is the phase 2 sample: it asks the host's type
+* `not-callable` uses the type inference query: it asks the host's type
   inference and reports only calls of a resolved builtin instance such
   as an `int` or a `list`. It is not one of the ten plugins the
-  benchmarks load.
+  benchmark loads.
 
 ## Bundled by default
 

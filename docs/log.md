@@ -2,6 +2,11 @@
 
 ## 2026-10-18
 
+* **Roadmap notes**: Retired `backlog.md` and
+  `optional-type-inference-engine.md` from the public docs; the implementation
+  backlog and the optional type inference engine decision are no longer part
+  of the bundle.
+
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

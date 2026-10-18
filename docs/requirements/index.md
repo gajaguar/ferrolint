@@ -28,8 +28,8 @@ indexed by [`ac-index.md`](ac-index.md).
   configuration hashes.
 * [Pylint code mapping](pylint-code-mapping.md) - msg-ids and symbols
   resolve to plugin codes.
-* [Type inference query](type-inference-query.md) - the phase 2 query
-  API, deferred out of v1.
+* [Type inference query](type-inference-query.md) - the type inference
+  query extension to the contract (interface added in contract 0.2.1).
 
 ## Non-functional requirements
 

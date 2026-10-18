@@ -18,7 +18,6 @@ out under this directory.
   linter reports itself.
 * [Requirements](requirements/index.md) - the product's functional and
   non-functional requirements, with acceptance criteria per area.
-* [Backlog](backlog.md) - the implementation epics and the criteria each closes.
 * [Decisions](decisions/index.md) - the architectural decisions and what
   they put on future us.
 

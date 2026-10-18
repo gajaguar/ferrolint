@@ -49,7 +49,6 @@ the parenthesised FR or NFR.
 | AC-33 | [Platforms](acceptance/platforms.md)          | NFR-07   |
 | AC-34 | [Platforms](acceptance/platforms.md)          | NFR-08   |
 
-FR-11 (the phase 2 type inference query) is deferred and carries no
-criterion in v1: see
-[Type inference query](type-inference-query.md) for what lands later
-and what stays silent until then.
+FR-11 (the type inference query) carries no criterion in this index: see
+[Type inference query](type-inference-query.md) for what it covers and what
+stays silent when inference gives up.

@@ -11,8 +11,5 @@ considered, what was chosen, and what the choice puts on future us.
   under its own caps for every file.
 * [Packed AST](packed-ast.md) - why contract 0.2.0 sends the AST as `u32`
   words and one string blob.
-* [Type inference query](type-inference-query.md) - the phase 2
-  `inference` interface of contract 0.2.1 and what the host infers.
-* [Optional type inference engine](optional-type-inference-engine.md) -
-  why ty stays out of the default build and the opt-in cargo feature planned
-  for a later stage.
+* [Type inference query](type-inference-query.md) - the `inference`
+  interface of contract 0.2.1 and what the host infers.
