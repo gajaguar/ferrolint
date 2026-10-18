@@ -1,0 +1,27 @@
+5:R0902:Too many instance attributes (10/7)
+16:W0201:Attribute 'o' defined outside __init__
+20:W0201:Attribute 't' defined outside __init__
+21:W0201:Attribute 'f' defined outside __init__
+25:W0201:Attribute 'i' defined outside __init__
+43:W0201:Attribute 'sa' defined outside __init__
+55:W0201:Attribute 'b' defined outside __init__
+62:E0202:An attribute defined in mod line 60 hides this method
+73:E0203:Access to member 'e' before its definition line 74
+81:E0203:Access to member 'z' before its definition line 82
+82:W0201:Attribute 'z' defined outside __init__
+85:R0902:Too many instance attributes (8/7)
+92:W0201:Attribute 'a8' defined outside __init__
+93:W0201:Attribute 'a8' defined outside __init__
+120:E0202:An attribute defined in mod line 112 hides this method
+135:E0202:An attribute defined in mod line 136 hides this method
+151:W0201:Attribute 'other' defined outside __init__
+154:E0203:Access to member 'after' before its definition line 155
+155:W0201:Attribute 'after' defined outside __init__
+161:E0203:Access to member 'ready' before its definition line 162
+168:R0902:Too many instance attributes (8/7)
+173:W0201:Attribute 'e' defined outside __init__
+173:W0201:Attribute 'f' defined outside __init__
+173:W0201:Attribute 'g' defined outside __init__
+211:W0201:Attribute 'extra' defined outside __init__
+214:W0201:Attribute 'other' defined outside __init__
+227:R0902:Too many instance attributes (8/7)

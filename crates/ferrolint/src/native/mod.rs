@@ -24,11 +24,14 @@ mod exceptions;
 mod finally;
 mod flow;
 mod formats;
+mod hierarchy;
 mod imports;
+mod instance_attrs;
 mod logging;
 mod matchpat;
 mod misc;
 mod names;
+mod overrides;
 mod project;
 mod scopes;
 mod slots;
@@ -82,10 +85,12 @@ const CHECKERS: &[&dyn Checker] = &[
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
+    &instance_attrs::InstanceAttrs,
     &logging::Logging,
     &matchpat::MatchPatterns,
     &misc::Misc,
     &names::Naming,
+    &overrides::Overrides,
     &scopes::Scopes,
     &slots::Slots,
     &special::Special,

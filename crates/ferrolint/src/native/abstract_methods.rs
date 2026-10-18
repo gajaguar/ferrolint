@@ -1,16 +1,9 @@
 //! `W0223` abstract-method: a concrete class that leaves unimplemented a
 //! method an ancestor declares abstract, by `raise NotImplementedError` or
-//! `@abc.abstractmethod`. Pylint walks the class's MRO; here the MRO is
-//! built over the classes of the file, of the project and, when
-//! `VIRTUAL_ENV` names one, of the installed packages.
-//!
-//! shortcut: a class with a base that none of those hold (the standard
-//! library, a package outside the environment, a base computed at run time)
-//! is skipped rather than guessed at, so its findings are missed; upgrade
-//! with a module index that covers the standard library.
+//! `@abc.abstractmethod`. Pylint walks the class's MRO; here it is the
+//! one [`super::hierarchy`] builds, and a class without one is skipped.
 
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
@@ -18,19 +11,10 @@ use ruff_python_ast::{Expr, Stmt, StmtClassDef, StmtFunctionDef};
 use ruff_text_size::Ranged;
 
 use super::classes::{Env, Local, bases, locals, methods, py_repr};
-use super::project::{ClassRef, Project};
+use super::hierarchy::{Class, Hierarchy};
 use super::{Checker, Ctx, rule};
 
 const ABSTRACT: &str = "W0223";
-
-/// Bases that add no method to the MRO, though the project cannot read them.
-const EMPTY_BASES: [&str; 5] = [
-    "object",
-    "typing.Generic",
-    "abc.ABC",
-    "typing.Protocol",
-    "typing_extensions.Protocol",
-];
 
 pub struct AbstractMethods;
 
@@ -50,117 +34,24 @@ impl Checker for AbstractMethods {
         let env = Env::new(ctx);
         let mut walk = Walk {
             env: &env,
-            project: Project::with_packages(ctx.path, ctx.module),
-            cache: RefCell::default(),
+            hierarchy: Hierarchy::new(&env),
             out,
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
 }
 
-/// A class of an MRO.
-#[derive(Clone)]
-enum Class<'a> {
-    Local(&'a StmtClassDef),
-    Remote(ClassRef),
-}
-
-impl Class<'_> {
-    fn def(&self) -> Option<&StmtClassDef> {
-        match self {
-            Class::Local(class) => Some(*class),
-            Class::Remote(class) => class.class(),
-        }
-    }
-
-    fn key(&self) -> String {
-        match self {
-            Class::Local(class) => format!("@{}", std::ptr::from_ref(*class).addr()),
-            Class::Remote(class) => class.qname(),
-        }
-    }
-}
-
 struct Walk<'a, 'e> {
     env: &'e Env<'a>,
-    project: Project,
-    /// The MRO of each class met, by key; `None` when it cannot be built.
-    cache: RefCell<HashMap<String, Option<Vec<Class<'a>>>>>,
+    hierarchy: Hierarchy<'a, 'e>,
     out: &'e mut Vec<Diagnostic>,
 }
 
 impl<'a> Walk<'a, '_> {
-    /// The dotted name `expr` stands for where `class` is written.
-    fn qualify(&self, class: &Class<'a>, expr: &Expr) -> Option<String> {
-        match class {
-            Class::Local(_) => self.env.qualified(expr),
-            Class::Remote(class) => class.qualify(expr),
-        }
-    }
-
-    /// The direct bases of `class`, or `None` when one is unknown.
-    fn bases(&self, class: &Class<'a>) -> Option<Vec<Class<'a>>> {
-        match class {
-            Class::Local(def) => bases(def)
-                .iter()
-                .filter_map(|base| {
-                    // `Base[T]` derives from `Base`.
-                    let base = match base {
-                        Expr::Subscript(s) => &*s.value,
-                        other => other,
-                    };
-                    if let Some(local) = self.env.class_of(base) {
-                        return Some(Some(Class::Local(local)));
-                    }
-                    let Some(qualified) = self.env.qualified(base) else {
-                        return Some(None);
-                    };
-                    // A builtin has no module part and declares nothing abstract.
-                    if !qualified.contains('.') || EMPTY_BASES.contains(&qualified.as_str()) {
-                        return None;
-                    }
-                    let qualified = self.project.absolute(&qualified);
-                    Some(self.project.class(&qualified).map(Class::Remote))
-                })
-                .collect(),
-            Class::Remote(remote) => remote
-                .bases(&self.project)
-                .into_iter()
-                .filter_map(|base| match base {
-                    Ok(base) => Some(Some(Class::Remote(base))),
-                    Err(name) if EMPTY_BASES.contains(&name.as_str()) => None,
-                    Err(_) => Some(None),
-                })
-                .collect(),
-        }
-    }
-
-    /// The C3 linearization of `class`, as Python computes it.
-    fn mro(&self, class: &Class<'a>, depth: u8) -> Option<Vec<Class<'a>>> {
-        let key = class.key();
-        if let Some(found) = self.cache.borrow().get(&key) {
-            return found.clone();
-        }
-        let found = (depth < 32)
-            .then(|| {
-                let bases = self.bases(class)?;
-                let mut seqs = bases
-                    .iter()
-                    .map(|base| self.mro(base, depth + 1))
-                    .collect::<Option<Vec<_>>>()?;
-                seqs.push(bases);
-                let mut out = vec![class.clone()];
-                out.extend(merge(seqs)?);
-                Some(out)
-            })
-            .flatten();
-        self.cache.borrow_mut().insert(key, found.clone());
-        found
-    }
-
     fn is_abstract(&self, owner: &Class<'a>, func: &StmtFunctionDef) -> bool {
         func.decorator_list.iter().any(|decorator| {
-            self.qualify(owner, &decorator.expression)
+            self.hierarchy
+                .qualify(owner, &decorator.expression)
                 .is_some_and(|name| name == "abc.abstractmethod" || name == "abc.abstractproperty")
         }) || raises_not_implemented(func)
     }
@@ -198,7 +89,7 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         let own = Class::Local(class);
-        let Some(mro) = self.mro(&own, 0) else {
+        let Some(mro) = self.hierarchy.mro(&own) else {
             return;
         };
         // Name -> (owner key, owner name); later ancestors override earlier ones.
@@ -252,30 +143,6 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
             self.class(class);
         }
         visitor::walk_stmt(self, stmt);
-    }
-}
-
-/// Python's MRO merge of the bases' linearizations; `None` when they
-/// disagree, as for `class A(B, B)`.
-fn merge(mut seqs: Vec<Vec<Class<'_>>>) -> Option<Vec<Class<'_>>> {
-    let mut out = Vec::new();
-    loop {
-        seqs.retain(|seq| !seq.is_empty());
-        if seqs.is_empty() {
-            return Some(out);
-        }
-        let head = seqs.iter().map(|seq| seq[0].key()).find(|head| {
-            !seqs
-                .iter()
-                .any(|seq| seq[1..].iter().any(|c| &c.key() == head))
-        })?;
-        let pos = seqs.iter().position(|seq| seq[0].key() == head)?;
-        out.push(seqs[pos][0].clone());
-        for seq in &mut seqs {
-            if seq[0].key() == head {
-                seq.remove(0);
-            }
-        }
     }
 }
 

@@ -1,0 +1,3 @@
+10:W0231:__init__ method from base class 'A' is not called
+45:W0231:__init__ method from base class 'B' is not called
+87:W0231:__init__ method from base class 'A' is not called

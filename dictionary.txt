@@ -98,3 +98,9 @@ fstr
 dcomp
 linearization
 linearizations
+fget
+fset
+fspath
+ixin
+pyvenv
+Variadics

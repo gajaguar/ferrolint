@@ -9,3 +9,4 @@
 36:C0103:Constant name "a_fstr" doesn't conform to UPPER_CASE naming style
 37:C0103:Constant name "a_fstr2" doesn't conform to UPPER_CASE naming style
 41:C0103:Constant name "a_cmp" doesn't conform to UPPER_CASE naming style
+52:C0103:Variable name "SessionMaker" doesn't conform to snake_case naming style

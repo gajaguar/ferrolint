@@ -43,3 +43,10 @@ a_lam = (lambda: 1)
 a_gen = (i for i in range(3))
 a_comp = [i for i in range(3)]
 a_dcomp = {i: i for i in range(3)}
+
+
+class SessionMaker:
+    pass
+
+
+SessionMaker = SessionMaker()

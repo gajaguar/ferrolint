@@ -1,0 +1,4 @@
+1:R0902:Too many instance attributes (3/2)
+6:W0201:Attribute 'b' defined outside __init__
+20:E0203:Access to member 'e' before its definition line 21
+21:W0201:Attribute 'e' defined outside __init__

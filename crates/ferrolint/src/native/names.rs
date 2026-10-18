@@ -1142,6 +1142,26 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// Whether `expr` names a module class that is the only binding of its
+    /// name above it, as `Maker` in `Maker = Maker()`, which astroid infers
+    /// though the name is bound twice.
+    fn class_above(&self, expr: &Expr) -> bool {
+        let Expr::Name(name) = expr else { return false };
+        let line = line_of(self.ctx(), name.range);
+        let above: Vec<&ModBind<'_>> = self
+            .binds
+            .get(name.id.as_str())
+            .into_iter()
+            .flatten()
+            .filter(|b| b.line < line)
+            .collect();
+        matches!(above[..], [only] if only.kind == Bk::Class)
+            && self
+                .env
+                .binding(name)
+                .is_some_and(|b| b.kind == BindingKind::ClassDef && b.scope == 0)
+    }
+
     /// Whether a function of the file returns, wherever it returns, a class.
     fn returns_class(&self, func: &StmtFunctionDef) -> bool {
         struct Returns<'a>(Vec<&'a Expr>);
@@ -1163,7 +1183,7 @@ impl<'a> Walk<'a, '_> {
     fn call_val(&self, call: &ruff_python_ast::ExprCall, depth: u8) -> Val {
         let all = |values: &[&Expr]| values.iter().all(|e| self.val(e, depth + 1) == Val::Const);
         let Some(callee) = self.qualified(&call.func) else {
-            if self.env.class_of(&call.func).is_some() {
+            if self.env.class_of(&call.func).is_some() || self.class_above(&call.func) {
                 return Val::Other;
             }
             return match &*call.func {

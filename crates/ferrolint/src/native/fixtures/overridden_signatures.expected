@@ -1,0 +1,15 @@
+49:W0237:Parameter 'self' has been renamed to 'this' in overriding 'B.m1' method
+52:W0221:Number of parameters was 3 in 'A.m2' and is now 3 in overriding 'B.m2' method
+58:W0221:Variadics removed in overriding 'B.m4' method
+64:W0237:Parameter 'b' has been renamed to 'c' in overriding 'B.m6' method
+67:W0221:Number of parameters was 2 in 'A.__eq__' and is now 3 in overriding 'B.__eq__' method
+76:W0237:Parameter 'a' has been renamed to 'b' in overriding 'B.m7' method
+76:W0237:Parameter 'b' has been renamed to 'a' in overriding 'B.m7' method
+88:W0221:Number of parameters was 2 in 'A.m11' and is now 3 in overriding 'B.m11' method
+91:W0221:Number of parameters was 3 in 'A.m12' and is now 4 in overriding 'B.m12' method
+122:W0221:Number of parameters was 3 in 'I.m' and is now 2 in overriding 'J.m' method
+126:W0237:Parameter 'a' has been renamed to 'b' in overriding 'J.c' method
+130:W0237:Parameter 'a' has been renamed to 'b' in overriding 'J.s' method
+140:W0221:Number of parameters was 2 in 'I.over' and is now 3 in overriding 'J.over' method
+148:W0221:Number of parameters was 2 in 'J.m' and is now 4 in overriding 'K.m' method
+151:W0221:Number of parameters was 2 in 'J.unknown' and is now 1 in overriding 'K.unknown' method
