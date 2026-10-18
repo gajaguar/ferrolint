@@ -91,7 +91,15 @@ if [ -n "${STRIP:-}" ]; then
 fi
 cd "$CODE"
 set +e
-"$bin" --no-cache --config "$config" . >"$work/ferrolint.out"
+if [ -n "${BIN:-}" ] && [ -n "${STRIP:-}" ]; then
+	# A bundled binary reads the copy's own .pylintrc, options included,
+	# the way a codebase runs it; only py-version, which Pylint takes from its
+	# interpreter, is added.
+	[ -z "${PY_VERSION:-}" ] || printf '\n[MASTER]\npy-version=%s\n' "$PY_VERSION" >>.pylintrc
+	"$bin" --no-cache . >"$work/ferrolint.out"
+else
+	"$bin" --no-cache --config "$config" . >"$work/ferrolint.out"
+fi
 code=$?
 set -e
 [ "$code" -le 1 ] || fail "ferrolint exited $code on CODE"
@@ -138,8 +146,8 @@ if [ -n "${ONLY:-}" ]; then
 	done
 fi
 
-comm -23 "$work/ferrolint.norm" "$work/pylint.norm" >"$work/solo-ferrolint"
-comm -13 "$work/ferrolint.norm" "$work/pylint.norm" >"$work/solo-pylint"
+LC_ALL=C comm -23 "$work/ferrolint.norm" "$work/pylint.norm" >"$work/solo-ferrolint"
+LC_ALL=C comm -13 "$work/ferrolint.norm" "$work/pylint.norm" >"$work/solo-pylint"
 only_ferrolint="$(wc -l <"$work/solo-ferrolint" | tr -d ' ')"
 only_pylint="$(wc -l <"$work/solo-pylint" | tr -d ' ')"
 

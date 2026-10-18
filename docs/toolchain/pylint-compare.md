@@ -40,7 +40,9 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
   removed from the `*.py` files (line numbers stay the same; `# noqa` stays). a project's
   pragmas hide nearly every finding, so this is how a rule is compared where
   it fires. `PYLINT_OUT` then holds the copy's baseline: use a file other than
-  the normal one.
+  the normal one. With `BIN` too, ferrolint runs with no temporary
+  configuration: it reads the copy's `.pylintrc`, options included, like a codebase
+  does, and `PY_VERSION` is appended to it; `IGNORE` has no effect.
 * `ONLY`: an extended regular expression on the Pylint msg-id, like
   `^(W0134|W0137)$` or `^W01`; only matching findings are compared, on both
   sides.
