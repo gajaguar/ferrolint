@@ -14,6 +14,7 @@ use ruff_text_size::{Ranged, TextRange};
 use crate::ast::Flat;
 use crate::semantic::Model;
 
+mod abstract_methods;
 mod calls;
 mod classes;
 mod conditions;
@@ -23,11 +24,14 @@ mod exceptions;
 mod finally;
 mod flow;
 mod formats;
+mod hierarchy;
 mod imports;
+mod instance_attrs;
 mod logging;
 mod matchpat;
 mod misc;
 mod names;
+mod overrides;
 mod project;
 mod scopes;
 mod slots;
@@ -71,6 +75,7 @@ pub trait Checker: Sync {
 }
 
 const CHECKERS: &[&dyn Checker] = &[
+    &abstract_methods::AbstractMethods,
     &calls::Calls,
     &classes::Classes,
     &conditions::Conditions,
@@ -80,10 +85,12 @@ const CHECKERS: &[&dyn Checker] = &[
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
+    &instance_attrs::InstanceAttrs,
     &logging::Logging,
     &matchpat::MatchPatterns,
     &misc::Misc,
     &names::Naming,
+    &overrides::Overrides,
     &scopes::Scopes,
     &slots::Slots,
     &special::Special,

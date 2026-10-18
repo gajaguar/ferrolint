@@ -81,3 +81,5 @@ TD = TypedDict("TD", {"a": int})
 td = TypedDict("td", {"a": int})
 aAnn = Annotated[int, 1]
 AAnn = Annotated[int, 1]
+STARRED: tuple = (1,)
+STARRED += (*(k for k in STARRED),)

@@ -456,3 +456,89 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   bound to a constant is not followed. `W0716` needs both operands to be
   classes of the file, builtins or tuples written out. `E0712` leaves a
   `|` of classes alone unless both are classes of the file or builtins.
+
+## Batch G: class hierarchy
+
+* `W0223` `abstract-method`: a class that does not override a method one
+  of its ancestors declares abstract, by a body whose first statement
+  (after the docstring) raises `NotImplementedError` or by
+  `@abc.abstractmethod` or `@abc.abstractproperty`. As in Pylint, a class
+  that is itself abstract (a protocol, an `abc.ABC` or `ABCMeta` class, or
+  one with an abstract method of its own) is not reported, the ancestors
+  are walked in C3 order, and a name the class binds in any way counts as
+  an override.
+
+Known divergences:
+
+* The ancestors come from the classes of the file, the project's modules
+  (see `native/project.rs`) and, when the `VIRTUAL_ENV` environment
+  variable names a virtual environment, the standard library of its
+  interpreter (from `pyvenv.cfg`) and its `site-packages`. A class with a
+  base from anywhere else (a C module, an environment that is not active,
+  a base computed at run time) is skipped, so its findings are missed
+  rather than guessed. Without an active environment the base classes of
+  the dependencies (a serializer's `create`, for instance) are unknown,
+  and those findings go missing.
+* A cached result does not track the environment: after switching it,
+  lint with `--no-cache`.
+* In an ancestor other than the class itself, a name bound by an import
+  or a nested class removes an abstract method, where Pylint keeps it.
+
+## Batch H: instance attributes and overrides
+
+* `W0201` `attribute-defined-outside-init`: an instance attribute assigned
+  only outside the methods of `defining-attr-methods`, a property setter
+  and a `property(fget, fset)` setter. As in Pylint, a class attribute of
+  the class or an ancestor, an attribute an ancestor assigns in a defining
+  method, a `setattr(self, "name", ...)` there, and a method that a
+  defining method calls as `x.method()` excuse it; `self.x += 1` alone and
+  `__dict__` are left out, and `mixin-class-rgx` with
+  `ignored-checks-for-mixins` skips mixins (and `E0203` with them).
+* `E0202` `method-hidden`: a method whose name an instance attribute of
+  the class or an ancestor, assigned in a method itself, takes; a property,
+  a setter, a `functools.cached_property`, a decorator class with
+  `__get__` and `__set__`, an ancestor's method of that name or a private
+  name an ancestor assigns spares it.
+* `E0203` `access-member-before-definition`: `self.x` read in the one
+  function that assigns it, above that assignment, or a method called in
+  `__init__` above it that reads it, unless a `try` that catches
+  `AttributeError` or `Exception` keeps the two apart.
+* `R0902` `too-many-instance-attributes`: more distinct instance
+  attributes than `max-attributes` (default 7), the fields of a
+  `@dataclass` included.
+* `W0221` `arguments-differ` and `W0237` `arguments-renamed`: a method
+  against the first ancestor in C3 order that binds its name to a
+  function (the implementation, not an `@overload` stub). The positional
+  parameters are compared by position and name (`dummy-variables-rgx`
+  names aside), the keyword-only ones by name, and a removed `*args` or
+  `**kwargs` is reported; a constructor is never compared and a special
+  method only by number, as in Pylint. Private methods, setters and stubs
+  are skipped.
+* `W0231` `super-init-not-called`: an `__init__` that calls neither
+  `super().__init__` (anywhere in its body) nor `Base.__init__` of a base
+  whose `__init__`, found along the base's MRO, is not abstract (a `pass`,
+  a docstring alone or `raise NotImplementedError`). A protocol base or a
+  called `__init__` that another base shares ends the check.
+
+Known divergences:
+
+* Pylint infers what `x` in `x.name = value` stands for. Here it is the
+  first parameter of a method of the class (or of a function or lambda
+  nested in it that does not rebind it), or a name bound once in its
+  scope to a call of a class of the file, `x = Model()`, or of a name
+  bound once to such a class or to a call of a function of the file that
+  returns one. An instance reached any other way (`self.root.x = 1`,
+  `cls.manager.model = ...`) gives the class nothing, so its `W0201` is
+  missed.
+* The ancestors are those of Batch G: a class whose MRO is unknown is not
+  checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
+  ancestor tests of `W0201`. A builtin base such as `dict` or
+  `Exception` adds nothing, which matches Pylint for the signatures it
+  reads from a running interpreter.
+* `E0202` treats a decorator that is a function as one that returns no
+  data descriptor, where Pylint infers the value it returns.
+* A method that a defining method calls excuses `W0201` when any call in
+  that method has its name as an attribute (`x.prepare()`), where Pylint
+  asks that the callee infer to that bound method.
+* `R0902` and `W0201` ignore `__slots__`, which keeps astroid from
+  recording an attribute outside them.

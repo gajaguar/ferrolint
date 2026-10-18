@@ -1,0 +1,7 @@
+23:W0223:Method 'run' is abstract in class 'Base' but is not overridden in child class 'Child'
+23:W0223:Method 'stop' is abstract in class 'Base' but is not overridden in child class 'Child'
+34:W0223:Method 'run' is abstract in class 'Base' but is not overridden in child class 'Grandchild'
+54:W0223:Method 'first' is abstract in class 'Decorated' but is not overridden in child class 'FromDecorated'
+54:W0223:Method 'second' is abstract in class 'Decorated' but is not overridden in child class 'FromDecorated'
+93:W0223:Method 'stop' is abstract in class 'Other' but is not overridden in child class 'Leaf'
+98:W0223:Method 'stop' is abstract in class 'Base' but is not overridden in child class 'Inner'

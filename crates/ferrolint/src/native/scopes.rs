@@ -16,8 +16,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, Pattern, Stmt,
-    StmtFunctionDef, StmtIf, StmtTry,
+    AnyParameterRef, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, Pattern,
+    Stmt, StmtFunctionDef, StmtIf, StmtTry,
 };
 use ruff_text_size::{Ranged, TextRange};
 
@@ -502,7 +502,16 @@ impl<'a> Collect<'a, '_> {
         self.push_scope(Kind::Function, Some(def));
         for parameter in &def.parameters {
             let name = parameter.name();
-            self.bind(name.as_str(), DefKind::Param, name.range(), true, false);
+            // Pylint places `*args` and `**kwargs` on the arguments node.
+            let at = if matches!(parameter, AnyParameterRef::Variadic(_)) {
+                def.parameters
+                    .iter()
+                    .next()
+                    .map_or(range, |first| first.range())
+            } else {
+                name.range()
+            };
+            self.bind(name.as_str(), DefKind::Param, at, true, false);
         }
         self.visit_body(&def.body);
         self.pop_scope();
