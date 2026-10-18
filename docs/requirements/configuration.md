@@ -30,6 +30,9 @@ fails fast when the result does not parse.
     `from __future__ import annotations` gets the same treatment without the
     key. Without the key no version is assumed. Any other spelling is a
     configuration error.
+  * `options`: a map of text values that every plugin receives with each
+    file (see [Plugin contract](plugin-contract.md)); the other options of
+    a Pylint file fill it when no ferrolint configuration exists.
 * Unknown keys are configuration errors, so a typo never silently disables
   a check.
 * An invalid value, an unreadable file, or a missing path in `plugins`

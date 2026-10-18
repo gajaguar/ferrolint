@@ -1,0 +1,29 @@
+1:C0103:Module name "mod" doesn't conform to '^zzz$' pattern
+7:C0103:Constant name "abcd" doesn't conform to '[a-z]+_[a-z]+$' pattern
+8:C0103:Type variable name "tv" doesn't conform to '^TV$' pattern
+10:C0103:Parameter specification variable name "ps" doesn't conform to '^PS$' pattern
+11:C0103:Type variable tuple name "tvt" doesn't conform to predefined naming style
+12:C0103:Type alias name "ta" doesn't conform to '^TA$' pattern
+14:C0103:Type alias name "tu" doesn't conform to '^TA$' pattern
+17:C0103:Argument name "bad" doesn't conform to '^a_[a-z]+$' pattern
+19:C0103:Variable name "badvar" doesn't conform to '^v_[a-z]+$' pattern
+20:C0103:Inline iteration name "it" doesn't conform to '^iv$' pattern
+25:C0103:Class attribute name "bad_ca" doesn't conform to '^ca_[a-z]+$' pattern
+29:C0103:Argument name "self" doesn't conform to '^a_[a-z]+$' pattern
+31:C0103:Attribute name "bad_at" doesn't conform to '^at_[a-z]+$' pattern
+34:C0103:Argument name "self" doesn't conform to '^a_[a-z]+$' pattern
+34:C0103:Attribute name "prop_cached" doesn't conform to '^at_[a-z]+$' pattern
+38:C0103:Argument name "self" doesn't conform to '^a_[a-z]+$' pattern
+38:C0103:Attribute name "prop_abs" doesn't conform to '^at_[a-z]+$' pattern
+42:C0103:Argument name "self" doesn't conform to '^a_[a-z]+$' pattern
+42:C0103:Attribute name "Prop" doesn't conform to '^at_[a-z]+$' pattern
+46:C0103:Class name "Bad" doesn't conform to '^[a-z]+\\d$' pattern
+50:C0103:Class name "Col" doesn't conform to '^[a-z]+\\d$' pattern
+52:C0103:Class constant name "other" doesn't conform to '^cc_[a-z]+$' pattern
+55:C0103:Type alias name "PEP" doesn't conform to '^TA$' pattern
+56:C0103:Argument name "x" doesn't conform to '^a_[a-z]+$' pattern
+56:C0103:Function name "gen" doesn't conform to '^fn_[a-z]+$' pattern
+56:C0103:Parameter specification variable name "Z" doesn't conform to '^PS$' pattern
+56:C0103:Type variable name "X" doesn't conform to '^TV$' pattern
+57:C0103:Class name "G" doesn't conform to '^[a-z]+\\d$' pattern
+57:C0103:Type variable name "Q" doesn't conform to '^TV$' pattern

@@ -11,6 +11,8 @@ from `ferrolint --help` alone.
   and the line they apply to.
 * [Host rules](host-rules.md) - the `FL` codes the linter reports itself,
   without any plugin.
+* [Native rules](native-rules.md) - the Pylint rules the host runs itself, by
+  batch, and where they differ from Pylint.
 * [Writing a plugin](writing-a-plugin.md) - the SDK's `Checker`, building to
   `wasm32-wasip2`, loading by SHA-256, and parity fixtures against Pylint.
 * [Result cache](result-cache.md) - what `.ferrolint-cache/` stores and

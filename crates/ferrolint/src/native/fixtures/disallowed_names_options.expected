@@ -1,0 +1,6 @@
+1:C0104:Disallowed name "qux"
+3:C0104:Disallowed name "tmp_a"
+5:C0104:Disallowed name "data1"
+9:C0104:Disallowed name "qux"
+9:C0104:Disallowed name "tmp_x"
+11:C0104:Disallowed name "Quux"

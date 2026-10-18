@@ -1,0 +1,35 @@
+2:W0105:String statement has no effect
+11:W0105:String statement has no effect
+19:W0105:String statement has no effect
+24:W0105:String statement has no effect
+26:W0105:String statement has no effect
+28:W0105:String statement has no effect
+33:W0105:String statement has no effect
+42:W0124:Following "as" with another context manager looks like a tuple.
+44:W0124:Following "as" with another context manager looks like a tuple.
+48:W0124:Following "as" with another context manager looks like a tuple.
+50:W0124:Following "as" with another context manager looks like a tuple.
+60:C0200:Consider using enumerate instead of iterating with range and len
+62:C0200:Consider using enumerate instead of iterating with range and len
+68:C0200:Consider using enumerate instead of iterating with range and len
+102:R1713:Consider using str.join(sequence) for concatenating strings from an iterable
+105:R1713:Consider using str.join(sequence) for concatenating strings from an iterable
+108:R1713:Consider using str.join(sequence) for concatenating strings from an iterable
+138:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
+139:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
+143:E4702:Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead.
+150:W4701:Iterated list 'other' is being modified inside for loop body, consider iterating through a copy of it instead.
+152:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
+154:E4702:Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead.
+159:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
+165:W4701:Iterated list 'lst2' is being modified inside for loop body, consider iterating through a copy of it instead.
+171:W4801:Iterator 'it' from an outer scope is reused or consumed in a nested loop.
+175:W4801:Iterator 'gen' from an outer scope is reused or consumed in a nested loop.
+186:W4801:Iterator 'it3' from an outer scope is reused or consumed in a nested loop.
+210:W4801:Iterator 'it8' from an outer scope is reused or consumed in a nested loop.
+222:W4801:Iterator 'g' from an outer scope is reused or consumed in a nested loop.
+235:E3102:`positional()` got some positional-only arguments passed as keyword arguments: 'a'
+236:E3102:`positional()` got some positional-only arguments passed as keyword arguments: 'a', 'b'
+247:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
+249:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
+250:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()

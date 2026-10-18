@@ -1,0 +1,37 @@
+5:E0306:__repr__ does not return str
+8:E0311:__format__ does not return str
+11:E0301:__iter__ returns non-iterator
+14:E0310:__length_hint__ does not return non-negative integer
+17:E0312:__getnewargs__ does not return a tuple
+33:E0310:__length_hint__ does not return non-negative integer
+44:E0301:__iter__ returns non-iterator
+47:E0310:__length_hint__ does not return non-negative integer
+53:E0310:__length_hint__ does not return non-negative integer
+56:E0306:__repr__ does not return str
+59:E0306:__repr__ does not return str
+73:E0306:__repr__ does not return str
+76:E0306:__repr__ does not return str
+82:E0306:__repr__ does not return str
+85:E0301:__iter__ returns non-iterator
+88:E0306:__repr__ does not return str
+91:E0306:__repr__ does not return str
+94:E0306:__repr__ does not return str
+97:E0306:__repr__ does not return str
+100:E0306:__repr__ does not return str
+103:E0306:__repr__ does not return str
+118:E0310:__length_hint__ does not return non-negative integer
+128:E0306:__repr__ does not return str
+132:E0306:__repr__ does not return str
+135:E0311:__format__ does not return str
+140:E0301:__iter__ returns non-iterator
+143:E0306:__repr__ does not return str
+146:E0310:__length_hint__ does not return non-negative integer
+170:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+173:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+176:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+179:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+191:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+194:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+197:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+200:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)
+203:E0313:__getnewargs_ex__ does not return a tuple containing (tuple, dict)

@@ -1,0 +1,31 @@
+2:C0325:Unnecessary parens after 'if' keyword
+6:W0125:Using a conditional statement with a constant value
+8:C0325:Unnecessary parens after 'not' keyword
+12:C0325:Unnecessary parens after 'while' keyword
+18:C0325:Unnecessary parens after 'in' keyword
+20:C0325:Unnecessary parens after 'in' keyword
+22:C0325:Unnecessary parens after 'for' keyword
+24:C0325:Unnecessary parens after '=' keyword
+27:C0325:Unnecessary parens after '=' keyword
+32:C0325:Unnecessary parens after 'if' keyword
+38:C0325:Unnecessary parens after 'return' keyword
+42:C0325:Unnecessary parens after 'return' keyword
+43:W0101:Unreachable code
+44:W0101:Unreachable code
+45:W0101:Unreachable code
+46:C0325:Unnecessary parens after 'return' keyword
+46:W0101:Unreachable code
+47:W0101:Unreachable code
+48:C0325:Unnecessary parens after 'del' keyword
+48:W0101:Unreachable code
+50:C0325:Unnecessary parens after 'assert' keyword
+52:C0325:Unnecessary parens after 'raise' keyword
+53:C0325:Unnecessary parens after 'yield' keyword
+54:W0101:Unreachable code
+55:C0325:Unnecessary parens after '=' keyword
+59:C0325:Unnecessary parens after 'if' keyword
+60:C0325:Unnecessary parens after 'if' keyword
+77:C0325:Unnecessary parens after 'except' keyword
+86:C0325:Unnecessary parens after 'elif' keyword
+88:C0325:Unnecessary parens after '=' keyword
+92:C0325:Unnecessary parens after 'not' keyword

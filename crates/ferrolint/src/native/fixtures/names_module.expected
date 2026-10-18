@@ -1,0 +1,50 @@
+7:C0103:Constant name "camelCase" doesn't conform to UPPER_CASE naming style
+9:C0103:Constant name "snake_case" doesn't conform to UPPER_CASE naming style
+10:C0103:Constant name "PascalCase" doesn't conform to UPPER_CASE naming style
+14:C0103:Constant name "c4" doesn't conform to UPPER_CASE naming style
+15:C0103:Constant name "c5" doesn't conform to UPPER_CASE naming style
+16:C0103:Constant name "c6" doesn't conform to UPPER_CASE naming style
+17:C0103:Constant name "c7" doesn't conform to UPPER_CASE naming style
+19:C0103:Variable name "cL" doesn't conform to snake_case naming style
+20:C0103:Variable name "cLambda" doesn't conform to snake_case naming style
+23:C0103:Constant name "camelName" doesn't conform to UPPER_CASE naming style
+27:C0103:Constant name "camelIf" doesn't conform to UPPER_CASE naming style
+28:C0103:Constant name "camelComp" doesn't conform to UPPER_CASE naming style
+29:C0103:Constant name "camelBool" doesn't conform to UPPER_CASE naming style
+30:C0103:Constant name "camelStr" doesn't conform to UPPER_CASE naming style
+31:C0103:Constant name "camelBytes" doesn't conform to UPPER_CASE naming style
+32:C0103:Constant name "camelNone" doesn't conform to UPPER_CASE naming style
+33:C0103:Constant name "camelEllipsis" doesn't conform to UPPER_CASE naming style
+34:C0103:Constant name "camelObj" doesn't conform to UPPER_CASE naming style
+35:C0103:Constant name "camelDict" doesn't conform to UPPER_CASE naming style
+36:C0103:Constant name "camelList" doesn't conform to UPPER_CASE naming style
+37:C0103:Constant name "camelSet" doesn't conform to UPPER_CASE naming style
+38:C0103:Constant name "camelInt" doesn't conform to UPPER_CASE naming style
+39:C0103:Constant name "camelStrCall" doesn't conform to UPPER_CASE naming style
+40:C0103:Constant name "camelLen" doesn't conform to UPPER_CASE naming style
+41:C0103:Class name "camelType" doesn't conform to PascalCase naming style
+42:C0103:Class name "camelType2" doesn't conform to PascalCase naming style
+47:C0103:Constant name "ann" doesn't conform to UPPER_CASE naming style
+48:C0103:Constant name "annC" doesn't conform to UPPER_CASE naming style
+52:C0103:Type variable name "tv" doesn't conform to predefined naming style
+53:C0103:Type alias name "TypeA" doesn't conform to predefined naming style
+54:C0103:Type alias name "typeA" doesn't conform to predefined naming style
+55:C0103:Type alias name "typeB" doesn't conform to predefined naming style
+56:C0103:Class name "typeC" doesn't conform to PascalCase naming style
+57:C0103:Type alias name "TypeD" doesn't conform to predefined naming style
+58:C0103:Type alias name "typeE" doesn't conform to predefined naming style
+59:C0103:Type alias name "typeF" doesn't conform to predefined naming style
+60:C0103:Constant name "fin" doesn't conform to UPPER_CASE naming style
+61:C0103:Constant name "Fin" doesn't conform to UPPER_CASE naming style
+64:C0103:Constant name "dX" doesn't conform to UPPER_CASE naming style
+64:C0103:Constant name "dY" doesn't conform to UPPER_CASE naming style
+65:C0103:Constant name "eX" doesn't conform to UPPER_CASE naming style
+65:C0103:Constant name "eY" doesn't conform to UPPER_CASE naming style
+67:C0103:Class name "fooAlias" doesn't conform to PascalCase naming style
+69:C0103:Constant name "fooInst" doesn't conform to UPPER_CASE naming style
+70:C0103:Constant name "FooInst" doesn't conform to UPPER_CASE naming style
+72:C0103:Variable name "funcAlias" doesn't conform to snake_case naming style
+77:C0103:Class name "colors" doesn't conform to PascalCase naming style
+79:C0103:Class name "nt" doesn't conform to PascalCase naming style
+81:C0103:Class name "td" doesn't conform to PascalCase naming style
+82:C0103:Class name "aAnn" doesn't conform to PascalCase naming style

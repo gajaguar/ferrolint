@@ -1,0 +1,6 @@
+7:E0245:No such name 'b' in __slots__
+9:E0245:No such name 'd' in __slots__
+23:E0245:No such name 'b' in __slots__
+46:E0245:No such name 'c' in __slots__
+62:E0245:No such name 'a' in __slots__
+67:E0245:No such name 'b' in __slots__

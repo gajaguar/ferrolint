@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
 use rayon::prelude::*;
-use ruff_python_ast::{ModModule, PySourceType};
-use ruff_python_parser::Parsed;
+use ruff_python_ast::{ModModule, PySourceType, PythonVersion};
+use ruff_python_parser::{ParseOptions, Parsed};
 use sha2::{Digest, Sha256};
 
 use crate::cache::{Cache, Entry};
@@ -21,6 +21,7 @@ use crate::config::{self, Config};
 use crate::discover::{self, Excludes};
 use crate::error::{Error, Result};
 use crate::host::{FileData, Host, LoadedPlugin, Outcome, PluginSource};
+use crate::native;
 use crate::selection::Selection;
 use crate::semantic::Model;
 use crate::suppress::{self, Suppressions};
@@ -187,6 +188,8 @@ struct Setup {
     registry: Registry,
     selection: Selection,
     py_version: Option<(u32, u32)>,
+    /// The configuration's other options, sorted by key, as the plugins get them.
+    options: Vec<(String, String)>,
 }
 
 impl Setup {
@@ -197,11 +200,14 @@ impl Setup {
         config: &Config,
     ) -> Result<Self> {
         let host = Host::load(plugins, cache, workers)?;
-        let rules = checks::host_rules().into_iter().chain(
-            host.plugins
-                .iter()
-                .flat_map(|plugin| plugin.rules.iter().cloned()),
-        );
+        let rules = checks::host_rules()
+            .into_iter()
+            .chain(native::rules())
+            .chain(
+                host.plugins
+                    .iter()
+                    .flat_map(|plugin| plugin.rules.iter().cloned()),
+            );
         let registry = Registry::with_owners(rules, &config.pylint_aliases)
             .map_err(|err| Error::config(err.to_string()))?;
         let selection = Selection::new(&registry, config)?;
@@ -210,6 +216,7 @@ impl Setup {
             registry,
             selection,
             py_version: config.py_version,
+            options: config.options.clone().into_iter().collect(),
         })
     }
 }
@@ -360,7 +367,13 @@ impl Linter<'_> {
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Prepared::NotUtf8;
         };
-        let parsed = ruff_python_parser::parse_unchecked_source(source, PySourceType::Python);
+        // The newest grammar: an older default would reject PEP 695 syntax and
+        // silently skip the file.
+        let options =
+            ParseOptions::from(PySourceType::Python).with_target_version(PythonVersion::latest());
+        let parsed = ruff_python_parser::parse_unchecked(source, options)
+            .try_into_module()
+            .unwrap_or_else(|| unreachable!("Python source parses to a module"));
         Prepared::Source {
             source: source.to_owned(),
             parsed,
@@ -404,12 +417,15 @@ impl Linter<'_> {
         let key = self.cache.map(|cache| {
             let rules = enabled.iter().cloned().collect::<Vec<_>>().join(",");
             let version = format!("{:?}", setup.py_version);
+            // A plugin's verdict depends on the options it is sent.
+            let options = format!("{:?}", setup.options);
             cache.key(&[
                 &hex(&Sha256::digest(bytes)),
                 display,
                 &module,
                 &rules,
                 &version,
+                &options,
             ])
         });
         let stored = self
@@ -435,8 +451,10 @@ impl Linter<'_> {
                 let file = FileRef {
                     display,
                     module: &module,
+                    path,
                 };
-                let (entry, aborts) = self.check(setup, &file, prepared, &wanted, stored)?;
+                let (entry, aborts) =
+                    self.check(setup, &file, prepared, &wanted, &enabled, stored)?;
                 if let (Some(cache), Some(key)) = (self.cache, key.as_deref()) {
                     cache.store_entry(key, &entry);
                 }
@@ -463,6 +481,7 @@ impl Linter<'_> {
         file: &FileRef<'_>,
         prepared: Prepared,
         wanted: &[usize],
+        enabled: &BTreeSet<String>,
         stored: Option<Entry>,
     ) -> Result<(Entry, Vec<Diagnostic>)> {
         let host = &setup.host;
@@ -483,6 +502,28 @@ impl Linter<'_> {
             return Ok((entry, Vec::new()));
         };
         entry.host = checks::check(&source, &parsed, &index);
+        if parsed.has_no_syntax_errors() && native::wanted(enabled) {
+            let flat = ast::flatten(&source, &index, parsed.syntax());
+            let model = Model::build(
+                parsed.syntax(),
+                &flat.nodes,
+                &source,
+                &index,
+                setup.py_version,
+            );
+            let ctx = native::Ctx {
+                source: &source,
+                index: &index,
+                parsed: &parsed,
+                flat: &flat,
+                model: &model,
+                options: &setup.options,
+                py_version: setup.py_version,
+                module: file.module,
+                path: file.path,
+            };
+            entry.host.extend(native::check(&ctx, enabled));
+        }
         entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted
@@ -499,6 +540,7 @@ impl Linter<'_> {
                 index: &index,
                 parsed: &parsed,
                 py_version: setup.py_version,
+                options: &setup.options,
             };
             for (position, outcome) in self.run_plugins(host, &context, &missing)? {
                 let plugin = &host.plugins[position];
@@ -540,6 +582,7 @@ impl Linter<'_> {
             path: context.display.to_owned(),
             module: context.module.to_owned(),
             source: context.source.to_owned(),
+            options: context.options.to_vec(),
         };
         positions
             .iter()
@@ -585,6 +628,7 @@ fn place(
 struct FileRef<'a> {
     display: &'a str,
     module: &'a str,
+    path: &'a Path,
 }
 
 /// A plugin's diagnostics on a file, or the `FL001` abort it ended in.
@@ -598,6 +642,7 @@ struct PluginContext<'a> {
     index: &'a LineIndex,
     parsed: &'a Parsed<ModModule>,
     py_version: Option<(u32, u32)>,
+    options: &'a [(String, String)],
 }
 
 /// The dotted module name Python imports a file under: its stem, prefixed

@@ -1,0 +1,12 @@
+7:C0203:Metaclass method a should have 'cls' as first argument
+10:C0203:Metaclass method b should have 'cls' as first argument
+14:C0204:Metaclass class method c should have 'mcs' as first argument
+21:C0204:Metaclass class method __new__ should have 'mcs' as first argument
+27:C0203:Metaclass method e should have 'cls' as first argument
+30:C0203:Metaclass method g should have 'cls' as first argument
+41:C0203:Metaclass method j should have 'cls' as first argument
+44:C0204:Metaclass class method __init_subclass__ should have 'mcs' as first argument
+49:C0203:Metaclass method f should have 'cls' as first argument
+54:C0203:Metaclass method g should have 'cls' as first argument
+59:C0203:Metaclass method g should have 'cls' as first argument
+64:C0203:Metaclass method g should have 'cls' as first argument

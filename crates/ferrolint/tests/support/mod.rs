@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use tempfile::TempDir;
 
 /// A Python file with one bare `# noqa`, which the host reports as FL002.
-pub const BARE_NOQA: &str = "x = 1  # noqa\n";
+pub const BARE_NOQA: &str = "X = 1  # noqa\n";
 /// A Python file that does not parse, which the host reports as FL003.
 pub const SYNTAX_ERROR: &str = "def broken(:\n    pass\n";
 /// A Python file with no findings.

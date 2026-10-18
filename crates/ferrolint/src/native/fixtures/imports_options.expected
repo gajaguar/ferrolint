@@ -1,0 +1,9 @@
+1:W0407:Prefer importing 'orjson' instead of 'json'
+2:W0407:Prefer importing 'orjson' instead of 'json'
+3:W0407:Prefer importing 'httpx' instead of 'urllib.request'
+5:W0407:Prefer importing 'orjson' instead of 'json'
+6:W0407:Prefer importing 'orjson' instead of 'json'
+7:W0407:Prefer importing 'pytest' instead of 'unittest'
+11:W0404:Reimport 'json' (imported line 1)
+11:W0407:Prefer importing 'orjson' instead of 'json'
+13:C0415:Import outside toplevel (tomllib)

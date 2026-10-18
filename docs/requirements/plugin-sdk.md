@@ -18,6 +18,9 @@ real Pylint checker exists end to end as proof the contract works.
   typed constructors for scopes, bindings and fixes.
 * The SDK exposes no host crate types beyond what the contract needs, so
   a plugin crate does not link the linter itself.
+* The SDK's `Context::option(key)` returns a configuration option as the
+  plugin received it in the file metadata, or none when it is unset; a
+  checker parses the text itself.
 * A sample plugin in the workspace ports one designated real Pylint
   checker, chosen as the smallest checker that needs queries (not just
   AST shape) - it exercises events, scope and binding queries and one

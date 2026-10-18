@@ -3,7 +3,7 @@ members = ["crates/*", "plugins/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 description = "Extensible Python linter in Rust that runs custom rules as WASM plugins next to Ruff"
 license = "MIT"
@@ -14,12 +14,13 @@ globset = "0.4"
 ignore = "0.4"
 jsonschema = { version = "0.59", default-features = false }
 rayon = "1.12"
+regex = "1"
 roxmltree = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
 tempfile = "3.27"
-toml = "1.1"
+toml = { version = "1.1", features = ["preserve_order"] }
 wasmtime = { version = "=49.0.3", default-features = false, features = ["cranelift", "component-model", "parallel-compilation", "pooling-allocator", "runtime", "std"] }
 wasmtime-wasi = "=49.0.3"
 wit-bindgen = "0.63"

@@ -1,0 +1,7 @@
+20:W0718:Catching too general exception ValueError
+24:W0718:Catching too general exception Custom
+28:W0718:Catching too general exception OSError
+32:W0718:Catching too general exception OSError
+36:W0718:Catching too general exception OSError
+46:W0719:Raising too general exception: ValueError
+50:W0719:Raising too general exception: Custom

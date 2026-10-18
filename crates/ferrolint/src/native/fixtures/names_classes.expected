@@ -1,0 +1,45 @@
+13:C0103:Method name "baseMethod" doesn't conform to snake_case naming style
+16:C0103:Attribute name "baseProp" doesn't conform to snake_case naming style
+24:C0103:Argument name "B" doesn't conform to snake_case naming style
+24:C0103:Argument name "camelArg" doesn't conform to snake_case naming style
+24:C0103:Method name "newMethod" doesn't conform to snake_case naming style
+26:C0103:Attribute name "propCamel" doesn't conform to snake_case naming style
+28:C0103:Attribute name "absProp" doesn't conform to snake_case naming style
+30:C0103:Method name "cachedProp" doesn't conform to snake_case naming style
+32:C0103:Argument name "camelArg" doesn't conform to snake_case naming style
+32:C0103:Method name "staticCamel" doesn't conform to snake_case naming style
+34:C0103:Argument name "camelArg" doesn't conform to snake_case naming style
+34:C0103:Method name "classCamel" doesn't conform to snake_case naming style
+38:C0103:Attribute name "propCamel" doesn't conform to snake_case naming style
+39:C0103:Argument name "camelArg" doesn't conform to snake_case naming style
+39:C0103:Method name "posOnly" doesn't conform to snake_case naming style
+40:C0103:Method name "__DUNDER__" doesn't conform to snake_case naming style
+41:C0103:Method name "__dunderOk__" doesn't conform to snake_case naming style
+42:C0103:Method name "_privateCamel" doesn't conform to snake_case naming style
+43:C0103:Method name "__mangledCamel" doesn't conform to snake_case naming style
+45:C0103:Method name "inIfCamel" doesn't conform to snake_case naming style
+47:C0103:Class constant name "Final1" doesn't conform to UPPER_CASE naming style
+48:C0103:Class constant name "final2" doesn't conform to UPPER_CASE naming style
+49:C0103:Class constant name "final3" doesn't conform to UPPER_CASE naming style
+51:C0103:Class constant name "cv2" doesn't conform to UPPER_CASE naming style
+52:C0103:Class constant name "cv3" doesn't conform to UPPER_CASE naming style
+55:C0103:Attribute name "instCamel" doesn't conform to snake_case naming style
+58:C0103:Attribute name "baseAttr" doesn't conform to snake_case naming style
+59:C0103:Attribute name "childAttr" doesn't conform to snake_case naming style
+62:C0103:Attribute name "thisAttr" doesn't conform to snake_case naming style
+64:C0103:Method name "clsMeth" doesn't conform to snake_case naming style
+70:C0103:Attribute name "camelField" doesn't conform to snake_case naming style
+78:C0103:Class constant name "green" doesn't conform to UPPER_CASE naming style
+79:C0103:Class constant name "Blue" doesn't conform to UPPER_CASE naming style
+80:C0103:Class constant name "_hidden" doesn't conform to UPPER_CASE naming style
+81:C0103:Class constant name "__priv" doesn't conform to UPPER_CASE naming style
+82:C0103:Class constant name "camelMember" doesn't conform to UPPER_CASE naming style
+86:C0103:Class constant name "callable_member" doesn't conform to UPPER_CASE naming style
+87:C0103:Class constant name "tupleMember" doesn't conform to UPPER_CASE naming style
+88:C0103:Class constant name "aliasMember" doesn't conform to UPPER_CASE naming style
+94:C0103:Class constant name "camelChoice" doesn't conform to UPPER_CASE naming style
+98:C0103:Class constant name "lowFlag" doesn't conform to UPPER_CASE naming style
+109:C0103:Variable name "CamelOuter" doesn't conform to snake_case naming style
+113:C0103:Variable name "CamelOuter" doesn't conform to snake_case naming style
+114:C0103:Variable name "newLocal" doesn't conform to snake_case naming style
+118:C0103:Variable name "camelInM" doesn't conform to snake_case naming style

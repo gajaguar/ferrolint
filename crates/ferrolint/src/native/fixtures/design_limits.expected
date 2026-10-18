@@ -1,0 +1,44 @@
+9:W0101:Unreachable code
+15:W0101:Unreachable code
+21:W0101:Unreachable code
+24:W0101:Unreachable code
+29:W0101:Unreachable code
+34:W0101:Unreachable code
+39:W0101:Unreachable code
+48:W0101:Unreachable code
+54:W0101:Unreachable code
+58:W0125:Using a conditional statement with a constant value
+60:W0101:Unreachable code
+63:W0101:Unreachable code
+71:W0101:Unreachable code
+75:R1710:Either all return statements in a function should return an expression, or none of them should.
+80:R1710:Either all return statements in a function should return an expression, or none of them should.
+87:R1710:Either all return statements in a function should return an expression, or none of them should.
+93:R1710:Either all return statements in a function should return an expression, or none of them should.
+100:R0911:Too many return statements (3/2)
+114:R1710:Either all return statements in a function should return an expression, or none of them should.
+121:R1710:Either all return statements in a function should return an expression, or none of them should.
+166:R1711:Useless return at end of function or method
+171:R1711:Useless return at end of function or method
+176:R1710:Either all return statements in a function should return an expression, or none of them should.
+176:R1711:Useless return at end of function or method
+183:R1711:Useless return at end of function or method
+199:R0911:Too many return statements (7/2)
+215:R0913:Too many arguments (6/2)
+215:R0914:Too many local variables (6/3)
+219:R0913:Too many arguments (6/2)
+219:R0914:Too many local variables (6/3)
+224:R0913:Too many arguments (5/2)
+224:R0914:Too many local variables (6/3)
+227:R0913:Too many arguments (6/2)
+227:R0914:Too many local variables (7/3)
+231:R0913:Too many arguments (6/2)
+231:R0914:Too many local variables (6/3)
+235:R0913:Too many arguments (5/2)
+235:R0914:Too many local variables (6/3)
+238:R0913:Too many arguments (6/2)
+238:R0914:Too many local variables (7/3)
+242:W1113:Keyword argument before variable positional arguments list in the definition of vararg function
+250:W1113:Keyword argument before variable positional arguments list in the definition of vararg3 function
+258:R0914:Too many local variables (20/3)
+285:R1711:Useless return at end of function or method

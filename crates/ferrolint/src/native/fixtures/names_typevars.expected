@@ -1,0 +1,22 @@
+8:C0105:Type variable name does not reflect variance. "Bad" is covariant, use "Bad_co" instead
+9:C0105:Type variable name does not reflect variance. "Bad2" is contravariant, use "Bad2_contra" instead
+10:C0105:Type variable name does not reflect variance. "Bad3_co" is invariant, use "Bad3" instead
+11:C0105:Type variable name does not reflect variance. "Bad4_contra" is invariant, use "Bad4" instead
+12:C0105:Type variable name does not reflect variance
+12:C0131:TypeVar cannot be both covariant and contravariant
+13:C0105:Type variable name does not reflect variance
+13:C0131:TypeVar cannot be both covariant and contravariant
+14:C0132:TypeVar name "Y" does not match assigned variable name "X"
+15:C0132:TypeVar name "W" does not match assigned variable name "Z"
+16:C0105:Type variable name does not reflect variance. "Q_contra" is covariant, use "Q_co" instead
+17:C0105:Type variable name does not reflect variance. "R_co" is contravariant, use "R_contra" instead
+19:C0105:Type variable name does not reflect variance. "Sco" is covariant, use "Sco_co" instead
+20:C0132:TypeVar name "V" does not match assigned variable name "U"
+21:C0103:Type variable name "a" doesn't conform to predefined naming style
+21:C0103:Type variable name "b" doesn't conform to predefined naming style
+21:C0132:TypeVar name "B" does not match assigned variable name "b"
+22:C0103:Type variable name "TT" doesn't conform to predefined naming style
+23:C0103:Type variable name "TypeX" doesn't conform to predefined naming style
+25:C0103:Type variable name "XType" doesn't conform to predefined naming style
+27:C0103:Type variable name "TFoo" doesn't conform to predefined naming style
+31:C0103:Type variable name "___U" doesn't conform to predefined naming style

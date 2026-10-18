@@ -31,9 +31,9 @@ printf 'select = ["NOPE1"]\n' >ferrolint.toml
 [ "$(exit_code "$bin")" -eq 2 ] || fail "an unknown rule must exit 2"
 rm ferrolint.toml
 
-printf 'x = 1\n' >clean.py
+printf 'X = 1\n' >clean.py
 [ "$(exit_code "$bin" clean.py)" -eq 0 ] || fail "a clean file must exit 0"
-printf 'x = 1  # noqa\n' >finding.py
+printf 'X = 1  # noqa\n' >finding.py
 [ "$(exit_code "$bin" finding.py)" -eq 1 ] || fail "a finding must exit 1"
 
 # A cargo-built binary has no bundled plugins; the acceptance test sets this.

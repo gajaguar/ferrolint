@@ -77,6 +77,13 @@ impl<'a> Context<'a> {
         &self.file.source
     }
 
+    /// The configuration's option `key` as written, kebab-case like
+    /// Pylint's (`max-args`); none when the configuration does not set it.
+    pub fn option(&self, key: &str) -> Option<&str> {
+        let found = self.file.options.iter().find(|(name, _)| name == key);
+        found.map(|(_, value)| value.as_str())
+    }
+
     /// Every node, in pre-order; a node's id is its index.
     pub fn nodes(&self) -> &'a [Node<'a>] {
         self.nodes
