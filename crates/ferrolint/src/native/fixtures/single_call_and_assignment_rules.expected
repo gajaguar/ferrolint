@@ -1,0 +1,46 @@
+10:W1115:Non-string value assigned to __name__
+11:W1115:Non-string value assigned to __name__
+12:W1115:Non-string value assigned to __name__
+13:W1115:Non-string value assigned to __name__
+14:W1115:Non-string value assigned to __name__
+15:W1115:Non-string value assigned to __name__
+16:W1115:Non-string value assigned to __name__
+19:W1115:Non-string value assigned to __name__
+20:W1115:Non-string value assigned to __name__
+21:W1115:Non-string value assigned to __name__
+23:W1115:Non-string value assigned to __name__
+24:W1115:Non-string value assigned to __name__
+25:W1115:Non-string value assigned to __name__
+32:W1506:threading.Thread needs the target function
+33:W1506:threading.Thread needs the target function
+36:W1506:threading.Thread needs the target function
+37:W1506:threading.Thread needs the target function
+38:W1506:threading.Thread needs the target function
+39:W1506:threading.Thread needs the target function
+45:W1503:Redundant use of assertTrue with constant value 1
+46:W1503:Redundant use of assertTrue with constant value True
+47:W1503:Redundant use of assertFalse with constant value 0
+48:W1503:Redundant use of assertFalse with constant value None
+49:W1503:Redundant use of assertTrue with constant value 'a'
+51:W1503:Redundant use of assertEqual with constant value (1, 1)
+53:W1503:Redundant use of assertNotEqual with constant value ('a', 'b')
+54:W1503:Redundant use of assertEqual with constant value (1.5, b'a')
+55:W1503:Redundant use of assertEqual with constant value (None, None)
+64:W1503:Redundant use of assertTrue with constant value Ellipsis
+74:W0715:Exception arguments suggest string formatting might be intended
+75:W0715:Exception arguments suggest string formatting might be intended
+77:W0715:Exception arguments suggest string formatting might be intended
+81:W0715:Exception arguments suggest string formatting might be intended
+83:W0715:Exception arguments suggest string formatting might be intended
+84:W0715:Exception arguments suggest string formatting might be intended
+85:W0715:Exception arguments suggest string formatting might be intended
+93:E3701:Invalid usage of field(), it should be the value of an assignment within a dataclass.
+94:E3701:Invalid usage of field(), it should be the value of an assignment within a dataclass.
+97:E3701:Invalid usage of field(), it should be the value of an assignment within a dataclass.
+101:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+102:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+106:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+107:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+108:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+114:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.
+115:E3701:Invalid usage of field(), it should be used within a dataclass or the make_dataclass() function.

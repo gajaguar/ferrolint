@@ -1,0 +1,19 @@
+27:W1114:Positional arguments appear to be out of order
+29:W1114:Positional arguments appear to be out of order
+35:W1114:Positional arguments appear to be out of order
+38:W1117:'a' will be included in '**kw' since a positional-only parameter with this name already exists
+39:W1117:'b' will be included in '**kw' since a positional-only parameter with this name already exists
+40:W1117:'a' will be included in '**kw' since a positional-only parameter with this name already exists
+41:W1117:'a' will be included in '**kw' since a positional-only parameter with this name already exists
+43:W1114:Positional arguments appear to be out of order
+44:W1114:Positional arguments appear to be out of order
+45:W1114:Positional arguments appear to be out of order
+71:W1114:Positional arguments appear to be out of order
+73:W1117:'a' will be included in '**kw' since a positional-only parameter with this name already exists
+74:W1117:'a' will be included in '**kw' since a positional-only parameter with this name already exists
+75:W1117:'self' will be included in '**kw' since a positional-only parameter with this name already exists
+77:W1114:Positional arguments appear to be out of order
+78:W1114:Positional arguments appear to be out of order
+82:W1114:Positional arguments appear to be out of order
+87:W1114:Positional arguments appear to be out of order
+95:W1114:Positional arguments appear to be out of order

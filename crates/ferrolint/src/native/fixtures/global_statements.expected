@@ -1,0 +1,5 @@
+24:W0601:Global variable 'brand_new' undefined at the module level
+67:W0601:Global variable 'conditional' undefined at the module level
+82:W0601:Global variable 'value' undefined at the module level
+94:W0601:Global variable 'from_nested' undefined at the module level
+102:W0601:Global variable 'local_two' undefined at the module level

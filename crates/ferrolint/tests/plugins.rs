@@ -20,6 +20,8 @@ fn findings(package: &str, source: &str) -> Vec<String> {
     assert!(run.code <= 1, "{run:?}");
     run.finding_lines()
         .iter()
+        // the sources name things as they like; `C0103` is not under test
+        .filter(|line| !line.contains(" C0103 "))
         .map(|line| {
             let (location, rest) = line.split_once(": ").unwrap();
             let message = rest.split_once(") ").map_or(rest, |(_, message)| message);
@@ -64,7 +66,12 @@ fn unused_variable() {
     let source = "def f(values):\n    total = 0\n    unused = 1\n    _ignored = 2\n    for item in values:\n        total += item\n    return total\n\ndef g():\n    hidden = 1\n    return locals()\n\ndef counter():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    return inc\n";
     assert_eq!(
         findings("ferrolint-plugin-unused-variable", source),
-        ["3: Unused variable 'unused'"]
+        [
+            "3: Unused variable 'unused'",
+            // The plugin leaves a function that calls `locals()` to the
+            // native `W0641`, as Pylint splits the two.
+            "10: Possibly unused variable 'hidden'",
+        ]
     );
 }
 

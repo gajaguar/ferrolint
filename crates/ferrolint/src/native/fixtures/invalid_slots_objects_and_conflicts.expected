@@ -1,0 +1,15 @@
+1:E0238:Invalid __slots__ object
+5:E0238:Invalid __slots__ object
+13:E0238:Invalid __slots__ object
+23:E0236:Invalid object "''" in __slots__, must contain only non empty strings
+23:E0236:Invalid object "b'x'" in __slots__, must contain only non empty strings
+23:E0236:Invalid object '...' in __slots__, must contain only non empty strings
+23:E0236:Invalid object '1' in __slots__, must contain only non empty strings
+23:E0236:Invalid object '2.5' in __slots__, must contain only non empty strings
+23:E0236:Invalid object 'None' in __slots__, must contain only non empty strings
+23:E0236:Invalid object 'True' in __slots__, must contain only non empty strings
+28:E0242:Value 'x' in slots conflicts with class variable
+28:E0242:Value 'y' in slots conflicts with class variable
+28:E0242:Value 'z' in slots conflicts with class variable
+45:E0242:Value 'q' in slots conflicts with class variable
+49:E0236:Invalid object '3' in __slots__, must contain only non empty strings

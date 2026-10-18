@@ -14,7 +14,28 @@ use ruff_text_size::{Ranged, TextRange};
 use crate::ast::Flat;
 use crate::semantic::Model;
 
+mod calls;
+mod classes;
+mod conditions;
+mod contextmgr;
+mod django;
+mod exceptions;
 mod finally;
+mod flow;
+mod formats;
+mod imports;
+mod logging;
+mod matchpat;
+mod misc;
+mod names;
+mod project;
+mod scopes;
+mod slots;
+mod special;
+mod statements;
+mod strings;
+mod text;
+mod unassigned;
 
 /// What a native rule sees of one file that parses.
 pub struct Ctx<'a> {
@@ -25,6 +46,10 @@ pub struct Ctx<'a> {
     pub model: &'a Model,
     pub options: &'a [(String, String)],
     pub py_version: Option<(u32, u32)>,
+    /// The dotted name Python imports the file under.
+    pub module: &'a str,
+    /// The file, to find the other modules of its project.
+    pub path: &'a std::path::Path,
 }
 
 impl Ctx<'_> {
@@ -45,7 +70,27 @@ pub trait Checker: Sync {
     fn check(&self, ctx: &Ctx<'_>, enabled: &BTreeSet<String>, out: &mut Vec<Diagnostic>);
 }
 
-const CHECKERS: &[&dyn Checker] = &[&finally::Finally];
+const CHECKERS: &[&dyn Checker] = &[
+    &calls::Calls,
+    &classes::Classes,
+    &conditions::Conditions,
+    &contextmgr::ContextManagers,
+    &django::Django,
+    &exceptions::Exceptions,
+    &finally::Finally,
+    &flow::Flow,
+    &imports::Imports,
+    &logging::Logging,
+    &matchpat::MatchPatterns,
+    &misc::Misc,
+    &names::Naming,
+    &scopes::Scopes,
+    &slots::Slots,
+    &special::Special,
+    &statements::Statements,
+    &strings::Strings,
+    &text::Text,
+];
 
 /// Every native rule.
 pub fn rules() -> Vec<RuleInfo> {
@@ -139,6 +184,8 @@ pub fn lint_with(source: &str, options: &[(&str, &str)]) -> Vec<(u32, String)> {
         model: &model,
         options: &options,
         py_version: None,
+        module: "mod",
+        path: std::path::Path::new("mod.py"),
     };
     let enabled = rules().into_iter().map(|rule| rule.code).collect();
     check(&ctx, &enabled)

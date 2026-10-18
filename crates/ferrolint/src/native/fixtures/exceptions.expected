@@ -1,0 +1,55 @@
+33:W0718:Catching too general exception Exception
+37:W0718:Catching too general exception BaseException
+41:W0718:Catching too general exception Exception
+45:W0718:Catching too general exception BaseException
+45:W0718:Catching too general exception Exception
+49:W0718:Catching too general exception Exception
+57:W0718:Catching too general exception Exception
+71:W0718:Catching too general exception Exception
+75:W0718:Catching too general exception Exception
+79:W0718:Catching too general exception Exception
+83:W0718:Catching too general exception Exception
+99:W0718:Catching too general exception Exception
+103:W0718:Catching too general exception Exception
+107:E0712:Catching an exception which doesn't inherit from Exception: Plain
+111:E0712:Catching an exception which doesn't inherit from Exception: Child
+111:E0712:Catching an exception which doesn't inherit from Exception: Plain
+123:E0712:Catching an exception which doesn't inherit from Exception: Meta
+127:E0712:Catching an exception which doesn't inherit from Exception: None
+131:E0712:Catching an exception which doesn't inherit from Exception: 5
+135:E0712:Catching an exception which doesn't inherit from Exception: Plain
+143:E0712:Catching an exception which doesn't inherit from Exception: ValueError | OSError
+143:W0716:Invalid exception operation. Did you mean '(ValueError, OSError)' instead?
+151:W0716:Invalid exception operation. Did you mean '(ValueError, OSError)' instead?
+155:W0716:Invalid exception operation. Did you mean '(ValueError, OSError)' instead?
+159:E0712:Catching an exception which doesn't inherit from Exception: Plain | Child
+159:W0716:Invalid exception operation. Did you mean '(Plain, Child)' instead?
+164:W0719:Raising too general exception: Exception
+165:W0719:Raising too general exception: Exception
+166:W0719:Raising too general exception: BaseException
+168:W0719:Raising too general exception: Exception
+169:W0719:Raising too general exception: Exception
+171:W0719:Raising too general exception: Exception
+172:W0719:Raising too general exception: Exception
+175:E0710:Raising a class which doesn't inherit from BaseException
+176:E0710:Raising a class which doesn't inherit from BaseException
+177:E0710:Raising a class which doesn't inherit from BaseException
+180:E0710:Raising a class which doesn't inherit from BaseException
+181:E0702:Raising str while only classes or instances are allowed
+182:E0702:Raising int while only classes or instances are allowed
+183:E0702:Raising float while only classes or instances are allowed
+184:E0702:Raising NoneType while only classes or instances are allowed
+185:E0702:Raising bool while only classes or instances are allowed
+186:E0702:Raising bytes while only classes or instances are allowed
+188:E0702:Raising tuple while only classes or instances are allowed
+189:E0702:Raising list while only classes or instances are allowed
+190:E0702:Raising dict while only classes or instances are allowed
+191:E0702:Raising set while only classes or instances are allowed
+192:E0702:Raising ellipsis while only classes or instances are allowed
+193:E0702:Raising NotImplementedType while only classes or instances are allowed
+194:E0705:Exception cause set to something which is not an exception, nor None
+195:E0705:Exception cause set to something which is not an exception, nor None
+198:E0705:Exception cause set to something which is not an exception, nor None
+201:E0702:Raising f while only classes or instances are allowed
+202:E0702:Raising <lambda> while only classes or instances are allowed
+204:E0702:Raising int while only classes or instances are allowed

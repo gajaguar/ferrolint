@@ -1,0 +1,15 @@
+8:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely
+11:W3101:Missing timeout argument for method 'requests.delete' can cause your program to hang indefinitely
+12:W3101:Missing timeout argument for method 'requests.head' can cause your program to hang indefinitely
+13:W3101:Missing timeout argument for method 'requests.options' can cause your program to hang indefinitely
+14:W3101:Missing timeout argument for method 'requests.patch' can cause your program to hang indefinitely
+15:W3101:Missing timeout argument for method 'requests.put' can cause your program to hang indefinitely
+16:W3101:Missing timeout argument for method 'requests.request' can cause your program to hang indefinitely
+17:W3101:Missing timeout argument for method 'requests.api.get' can cause your program to hang indefinitely
+19:W3101:Missing timeout argument for method 'r.get' can cause your program to hang indefinitely
+20:W3101:Missing timeout argument for method 'get' can cause your program to hang indefinitely
+21:W3101:Missing timeout argument for method 'send' can cause your program to hang indefinitely
+25:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely
+31:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely
+32:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely
+41:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely

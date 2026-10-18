@@ -1,0 +1,98 @@
+27:W0125:Using a conditional statement with a constant value
+29:W0125:Using a conditional statement with a constant value
+31:W0125:Using a conditional statement with a constant value
+33:W0125:Using a conditional statement with a constant value
+35:W0125:Using a conditional statement with a constant value
+37:W0125:Using a conditional statement with a constant value
+39:W0125:Using a conditional statement with a constant value
+41:W0125:Using a conditional statement with a constant value
+43:W0125:Using a conditional statement with a constant value
+45:W0125:Using a conditional statement with a constant value
+47:W0125:Using a conditional statement with a constant value
+47:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+49:W0125:Using a conditional statement with a constant value
+49:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+51:W0125:Using a conditional statement with a constant value
+51:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+53:W0125:Using a conditional statement with a constant value
+55:W0125:Using a conditional statement with a constant value
+55:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+57:W0125:Using a conditional statement with a constant value
+61:W0125:Using a conditional statement with a constant value
+69:W0125:Using a conditional statement with a constant value
+71:W0125:Using a conditional statement with a constant value
+71:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+73:W0125:Using a conditional statement with a constant value
+73:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+74:W0125:Using a conditional statement with a constant value
+75:W0125:Using a conditional statement with a constant value
+75:W0126:Using a conditional statement with potentially wrong function or method call due to missing parentheses
+76:W0125:Using a conditional statement with a constant value
+77:R1726:Boolean condition "i and 1" may be simplified to "i"
+80:W0125:Using a conditional statement with a constant value
+82:W0125:Using a conditional statement with a constant value
+84:W0125:Using a conditional statement with a constant value
+86:W0125:Using a conditional statement with a constant value
+95:W0125:Using a conditional statement with a constant value
+97:W0125:Using a conditional statement with a constant value
+101:R1709:Boolean expression may be simplified to b
+102:R1709:Boolean expression may be simplified to b
+103:R1709:Boolean expression may be simplified to b
+104:R1709:Boolean expression may be simplified to b
+105:R1709:Boolean expression may be simplified to b
+111:R1709:Boolean expression may be simplified to b
+115:R1726:Boolean condition "a and True" may be simplified to "a"
+117:R1727:Boolean condition 'a or True' will always evaluate to 'True'
+119:R1727:Boolean condition 'a and False' will always evaluate to 'False'
+121:R1726:Boolean condition "a or False" may be simplified to "a"
+123:R1726:Boolean condition "a and 1 and b" may be simplified to "a and b"
+125:R1726:Boolean condition "(a or 1) and b" may be simplified to "b"
+127:R1726:Boolean condition "a and (b or 0)" may be simplified to "a and b"
+129:R1727:Boolean condition 'True and False' will always evaluate to 'False'
+133:R1727:Boolean condition 'a or 1' will always evaluate to '1'
+135:R1726:Boolean condition "a and 1" may be simplified to "a"
+136:R1726:Boolean condition "a and 1" may be simplified to "a"
+137:R1727:Boolean condition 'i and 0' will always evaluate to '0'
+138:R1727:Boolean condition 'a or 1' will always evaluate to '1'
+142:R1726:Boolean condition "a or 0 or b or ()" may be simplified to "a or b"
+144:R1726:Boolean condition "'x' and a" may be simplified to "a"
+146:R1726:Boolean condition "a and not 0" may be simplified to "a"
+148:R1726:Boolean condition "a and -1" may be simplified to "a"
+150:R1727:Boolean condition 'a and -0' will always evaluate to '-0'
+155:R1738:Simplify chained comparison cycle to equality between the operands: a == b
+157:R1738:Simplify chained comparison cycle to equality between the operands: a == b == c
+159:R1739:This comparison always evaluates to False
+161:R1739:This comparison always evaluates to False
+167:R1738:Simplify chained comparison cycle to equality between the operands: a == c == b
+169:R1739:This comparison always evaluates to False
+175:R1738:Simplify chained comparison cycle to equality between the operands: a == 5
+177:R1738:Simplify chained comparison cycle to equality between the operands: x.y == 5
+185:R1738:Simplify chained comparison cycle to equality between the operands: a == b
+192:W3601:Suspicious 2-part chained comparison using semantically incompatible operators ('<' and 'is')
+194:W3601:Suspicious 2-part chained comparison using semantically incompatible operators ('<' and 'in')
+202:W3601:Suspicious 3-part chained comparison using semantically incompatible operators ('!=', '==' and 'is')
+204:W3601:Suspicious 2-part chained comparison using semantically incompatible operators ('==' and 'is not')
+209:C0117:Consider changing "not not a" to "a"
+211:C0117:Consider changing "not a == b" to "a != b"
+211:C0325:Unnecessary parens after 'not' keyword
+213:C0117:Consider changing "not 1 == 2" to "1 != 2"
+213:C0325:Unnecessary parens after 'not' keyword
+215:C0117:Consider changing "not 1 < 2" to "1 >= 2"
+215:C0325:Unnecessary parens after 'not' keyword
+217:C0117:Consider changing "not 'a' in 'abc'" to "'a' not in 'abc'"
+217:C0325:Unnecessary parens after 'not' keyword
+219:C0117:Consider changing "not [1] is [2]" to "[1] is not [2]"
+219:C0325:Unnecessary parens after 'not' keyword
+221:C0325:Unnecessary parens after 'not' keyword
+223:C0325:Unnecessary parens after 'not' keyword
+225:C0325:Unnecessary parens after 'not' keyword
+227:C0325:Unnecessary parens after 'not' keyword
+229:C0117:Consider changing "not a not in b" to "a in b"
+229:C0325:Unnecessary parens after 'not' keyword
+231:C0117:Consider changing "not 1 == 1" to "1 != 1"
+233:C0117:Consider changing "not 1 == 2" to "1 != 2"
+233:C0117:Consider changing "not not 1 == 2" to "1 == 2"
+233:C0325:Unnecessary parens after 'not' keyword
+239:C0325:Unnecessary parens after 'not' keyword
+242:C0117:Consider changing "not 1 == 2" to "1 != 2"
+242:C0325:Unnecessary parens after 'not' keyword

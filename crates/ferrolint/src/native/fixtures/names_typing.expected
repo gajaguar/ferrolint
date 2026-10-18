@@ -1,0 +1,25 @@
+6:C0103:Class name "listT" doesn't conform to PascalCase naming style
+7:C0103:Class name "dictT" doesn't conform to PascalCase naming style
+8:C0103:Class name "callT" doesn't conform to PascalCase naming style
+9:C0103:Class name "litT" doesn't conform to PascalCase naming style
+10:C0103:Class name "tupT" doesn't conform to PascalCase naming style
+11:C0103:Class name "anyT" doesn't conform to PascalCase naming style
+12:C0103:Class name "anyU" doesn't conform to PascalCase naming style
+13:C0103:Class name "typeT" doesn't conform to PascalCase naming style
+14:C0103:Class name "newT" doesn't conform to PascalCase naming style
+16:C0103:Class name "optT" doesn't conform to PascalCase naming style
+17:C0103:Type alias name "unionT" doesn't conform to predefined naming style
+18:C0103:Type alias name "unionU" doesn't conform to predefined naming style
+19:C0103:Type alias name "unionV" doesn't conform to predefined naming style
+20:C0103:Type alias name "barT" doesn't conform to predefined naming style
+21:C0103:Type alias name "barU" doesn't conform to predefined naming style
+22:C0103:Type alias name "barV" doesn't conform to predefined naming style
+23:C0103:Class name "listL" doesn't conform to PascalCase naming style
+24:C0103:Class name "dictL" doesn't conform to PascalCase naming style
+25:C0103:Class name "tupL" doesn't conform to PascalCase naming style
+26:C0103:Parameter specification variable name "pspec" doesn't conform to predefined naming style
+28:C0103:Class name "nt" doesn't conform to PascalCase naming style
+31:C0103:Constant name "tupleCall" doesn't conform to UPPER_CASE naming style
+34:C0103:Type alias name "sub" doesn't conform to predefined naming style
+35:C0103:Class name "clsAlias" doesn't conform to PascalCase naming style
+36:C0103:Class name "clsLower" doesn't conform to PascalCase naming style

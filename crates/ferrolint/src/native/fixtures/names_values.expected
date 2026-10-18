@@ -1,0 +1,11 @@
+9:C0103:Constant name "a_int" doesn't conform to UPPER_CASE naming style
+10:C0103:Constant name "a_str" doesn't conform to UPPER_CASE naming style
+12:C0103:Constant name "a_bool" doesn't conform to UPPER_CASE naming style
+14:C0103:Constant name "a_len" doesn't conform to UPPER_CASE naming style
+22:C0103:Constant name "a_mod" doesn't conform to UPPER_CASE naming style
+28:C0103:Constant name "a_none" doesn't conform to UPPER_CASE naming style
+33:C0103:Constant name "a_if" doesn't conform to UPPER_CASE naming style
+34:C0103:Constant name "a_neg" doesn't conform to UPPER_CASE naming style
+36:C0103:Constant name "a_fstr" doesn't conform to UPPER_CASE naming style
+37:C0103:Constant name "a_fstr2" doesn't conform to UPPER_CASE naming style
+41:C0103:Constant name "a_cmp" doesn't conform to UPPER_CASE naming style

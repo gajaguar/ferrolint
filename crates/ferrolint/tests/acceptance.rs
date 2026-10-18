@@ -247,6 +247,19 @@ fn ac_02b_pylintrc_is_read_when_no_ferrolint_config_exists() {
 }
 
 #[test]
+fn ac_02c_pep_695_syntax_is_linted() {
+    let project = Project::new();
+    project.write(
+        "generic.py",
+        "def f[T](x: T) -> T:\n    try:\n        pass\n    finally:\n        return x\n\n\ntype Alias = int\n",
+    );
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("W0134"), "{run:?}");
+    assert!(!run.stdout.contains("FL003"), "{run:?}");
+}
+
+#[test]
 fn ac_03_plugin_sha_mismatch_is_config_error() {
     let project = Project::new();
     project
@@ -507,6 +520,12 @@ fn ac_10_sample_plugin_matches_pylint_checker() {
     assert_eq!(run.code, 1, "{run:?}");
     let mut actual: Vec<String> = json_diagnostics(&run.stdout)
         .iter()
+        // a native rule (one alias) may fire on a fixture; the plugin's have two
+        .filter(|d| {
+            d["aliases"]
+                .as_array()
+                .is_some_and(|aliases| aliases.len() == 2)
+        })
         .map(|d| {
             let aliases = d["aliases"].as_array().unwrap();
             format!(
@@ -953,7 +972,7 @@ fn plugin_options_reach_the_plugin_and_key_the_cache() {
             format!("select = [\"PRB006\"]\n\n[options]\nprobe = \"{value}\"\n\n{plugin}"),
         );
     };
-    project.write("a.py", "x = 1\n");
+    project.write("a.py", "X = 1\n");
     configure("one");
     let cold = project.run(&["--stats"]);
     assert!(cold.stdout.contains("probe=one"), "{cold:?}");

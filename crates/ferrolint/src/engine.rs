@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
 use rayon::prelude::*;
-use ruff_python_ast::{ModModule, PySourceType};
-use ruff_python_parser::Parsed;
+use ruff_python_ast::{ModModule, PySourceType, PythonVersion};
+use ruff_python_parser::{ParseOptions, Parsed};
 use sha2::{Digest, Sha256};
 
 use crate::cache::{Cache, Entry};
@@ -367,7 +367,13 @@ impl Linter<'_> {
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Prepared::NotUtf8;
         };
-        let parsed = ruff_python_parser::parse_unchecked_source(source, PySourceType::Python);
+        // The newest grammar: an older default would reject PEP 695 syntax and
+        // silently skip the file.
+        let options =
+            ParseOptions::from(PySourceType::Python).with_target_version(PythonVersion::latest());
+        let parsed = ruff_python_parser::parse_unchecked(source, options)
+            .try_into_module()
+            .unwrap_or_else(|| unreachable!("Python source parses to a module"));
         Prepared::Source {
             source: source.to_owned(),
             parsed,
@@ -445,6 +451,7 @@ impl Linter<'_> {
                 let file = FileRef {
                     display,
                     module: &module,
+                    path,
                 };
                 let (entry, aborts) =
                     self.check(setup, &file, prepared, &wanted, &enabled, stored)?;
@@ -512,6 +519,8 @@ impl Linter<'_> {
                 model: &model,
                 options: &setup.options,
                 py_version: setup.py_version,
+                module: file.module,
+                path: file.path,
             };
             entry.host.extend(native::check(&ctx, enabled));
         }
@@ -619,6 +628,7 @@ fn place(
 struct FileRef<'a> {
     display: &'a str,
     module: &'a str,
+    path: &'a Path,
 }
 
 /// A plugin's diagnostics on a file, or the `FL001` abort it ended in.

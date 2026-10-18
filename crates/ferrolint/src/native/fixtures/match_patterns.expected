@@ -1,0 +1,21 @@
+6:E1902:`__match_args__` must be a tuple of strings.
+10:E1902:`__match_args__` must be a tuple of strings.
+18:E1902:`__match_args__` must be a tuple of strings.
+26:E1901:The name capture `case x` makes the remaining patterns unreachable. Use a dotted name (for example an enum) to fix this.
+43:R1905:Use 'int() as a' instead
+45:R1905:Use 'str() as b' instead
+47:R1905:Use 'bool() as c' instead
+49:R1905:Use 'list() as d' instead
+49:R1905:Use 'tuple() as d' instead
+51:E1903:int expects 1 positional sub-patterns (given 2)
+55:E1903:P expects 2 positional sub-patterns (given 3)
+57:R1906:Use keyword attributes instead of positional ones ('x', 'y')
+59:R1906:Use keyword attributes instead of positional ones ('x')
+61:E1904:Multiple sub-patterns for attribute x
+61:R1906:Use keyword attributes instead of positional ones ('x')
+63:E1904:Multiple sub-patterns for attribute x
+65:E1903:S expects 2 positional sub-patterns (given 3)
+75:E1904:Multiple sub-patterns for attribute y
+75:R1906:Use keyword attributes instead of positional ones ('x')
+77:E1904:Multiple sub-patterns for attribute y
+79:R1905:Use 'dict() as k' instead

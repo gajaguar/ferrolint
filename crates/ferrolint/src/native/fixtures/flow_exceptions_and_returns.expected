@@ -1,0 +1,14 @@
+17:E0701:Bad except clauses order (Exception is an ancestor class of ValueError)
+26:E0701:Bad except clauses order (OSError is an ancestor class of FileNotFoundError)
+32:E0701:Bad except clauses order (LookupError is an ancestor class of IndexError)
+41:E0701:Bad except clauses order (MyErr is an ancestor class of Sub)
+52:E0701:Bad except clauses order (ValueError is an ancestor class of MyErr)
+54:E0701:Bad except clauses order (MyErr is an ancestor class of Sub)
+54:E0701:Bad except clauses order (ValueError is an ancestor class of Sub)
+63:E0701:Bad except clauses order (BaseException is an ancestor class of Exception)
+63:E0701:Bad except clauses order (BaseException is an ancestor class of KeyboardInterrupt)
+75:R1710:Either all return statements in a function should return an expression, or none of them should.
+84:R1710:Either all return statements in a function should return an expression, or none of them should.
+93:R1710:Either all return statements in a function should return an expression, or none of them should.
+122:R1710:Either all return statements in a function should return an expression, or none of them should.
+155:R1710:Either all return statements in a function should return an expression, or none of them should.

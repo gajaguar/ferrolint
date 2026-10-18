@@ -2,6 +2,9 @@
 
 ## 2026-10-17
 
+* **Native rules**: Added `usage/native-rules.md` - the Pylint rules the host
+  runs itself, the text and format batch and its divergences.
+
 * **Pylint configuration**: Extended `usage/configuration-file.md` with the
   Pylint files a run reads, their precedence and translation.
 

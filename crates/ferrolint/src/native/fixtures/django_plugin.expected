@@ -1,0 +1,44 @@
+6:E5142:User model imported from django.contrib.auth.models
+7:E5142:User model imported from django.contrib.auth.models
+14:E5141:Hard-coded 'auth.User'
+16:E5141:Hard-coded 'auth.User'
+20:E5101:__unicode__ on a model must be callable (Plain)
+25:E5141:Hard-coded 'auth.User'
+32:E5101:__unicode__ on a model must be callable (Aliased)
+44:E5101:__unicode__ on a model must be callable (Tuple)
+48:W5102:Found __unicode__ method on model (Has). Python3 uses __str__.
+61:W5102:Found __unicode__ method on model (HasBeforeAbstract). Python3 uses __str__.
+69:W5102:Found __unicode__ method on model (NotAbstract). Python3 uses __str__.
+77:W5103:Model does not explicitly define __unicode__ (Child)
+81:W5103:Model does not explicitly define __unicode__ (ChildStr)
+101:W5103:Model does not explicitly define __unicode__ (FromCompat)
+115:W5103:Model does not explicitly define __unicode__ (MixedIn)
+127:W5104:Use explicit fields instead of exclude in ModelForm
+153:W5104:Use explicit fields instead of exclude in ModelForm
+161:R5101:Instead of HttpResponse(json.dumps(data)) use JsonResponse(data)
+162:R5101:Instead of HttpResponse(json.dumps(data)) use JsonResponse(data)
+162:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
+164:R5101:Instead of HttpResponse(json.dumps(data)) use JsonResponse(data)
+167:R5103:Redundant content_type parameter for JsonResponse()
+169:R5103:Redundant content_type parameter for JsonResponse()
+170:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
+172:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
+177:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+179:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+180:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+181:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+182:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+183:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+192:W5150:Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped
+196:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+197:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+198:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+199:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+202:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+203:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+204:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+207:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+208:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+209:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+210:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped
+211:W5151:Avoid mark_safe() on a dynamically-built string; use format_html() with arguments so values are HTML-escaped

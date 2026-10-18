@@ -1,0 +1,4 @@
+5:C0203:Metaclass method b should have 'self' as first argument
+8:C0203:Metaclass method c should have 'self' as first argument
+12:C0204:Metaclass class method d should have 'meta' as first argument
+20:C0204:Metaclass class method f should have 'meta' as first argument

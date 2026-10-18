@@ -1,0 +1,3 @@
+5:W3101:Missing timeout argument for method 'urllib.request.urlopen' can cause your program to hang indefinitely
+7:W3101:Missing timeout argument for method 'urlopen' can cause your program to hang indefinitely
+8:W3101:Missing timeout argument for method 'requests.get' can cause your program to hang indefinitely
