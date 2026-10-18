@@ -185,9 +185,9 @@ Statements and text:
   line 1 and counting lines like `wc -l`, and `C0325` `superfluous-parens`,
   which reads the tokens of the file as Pylint does.
 * `R5102` `http-response-with-content-type-json`, a `pylint-django` rule
-  that a Django project meets: a call whose callee ends in `HttpResponse` and has a
-  `content_type` keyword whose text holds `application/json`; it reports
-  only under the `pylint_django` gate of batch E.
+  that a Django project meets: a call whose callee ends in
+  `HttpResponse` and has a `content_type` keyword whose text holds
+  `application/json`; it reports only under the `pylint_django` gate of batch E.
 
 `match` statements: `E1901` `bare-name-capture-pattern`, `E1902`
 `invalid-match-args-definition`, `E1903` `too-many-positional-sub-patterns`,
@@ -287,8 +287,8 @@ Not ported:
 
 * `W0614` `unused-wildcard-import` needs the names that the imported module
   exports, so the module has to be found and parsed; the host rules know
-  neither the path of the file nor the import search path. A typical project has no
-  wildcard import.
+  neither the path of the file nor the import search path. No wildcard import
+  was found in the code the rule was measured on.
 * `W0602`, `W0604` and `W0642` are Ruff's `PLW0602`, `PLW0604` and
   `PLW0642`; `W0613` `unused-argument` is Ruff's `ARG` family and needs the
   ancestors of a method to excuse an override. The `global` logic of `W0602`

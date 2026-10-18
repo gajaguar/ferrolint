@@ -4,14 +4,14 @@
 # plugin (or, when BIN names a binary with the plugins bundled, use that
 # binary alone), run both linters, and print the findings each side has that the
 # other has not. PYLINT_OUT, when it names an existing file, is reused
-# instead of running Pylint, which takes ~106 s on a codebase; a missing one is
+# instead of running Pylint, which can take minutes; a missing one is
 # written, so the slow run happens once. IGNORE is a comma-separated list
 # of ferrolint rule codes the configuration ignores. PY_VERSION, when set, is
 # the configuration's py-version, like "3.14". PYLINT is the Pylint
 # command (default: pylint), run on CODE with its own .pylintrc. STRIP=1
-# lints a copy of CODE's tracked files (plus its .pylintrc and
+# lints a copy of the tracked files (plus its .pylintrc and
 # pyproject.toml) with every "# pylint:" pragma removed, line numbers intact,
-# so a rule is compared where a project's pragmas no longer hide its findings;
+# so a rule is compared where the pragmas no longer hide its findings;
 # PYLINT_OUT then holds that copy's baseline and must not be the normal one.
 # ONLY is an extended regex on the msg-id: only matching findings are compared.
 set -eu
@@ -71,7 +71,7 @@ for wasm in "$root"/target/wasm32-wasip2/release/ferrolint_plugin_*.wasm; do
 done
 
 # Both linters run with CODE as the working directory, so their paths are
-# relative to it and Pylint picks up CODE's own .pylintrc.
+# relative to it and Pylint picks up its own .pylintrc.
 if [ -n "${STRIP:-}" ]; then
 	copy="$work/code"
 	mkdir "$copy"
@@ -93,7 +93,7 @@ cd "$CODE"
 set +e
 if [ -n "${BIN:-}" ] && [ -n "${STRIP:-}" ]; then
 	# A bundled binary reads the copy's own .pylintrc, options included,
-	# the way a codebase runs it; only py-version, which Pylint takes from its
+	# the way a project runs it; only py-version, which Pylint takes from its
 	# interpreter, is added.
 	[ -z "${PY_VERSION:-}" ] || printf '\n[MASTER]\npy-version=%s\n' "$PY_VERSION" >>.pylintrc
 	"$bin" --no-cache . >"$work/ferrolint.out"

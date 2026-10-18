@@ -2,7 +2,7 @@
 //! name, for the rules that ask what an ancestor of a class defines. Pylint
 //! infers a base class across modules; here the module is searched for in
 //! the directories above the linted file (the `sys.path` of a project laid
-//! out like a project's) and parsed on demand.
+//! out like a Django project's) and parsed on demand.
 //!
 //! shortcut: only modules that are files under those directories are read,
 //! so the standard library and the installed packages stay unknown but for
