@@ -7,6 +7,7 @@ WASM_PACKAGES := --workspace --exclude ferrolint --exclude ferrolint-core
 # The Pylint the sample plugin's fixtures are recorded against. Pinned: a
 # checker's verdict changes between versions.
 PYLINT ?= uvx pylint@4.1.3
+PYTHON ?= python3
 # The wheel tooling, pinned like Pylint.
 MATURIN ?= uvx maturin@1.15.0
 WHEEL ?= uvx wheel@0.48.0
@@ -80,3 +81,7 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 	git tag -s "$$tag" -m "$$tag" && git push origin "$$tag"
 
 .PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare release-tag
+
+pylint-names: ## Regenerate src/pylint_names.rs from Pylint 4.1.3 and pylint_django — accepts PYTHON (the interpreter of a virtualenv that has both)
+	$(PYTHON) tools/pylint-names.py > crates/ferrolint/src/pylint_names.rs
+	$(MAKE) fmt FILES=crates/ferrolint/src/pylint_names.rs
