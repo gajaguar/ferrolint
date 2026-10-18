@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-10-18
+
+* **Optional type inference engine**: Added
+  `decisions/optional-type-inference-engine.md` - why ty is postponed and
+  the opt-in cargo feature planned for it.
+
 ## 2026-10-17
 
 * **Native rules**: Added `usage/native-rules.md` - the Pylint rules the host

@@ -1,7 +1,7 @@
 ---
 type: playbook
 title: Pylint comparison on a codebase
-description: How make pylint-compare lists the findings that ferrolint and Pylint do not share on a codebase, and which differences are expected on a codebase.
+description: How make pylint-compare lists the findings that ferrolint and Pylint do not share on a codebase, and which differences are expected.
 tags:
   - toolchain
   - makefile
@@ -37,11 +37,11 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
   `3.14`.
 * `STRIP`: set to `1` to lint a copy of the tracked files in `CODE` (and its
   `.pylintrc` and `pyproject.toml`), from which every `# pylint:` pragma is
-  removed from the `*.py` files (line numbers stay the same; `# noqa` stays). a project's
-  pragmas hide nearly every finding, so this is how a rule is compared where
+  removed from the `*.py` files (line numbers stay the same; `# noqa` stays). Pragmas
+  hide nearly every finding, so this is how a rule is compared where
   it fires. `PYLINT_OUT` then holds the copy's baseline: use a file other than
   the normal one. With `BIN` too, ferrolint runs with no temporary
-  configuration: it reads the copy's `.pylintrc`, options included, like a codebase
+  configuration: it reads the copy's `.pylintrc`, options included, like a project
   does, and `PY_VERSION` is appended to it; `IGNORE` has no effect.
 * `ONLY`: an extended regular expression on the Pylint msg-id, like
   `^(W0134|W0137)$` or `^W01`; only matching findings are compared, on both
@@ -57,8 +57,9 @@ declares, and each side is reduced to a set. The tool prints `solo-ferrolint`
 and `solo-pylint` with their counts and exits with 1 if either has a finding.
 It compares the line, not the column or the message.
 
-## Differences to expect on a codebase
+## Differences to expect
 
-A project may disable `redefined-builtin` in its `.pylintrc`, and the temporary
-configuration does not read that file yet, so run it with `IGNORE=NAM002`.
-With `PY_VERSION=3.14` the run reports no differences: both sides agree.
+A project that disables `redefined-builtin` in its `.pylintrc` needs
+`IGNORE=NAM002` when the temporary configuration is used, since that
+configuration does not read the file. A bundled `BIN` with `STRIP` reads it,
+so it needs no `IGNORE`.

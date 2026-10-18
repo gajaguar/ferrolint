@@ -13,3 +13,6 @@ considered, what was chosen, and what the choice puts on future us.
   words and one string blob.
 * [Type inference query](type-inference-query.md) - the phase 2
   `inference` interface of contract 0.2.1 and what the host infers.
+* [Optional type inference engine](optional-type-inference-engine.md) -
+  why ty stays out of the default build and the opt-in cargo feature planned
+  for a later stage.
