@@ -14,6 +14,8 @@
 # so a rule is compared where the pragmas no longer hide its findings;
 # PYLINT_OUT then holds that copy's baseline and must not be the normal one.
 # ONLY is an extended regex on the msg-id: only matching findings are compared.
+# MSG=1 compares the message too: "path:line:msg-id:message", whitespace
+# collapsed on both sides; PYLINT_OUT must then hold output from a MSG=1 run.
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -108,9 +110,11 @@ if [ -n "${PYLINT_OUT:-}" ] && [ -f "$PYLINT_OUT" ]; then
 	pylint_out="$PYLINT_OUT"
 else
 	pylint_out="${PYLINT_OUT:-$work/pylint.out}"
+	template='{path}:{line}:{msg_id}'
+	[ -z "${MSG:-}" ] || template='{path}:{line}:{msg_id}:{msg}'
 	set +e
 	# Unquoted: PYLINT may be several words, e.g. "poetry run pylint".
-	$PYLINT --msg-template='{path}:{line}:{msg_id}' . >"$pylint_out" 2>"$work/pylint.err"
+	$PYLINT --msg-template="$template" . >"$pylint_out" 2>"$work/pylint.err"
 	code=$?
 	set -e
 	# A crash (a missing DJANGO_SETTINGS_MODULE, say) exits 1 with no findings,
@@ -131,16 +135,27 @@ fi
 # Pylint duplicates a message line at times; both sides collapse to the set
 # of findings, since parity asks which findings each side has at all.
 # The msg-id is the alias in "(W0134, name)" or, for a native rule, the code itself.
-sed -nE -e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ [A-Z0-9]+ \(([A-Z][0-9]{4})[,)].*/\1:\2:\3/p' \
-	-e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ ([A-Z][0-9]{4}) .*/\1:\2:\3/p' \
-	"$work/ferrolint.out" | LC_ALL=C sort -u >"$work/ferrolint.norm"
-# A configuration finding (`.pylintrc:1:E0015`) has the same shape as one in a .py file.
-# shortcut: pylint . lints git-ignored files that ferrolint's walk skips; list
-# the files instead when comparing a tree with generated code.
-# Pylint names E0013's module "Command line or configuration file", not a path.
-grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" |
-	sed -e 's|^\./||' -e 's|^Command line or configuration file:|.pylintrc:|' |
-	LC_ALL=C sort -u >"$work/pylint.norm"
+if [ -n "${MSG:-}" ]; then
+	# The message follows the msg-id and any "(alias, name)" group; the native
+	# form "W0401 (wildcard-import) text" keeps its code in the second expression.
+	sed -nE -e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ [A-Z0-9]+ \(([A-Z][0-9]{4})(, [^)]*)?\) (.*)$/\1:\2:\3:\5/p' \
+		-e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ ([A-Z][0-9]{4}) (\([^)]*\) )?(.*)$/\1:\2:\3:\5/p' \
+		"$work/ferrolint.out" | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' | LC_ALL=C sort -u >"$work/ferrolint.norm"
+	grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}:' "$pylint_out" |
+		sed -E -e 's|^\./||' -e 's|^Command line or configuration file:|.pylintrc:|' -e 's/[[:space:]]+/ /g; s/^ //; s/ $//' |
+		LC_ALL=C sort -u >"$work/pylint.norm"
+else
+	sed -nE -e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ [A-Z0-9]+ \(([A-Z][0-9]{4})[,)].*/\1:\2:\3/p' \
+		-e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ ([A-Z][0-9]{4}) .*/\1:\2:\3/p' \
+		"$work/ferrolint.out" | LC_ALL=C sort -u >"$work/ferrolint.norm"
+	# A configuration finding (`.pylintrc:1:E0015`) has the same shape as one in a .py file.
+	# shortcut: pylint . lints git-ignored files that ferrolint's walk skips; list
+	# the files instead when comparing a tree with generated code.
+	# Pylint names E0013's module "Command line or configuration file", not a path.
+	grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" |
+		sed -e 's|^\./||' -e 's|^Command line or configuration file:|.pylintrc:|' |
+		LC_ALL=C sort -u >"$work/pylint.norm"
+fi
 
 if [ -n "${ONLY:-}" ]; then
 	for side in ferrolint pylint; do

@@ -70,8 +70,8 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 			> "$${file%.py}.txt.new" && mv "$${file%.py}.txt.new" "$${file%.py}.txt"; \
 	done
 
-pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, PY_VERSION, STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex)
-	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" tools/pylint-compare.sh
+pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, PY_VERSION, STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex), MSG (also compare the message)
+	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" tools/pylint-compare.sh
 
 release-tag: ## Tag the base branch as v<package.version> and push the tag (minor and major bumps)
 	@version=$$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1); base=$(BASE:origin/%=%); tag=v$$version; \
