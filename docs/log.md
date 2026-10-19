@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-10-19
+
+* **native-rules.md**: `W0614` now sees the names of `match` captures,
+  walruses and `global` assignments, leaves out `from __future__` names, lists
+  `from` imports last and matches module names by case.
+
 ## 2026-10-18
 
 * **pylint-compare.md**: Described the comparison of configuration
