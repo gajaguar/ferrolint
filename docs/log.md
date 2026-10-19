@@ -1,5 +1,10 @@
 # Directory Update Log
 
+## 2026-10-19
+
+* **native-rules.md**: `W0614` names the module as written and leaves out a
+  name an earlier import or star already bound.
+
 ## 2026-10-18
 
 * **pylint-compare.md**: Described the comparison of configuration

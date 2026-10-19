@@ -272,11 +272,14 @@ Imports:
   annotation); a module that is not found is never excused.
 * `W0614` `unused-wildcard-import`: the public names of a `from m import *`
   module that the file never reads, reported at the import as
-  `Unused import(s) a, b and c from wildcard import of m`. The names are
+  `Unused import(s) a, b and c from wildcard import of m` (`m` as written,
+  without the dots of a relative import). The names are
   those the module binds at its top level (imports, and names bound under
   `if`, `for`, `while`, `with` and `try`, including `except ... as` and
   `+=`), then those of the modules it star-imports, in astroid's order;
-  names that start with an underscore are left out. Like Pylint it
+  names that start with an underscore are left out. The first statement
+  that binds a name lists it: a later star leaves out a name an earlier
+  star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
   and a star in a function or class, and counts the names in the file's own
   literal `__all__` as read. Divergences: a module is found as base
