@@ -78,18 +78,25 @@ impl Checker for Versions {
         let Some(version) = ctx.py_version else {
             return;
         };
-        let on = |id: &str, since: (u32, u32)| enabled.contains(id) && version < since;
+        let since = [
+            (F_STRING, (3, 6)),
+            (FINAL, (3, 8)),
+            (GROUPS, (3, 11)),
+            (GENERIC, (3, 12)),
+            (WALRUS, (3, 8)),
+            (POSONLY, (3, 8)),
+            (UNPACKING, (3, 15)),
+        ];
+        let active = since
+            .into_iter()
+            .filter(|(id, since)| enabled.contains(*id) && version < *since)
+            .map(|(id, _)| id)
+            .collect();
         let mut walk = Walk {
             ctx,
             env: Env::new(ctx),
             out,
-            f_string: on(F_STRING, (3, 6)),
-            final_: on(FINAL, (3, 8)),
-            groups: on(GROUPS, (3, 11)),
-            generic: on(GENERIC, (3, 12)),
-            walrus: on(WALRUS, (3, 8)),
-            posonly: on(POSONLY, (3, 8)),
-            unpacking: on(UNPACKING, (3, 15)),
+            active,
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -99,13 +106,8 @@ struct Walk<'a, 'c> {
     ctx: &'a Ctx<'c>,
     env: Env<'a>,
     out: &'a mut Vec<Diagnostic>,
-    f_string: bool,
-    final_: bool,
-    groups: bool,
-    generic: bool,
-    walrus: bool,
-    posonly: bool,
-    unpacking: bool,
+    /// The enabled rules whose version is above `py-version`.
+    active: BTreeSet<&'static str>,
 }
 
 impl Walk<'_, '_> {
@@ -123,20 +125,22 @@ impl Walk<'_, '_> {
 impl<'a> Visitor<'a> for Walk<'_, '_> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         match stmt {
-            Stmt::Try(StmtTry { is_star: true, .. }) if self.groups => {
+            Stmt::Try(StmtTry { is_star: true, .. }) if self.active.contains(GROUPS) => {
                 self.push(GROUPS, stmt, "Exception groups are");
             }
             Stmt::Raise(StmtRaise { exc: Some(exc), .. })
-                if self.groups
+                if self.active.contains(GROUPS)
                     && matches!(&**exc, Expr::Call(call) if Self::is_group(&call.func)) =>
             {
                 self.push(GROUPS, stmt, "Exception groups are");
             }
-            Stmt::FunctionDef(func) if self.posonly && !func.parameters.posonlyargs.is_empty() => {
+            Stmt::FunctionDef(func)
+                if self.active.contains(POSONLY) && !func.parameters.posonlyargs.is_empty() =>
+            {
                 // Pylint reports the arguments node, on the line of the `def`
                 self.push(POSONLY, &func.name, "Positional-only arguments are");
             }
-            Stmt::TypeAlias(_) if self.generic => {
+            Stmt::TypeAlias(_) if self.active.contains(GENERIC) => {
                 self.push(GENERIC, stmt, "Generic type syntax (PEP 695) is");
             }
             _ => {}
@@ -146,7 +150,7 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
 
     fn visit_except_handler(&mut self, handler: &'a ExceptHandler) {
         let ExceptHandler::ExceptHandler(inner) = handler;
-        if self.groups && inner.type_.as_deref().is_some_and(Self::is_group) {
+        if self.active.contains(GROUPS) && inner.type_.as_deref().is_some_and(Self::is_group) {
             self.push(GROUPS, handler, "Exception groups are");
         }
         visitor::walk_except_handler(self, handler);
@@ -154,7 +158,7 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
 
     fn visit_decorator(&mut self, decorator: &'a Decorator) {
         let name = self.env.qualified(&decorator.expression);
-        if self.final_ && name.as_deref() == Some("typing.final") {
+        if self.active.contains(FINAL) && name.as_deref() == Some("typing.final") {
             self.push(FINAL, &decorator.expression, "typing.final is");
         }
         visitor::walk_decorator(self, decorator);
@@ -162,7 +166,7 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
 
     fn visit_type_param(&mut self, param: &'a TypeParam) {
         // Pylint has no visitor for ParamSpec
-        if self.generic && !matches!(param, TypeParam::ParamSpec(_)) {
+        if self.active.contains(GENERIC) && !matches!(param, TypeParam::ParamSpec(_)) {
             self.push(GENERIC, param, "Generic type syntax (PEP 695) is");
         }
         visitor::walk_type_param(self, param);
@@ -170,9 +174,11 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
 
     fn visit_expr(&mut self, expr: &'a Expr) {
         match expr {
-            Expr::FString(_) if self.f_string => self.push(F_STRING, expr, "F-strings are"),
+            Expr::FString(_) if self.active.contains(F_STRING) => {
+                self.push(F_STRING, expr, "F-strings are");
+            }
             Expr::Lambda(lambda)
-                if self.posonly
+                if self.active.contains(POSONLY)
                     && lambda
                         .parameters
                         .as_ref()
@@ -180,13 +186,13 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
             {
                 self.push(POSONLY, expr, "Positional-only arguments are");
             }
-            Expr::Named(_) if self.walrus => {
+            Expr::Named(_) if self.active.contains(WALRUS) => {
                 self.push(WALRUS, expr, "Assignment expression is");
             }
             Expr::ListComp(ExprListComp { elt, .. })
             | Expr::SetComp(ExprSetComp { elt, .. })
             | Expr::Generator(ExprGenerator { elt, .. })
-                if self.unpacking && elt.is_starred_expr() =>
+                if self.active.contains(UNPACKING) && elt.is_starred_expr() =>
             {
                 self.push(UNPACKING, expr, "Unpacking in comprehensions is");
             }

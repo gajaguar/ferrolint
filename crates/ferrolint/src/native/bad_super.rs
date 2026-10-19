@@ -53,10 +53,7 @@ impl<'a> Visitor<'a> for Walk<'a, '_, '_> {
         if let Stmt::ClassDef(class) = stmt {
             for method in &class.body {
                 if let Stmt::FunctionDef(func) = method {
-                    let mut calls = Calls {
-                        class,
-                        walk: self,
-                    };
+                    let mut calls = Calls { class, walk: self };
                     calls.visit_body(&func.body);
                     for decorator in &func.decorator_list {
                         calls.visit_decorator(decorator);
@@ -129,7 +126,9 @@ impl Calls<'_, '_, '_, '_> {
             }
         };
         let message = format!("Bad first argument '{shown}' given to super()");
-        self.walk.out.push(self.walk.ctx.report(BAD_SUPER, sup, message));
+        self.walk
+            .out
+            .push(self.walk.ctx.report(BAD_SUPER, sup, message));
     }
 }
 

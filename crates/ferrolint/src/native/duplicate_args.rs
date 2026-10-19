@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Stmt, StmtFunctionDef};
+use ruff_python_ast::{AnyParameterRef, Stmt, StmtFunctionDef};
 
 use super::{Checker, Ctx, rule};
 
@@ -38,12 +38,12 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
         if let Stmt::FunctionDef(StmtFunctionDef { parameters, .. }) = stmt {
             let mut seen = BTreeSet::new();
             // `iter_non_variadic_params` and the variadics, in signature order
-            for parameter in parameters.iter().map(|p| p.name()) {
+            for parameter in parameters.iter().map(AnyParameterRef::name) {
                 if !seen.insert(parameter.as_str()) {
-                    let message = format!(
-                        "Duplicate argument name '{parameter}' in function definition"
-                    );
-                    self.out.push(self.ctx.report(DUPLICATE, parameter, message));
+                    let message =
+                        format!("Duplicate argument name '{parameter}' in function definition");
+                    self.out
+                        .push(self.ctx.report(DUPLICATE, parameter, message));
                 }
             }
         }
