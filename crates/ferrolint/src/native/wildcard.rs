@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprContext, Stmt};
+use ruff_python_ast::{self as ast, Expr, ExprContext, Stmt};
+use ruff_text_size::{Ranged, TextSize};
 
 use super::project::{Project, bound};
 use super::{Checker, Ctx, rule};
@@ -40,6 +41,7 @@ impl Checker for Wildcard {
         }
         let mut walk = Walk {
             stars: Vec::new(),
+            imports: Vec::new(),
             nested: 0,
             read: BTreeSet::new(),
         };
@@ -55,11 +57,13 @@ impl Checker for Wildcard {
         // first, then what each star brings.
         let mut order = Vec::new();
         bound("", &ctx.parsed.syntax().body, &mut Vec::new(), &mut order);
+        // Pylint hands a name to the first statement that binds it; a later star skips it.
+        let mut claimed = BTreeSet::new();
         for (stmt, origin, top) in &walk.stars {
             let module = project.absolute(origin);
+            // Pylint names the module as written, without the dots of a relative import.
+            let written = origin.trim_start_matches('.');
             if wildcard && !(allow_all && project.defines_all(&module)) {
-                // Pylint names the module as written, without the dots of a relative import.
-                let written = origin.trim_start_matches('.');
                 out.push(ctx.report(WILDCARD, *stmt, format!("Wildcard import {written}")));
             }
             // Pylint tracks unused names of the module's own scope only.
@@ -74,11 +78,17 @@ impl Checker for Wildcard {
                     order.push(name.clone());
                 }
             }
+            claimed.extend(
+                (walk.imports.iter())
+                    .filter(|(at, _, bound)| *at < stmt.start() && !walk.read.contains(bound))
+                    .map(|(_, name, _)| name.clone()),
+            );
             let mut unused: Vec<&str> = names
                 .iter()
                 .map(String::as_str)
-                .filter(|name| !walk.read.contains(*name))
+                .filter(|name| !walk.read.contains(*name) && !claimed.contains(*name))
                 .collect();
+            claimed.extend(names.iter().cloned());
             unused.sort_by_key(|name| order.iter().position(|seen| seen == name));
             let Some((last, rest)) = unused.split_last() else {
                 continue;
@@ -91,7 +101,7 @@ impl Checker for Wildcard {
             out.push(ctx.report(
                 UNUSED,
                 *stmt,
-                format!("Unused import(s) {joined} from wildcard import of {module}"),
+                format!("Unused import(s) {joined} from wildcard import of {written}"),
             ));
         }
     }
@@ -101,6 +111,8 @@ struct Walk<'a> {
     /// Each `from m import *`, its module as written and whether it is in
     /// the scope of the module (not of a function or a class).
     stars: Vec<(&'a Stmt, String, bool)>,
+    /// Each name an import of the module's scope binds, as `(offset, imported name, bound name)`.
+    imports: Vec<(TextSize, String, String)>,
     nested: usize,
     /// The names the file reads, and those its `__all__` lists.
     read: BTreeSet<String>,
@@ -114,6 +126,19 @@ impl<'a> Visitor<'a> for Walk<'a> {
                 let name = import.module.as_ref().map_or("", |m| m.as_str());
                 self.stars
                     .push((stmt, format!("{dots}{name}"), self.nested == 0));
+            }
+            Stmt::Import(ast::StmtImport { names, .. })
+            | Stmt::ImportFrom(ast::StmtImportFrom { names, .. })
+                if self.nested == 0 =>
+            {
+                for alias in names {
+                    let bound = alias.asname.as_ref().map_or_else(
+                        || alias.name.split('.').next().unwrap_or_default(),
+                        |a| a.as_str(),
+                    );
+                    self.imports
+                        .push((stmt.start(), alias.name.to_string(), bound.to_owned()));
+                }
             }
             Stmt::Assign(assign)
                 if assign
@@ -197,7 +222,7 @@ mod tests {
         assert_eq!(
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) os, b, f and K from wildcard import of pkg.m\n\
-             2:W0614:Unused import(s) y and z from wildcard import of pkg.listed"
+             2:W0614:Unused import(s) y and z from wildcard import of listed"
         );
     }
 
@@ -340,6 +365,59 @@ mod tests {
         assert_eq!(
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) i, fh, w, err, cf, k and T from wildcard import of pkg.m"
+        );
+    }
+
+    #[test]
+    fn only_the_first_statement_that_binds_a_name_lists_it() {
+        let files = [
+            ("pkg/m1.py", "a = 1\nb = 2\n"),
+            ("pkg/m2.py", "b = 3\nc = 4\n"),
+            ("pkg/two.py", "from pkg.m1 import *\nfrom pkg.m2 import *\n"),
+            (
+                "pkg/twice.py",
+                "from pkg.m1 import *\nfrom pkg.m1 import *\n",
+            ),
+            (
+                "pkg/named.py",
+                "from pkg.m1 import a\nfrom pkg.m1 import *\n",
+            ),
+            (
+                "pkg/read.py",
+                "from pkg.m1 import a as x\nfrom pkg.m1 import *\nprint(x)\n",
+            ),
+        ];
+        let at = |main: &str, module: &str| run(&files, main, module);
+        assert_eq!(
+            at("pkg/two.py", "pkg.two"),
+            "1:W0614:Unused import(s) a and b from wildcard import of pkg.m1\n\
+             2:W0614:Unused import(s) c from wildcard import of pkg.m2"
+        );
+        assert_eq!(
+            at("pkg/twice.py", "pkg.twice"),
+            "1:W0614:Unused import(s) a and b from wildcard import of pkg.m1"
+        );
+        assert_eq!(
+            at("pkg/named.py", "pkg.named"),
+            "2:W0614:Unused import(s) b from wildcard import of pkg.m1"
+        );
+        // `x` is read, so the star still brings `a`.
+        assert_eq!(
+            at("pkg/read.py", "pkg.read"),
+            "2:W0614:Unused import(s) a and b from wildcard import of pkg.m1"
+        );
+    }
+
+    #[test]
+    fn the_message_names_the_module_as_written() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            ("pkg/events.py", "class Event: ...\n"),
+            ("pkg/user.py", "from .events import *\n"),
+        ];
+        assert_eq!(
+            run(&files, "pkg/user.py", "pkg.user"),
+            "1:W0614:Unused import(s) Event from wildcard import of events"
         );
     }
 }
