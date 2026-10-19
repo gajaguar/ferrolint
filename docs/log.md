@@ -6,6 +6,10 @@
   well as the line, with whitespace collapsed.
 * **native-rules.md**: `W0614` lists the public names of the standard
   library's C and builtin modules (`math`, `itertools`) from a generated table.
+* **Plugin comment position**: Contract 0.4.0 adds `comments.comment-list`
+  with the `own-line` flag. Updated `requirements/plugin-contract.md` and
+  `usage/writing-a-plugin.md`.
+
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,

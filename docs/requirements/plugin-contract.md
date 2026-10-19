@@ -30,6 +30,9 @@ SDK.
   * `comments.comment-ranges` returns the ranges of the file's comments in
     source order, each from its `#` to the end of the line; the text is
     the source between the offsets, so a `#` inside a string is not one.
+  * `comments.comment-list` (contract 0.4.0) returns the same comments as
+    `comment` records: the `range` and `own-line`, true when only
+    whitespace precedes the comment on its line.
   * `settings.plugin-options` returns the plugin's own options, the
     `options` table of its `[[plugins]]` entry, as (key, value) text pairs
     sorted by key; it is empty for a plugin without the table and for a
@@ -56,7 +59,12 @@ The type inference query is a separate interface, added in contract 0.2.1
 The comment and settings queries are two more separate interfaces, added
 in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
-nothing of them. A plugin built with SDK 0.3.1 needs a host of 0.3.1.
+nothing of them.
+
+Contract 0.4.0 adds `comments.comment-list` and its `comment` record. It
+changes no existing record, but before 1.0 a minor bump is incompatible for
+the component linker, so a host of 0.4.0 refuses a plugin built against
+0.3.x: rebuild it with SDK 0.4.0.
 
 ## Why the plugin's own options are a query
 
