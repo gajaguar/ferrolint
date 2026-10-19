@@ -130,6 +130,24 @@ pub fn issues(entries: &[(String, String)], ini: bool, sections: &[String]) -> V
     out
 }
 
+/// The E0013 for each `load-plugins` module that `exists` does not find.
+pub fn plugin_issues(entries: &[(String, String)], exists: impl Fn(&str) -> bool) -> Vec<Issue> {
+    entries
+        .iter()
+        .filter(|(key, _)| key == "load-plugins")
+        .flat_map(|(_, value)| value.split(','))
+        .map(str::trim)
+        .filter(|plugin| !plugin.is_empty() && !exists(plugin))
+        .map(|plugin| Issue {
+            code: "E0013",
+            message: format!(
+                "Plugin '{plugin}' is impossible to load, is it installed ? ('No module named '{plugin}'')"
+            ),
+            name: None,
+        })
+        .collect()
+}
+
 /// The names of the tables directly under `[tool.pylint]`.
 pub fn toml_sections(table: &toml::Table) -> Vec<String> {
     table
@@ -331,6 +349,15 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         assert_eq!(settings.ignore, ["CVS"]);
         assert!(settings.options.contains_key("load-plugins"));
         assert!(!settings.options.contains_key("disable"));
+    }
+
+    #[test]
+    fn a_missing_plugin_module_is_e0013() {
+        let entries = ini("[MASTER]\nload-plugins=pylint_django, nowhere.mod\n", false).unwrap();
+        let issues = plugin_issues(&entries, |module| module == "pylint_django");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "E0013");
+        assert!(issues[0].message.contains("'nowhere.mod'"));
     }
 
     #[test]

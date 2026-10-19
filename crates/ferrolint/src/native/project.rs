@@ -130,11 +130,16 @@ impl Project {
         module
     }
 
-    fn read(&self, name: &str) -> Option<Module> {
+    /// Whether a module or package called `name` is under the roots.
+    pub fn has_module(&self, name: &str) -> bool {
+        self.locate(name).is_some()
+    }
+
+    fn locate(&self, name: &str) -> Option<(PathBuf, bool)> {
         let relative: PathBuf = name.split('.').collect();
         // The root is the nearest directory that holds the module itself: an
         // inner package may share the top package's name (`app/api` and `api`).
-        let (file, is_package) = self.roots.iter().find_map(|root| {
+        self.roots.iter().find_map(|root| {
             let file = root.join(&relative).with_extension("py");
             let init = root.join(&relative).join("__init__.py");
             if file.is_file() {
@@ -142,7 +147,11 @@ impl Project {
             } else {
                 init.is_file().then_some((init, true))
             }
-        })?;
+        })
+    }
+
+    fn read(&self, name: &str) -> Option<Module> {
+        let (file, is_package) = self.locate(name)?;
         let source = std::fs::read_to_string(file).ok()?;
         let parsed = ruff_python_parser::parse_module(&source).ok()?;
         let package = if is_package {

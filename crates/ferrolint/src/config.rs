@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::native::Project;
 use crate::pylint::{self, Issue, Settings, Toggle};
 
 /// The settings a run uses, with plugin paths made absolute.
@@ -157,7 +158,15 @@ fn read_pylint(path: &Path) -> Result<Option<Config>> {
     let Some(entries) = entries else {
         return Ok(None);
     };
-    let issues = pylint::issues(&entries, ini, &sections);
+    let mut issues = pylint::issues(&entries, ini, &sections);
+    // Without a virtualenv the installed modules are unknown: report nothing.
+    if std::env::var_os("VIRTUAL_ENV").is_some() {
+        let root = path.parent().unwrap_or(Path::new(""));
+        let project = Project::with_packages(&root.join("pylintrc"), "pylintrc");
+        issues.extend(pylint::plugin_issues(&entries, |module| {
+            project.has_module(module)
+        }));
+    }
     let settings = Settings::from_entries(entries);
     let py_version = settings
         .py_version
