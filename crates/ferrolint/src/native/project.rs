@@ -7,10 +7,12 @@
 //! shortcut: only modules that are files under those directories are read,
 //! so the standard library and the installed packages stay unknown but for
 //! [`Project::with_packages`] (a base from them ends the chain), and a C
-//! module never is; a name is followed through `import`, `from` and
-//! `from m import *` statements of the top level only; and a result that depends on another
-//! module is cached with the file, so it is stale until the file changes or
-//! the cache is cleared. Upgrade with the contract's module index.
+//! module never is, except that `from m import *` knows its public names
+//! from a table of one Python version (`make c-module-names`); a name is
+//! followed through `import`, `from` and `from m import *` statements of the
+//! top level only; and a result that depends on another module is cached
+//! with the file, so it is stale until the file changes or the cache is
+//! cleared. Upgrade with the contract's module index.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,6 +29,7 @@ use ruff_python_parser::Parsed;
 use ferrolint_core::LineIndex;
 
 use super::classes::bases;
+use crate::c_module_names;
 
 /// How far up from the linted file a project root is looked for.
 const LEVELS: usize = 8;
@@ -232,7 +235,13 @@ impl Project {
     }
 
     fn public_at(&self, module: &str, depth: u8, out: &mut Vec<String>) -> Option<()> {
-        let loaded = self.load(module)?;
+        let Some(loaded) = self.load(module) else {
+            // A C or builtin module has no source: its table is Python's own `dir`.
+            c_module_names::names(module)?
+                .iter()
+                .for_each(|n| add_public(out, n));
+            return Some(());
+        };
         self.bind_at(&loaded.package, &loaded.parsed.syntax().body, depth, out);
         Some(())
     }

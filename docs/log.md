@@ -2,6 +2,8 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `W0614` lists the public names of the standard
+  library's C and builtin modules (`math`, `itertools`) from a generated table.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,

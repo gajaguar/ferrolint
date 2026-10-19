@@ -85,3 +85,7 @@ release-tag: ## Tag the base branch as v<package.version> and push the tag (mino
 pylint-names: ## Regenerate src/pylint_names.rs from Pylint 4.1.3 and pylint_django — accepts PYTHON (the interpreter of a virtualenv that has both)
 	$(PYTHON) tools/pylint-names.py > crates/ferrolint/src/pylint_names.rs
 	$(MAKE) fmt FILES=crates/ferrolint/src/pylint_names.rs
+
+c-module-names: ## Regenerate src/c_module_names.rs from the standard library's C and builtin modules — accepts PYTHON (the interpreter whose version the table describes)
+	$(PYTHON) tools/c-module-names.py > crates/ferrolint/src/c_module_names.rs
+	$(MAKE) fmt FILES=crates/ferrolint/src/c_module_names.rs

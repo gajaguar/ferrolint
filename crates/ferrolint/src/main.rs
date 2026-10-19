@@ -2,6 +2,7 @@ mod ast;
 #[cfg(test)]
 #[path = "../bundle.rs"]
 mod bundle;
+mod c_module_names;
 mod cache;
 mod checks;
 mod config;
