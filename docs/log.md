@@ -12,6 +12,9 @@
   duplicate-argument-name, with their divergences.
 * **native-rules.md**: Added Batch J, the Pylint configuration and pragma
   messages (`E0011` to `E0015`, `R0022`) and the messages left not ported.
+* **native-rules.md**: Moved `W0614` unused-wildcard-import from not ported
+  to implemented, with its divergences.
+
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

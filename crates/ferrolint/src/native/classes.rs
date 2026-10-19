@@ -743,6 +743,17 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 pub(super) fn render(source: &str, options: &[(&str, &str)], ids: &[&str]) -> String {
+    render_at(source, std::path::Path::new("mod.py"), "mod", options, ids)
+}
+
+#[cfg(test)]
+pub(super) fn render_at(
+    source: &str,
+    path: &std::path::Path,
+    module: &str,
+    options: &[(&str, &str)],
+    ids: &[&str],
+) -> String {
     use ferrolint_core::LineIndex;
 
     let parsed = ruff_python_parser::parse_module(source).unwrap();
@@ -761,8 +772,8 @@ pub(super) fn render(source: &str, options: &[(&str, &str)], ids: &[&str]) -> St
         model: &model,
         options: &options,
         py_version: None,
-        module: "mod",
-        path: std::path::Path::new("mod.py"),
+        module,
+        path,
     };
     let enabled = super::rules().into_iter().map(|rule| rule.code).collect();
     let mut found: Vec<(u32, String, String)> = super::check(&ctx, &enabled)

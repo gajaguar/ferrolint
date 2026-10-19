@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use ruff_python_ast::{Expr, ModModule, Stmt, StmtClassDef};
+use ruff_python_ast::{ExceptHandler, Expr, ModModule, Stmt, StmtClassDef, StmtImportFrom};
 use ruff_python_parser::Parsed;
 
 use ferrolint_core::LineIndex;
@@ -200,6 +200,97 @@ impl Project {
     }
 }
 
+impl Project {
+    /// The names `from module import *` binds, in order: the public names
+    /// bound at the top level of the module (also under `if` and `try`),
+    /// and those of the modules it star-imports. `None` when the module is
+    /// not found. Pylint ignores `__all__` here, so this does too.
+    pub fn public_names(&self, module: &str) -> Option<Vec<String>> {
+        let mut names = Vec::new();
+        self.public_at(module, 0, &mut names)?;
+        Some(names)
+    }
+
+    fn public_at(&self, module: &str, depth: u8, out: &mut Vec<String>) -> Option<()> {
+        let loaded = self.load(module)?;
+        if depth < 8 {
+            self.bound(&loaded, &loaded.parsed.syntax().body, depth, out);
+        }
+        Some(())
+    }
+
+    fn bound(&self, module: &Module, body: &[Stmt], depth: u8, out: &mut Vec<String>) {
+        for stmt in body {
+            match stmt {
+                Stmt::FunctionDef(f) => add_public(out, f.name.as_str()),
+                Stmt::ClassDef(c) => add_public(out, c.name.as_str()),
+                Stmt::Assign(a) => a.targets.iter().for_each(|t| target_names(t, out)),
+                Stmt::AnnAssign(a) => target_names(&a.target, out),
+                Stmt::Import(i) => i.names.iter().for_each(|alias| match &alias.asname {
+                    Some(asname) => add_public(out, asname.as_str()),
+                    None => add_public(out, alias.name.split('.').next().unwrap_or_default()),
+                }),
+                Stmt::ImportFrom(i) => {
+                    for alias in &i.names {
+                        if &alias.name == "*" {
+                            let origin = from_prefix(i, &module.package);
+                            let _ = self.public_at(&origin, depth + 1, out);
+                        } else {
+                            add_public(out, alias.asname.as_ref().unwrap_or(&alias.name));
+                        }
+                    }
+                }
+                Stmt::If(s) => {
+                    self.bound(module, &s.body, depth, out);
+                    for clause in &s.elif_else_clauses {
+                        self.bound(module, &clause.body, depth, out);
+                    }
+                }
+                Stmt::Try(t) => {
+                    self.bound(module, &t.body, depth, out);
+                    for ExceptHandler::ExceptHandler(h) in &t.handlers {
+                        self.bound(module, &h.body, depth, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn add_public(out: &mut Vec<String>, name: &str) {
+    if !name.starts_with('_') && !out.iter().any(|seen| seen == name) {
+        out.push(name.to_owned());
+    }
+}
+
+fn target_names(target: &Expr, out: &mut Vec<String>) {
+    match target {
+        Expr::Name(n) => add_public(out, n.id.as_str()),
+        Expr::Tuple(t) => t.elts.iter().for_each(|e| target_names(e, out)),
+        Expr::List(l) => l.elts.iter().for_each(|e| target_names(e, out)),
+        Expr::Starred(s) => target_names(&s.value, out),
+        _ => {}
+    }
+}
+
+/// The absolute module a `from` statement of a module in `package` reads.
+fn from_prefix(import: &StmtImportFrom, package: &str) -> String {
+    let mut base = package.to_owned();
+    for _ in 1..import.level {
+        base = base
+            .rsplit_once('.')
+            .map_or(String::new(), |(p, _)| p.to_owned());
+    }
+    let module = import.module.as_ref().map(ToString::to_string);
+    match (import.level, module) {
+        (0, Some(module)) => module,
+        (_, Some(module)) if base.is_empty() => module,
+        (_, Some(module)) => format!("{base}.{module}"),
+        (_, None) => base,
+    }
+}
+
 impl ClassRef {
     /// The dotted name of the module that defines the class.
     pub fn module(&self) -> &str {
@@ -334,19 +425,7 @@ fn collect_imports(
                 }
             }
             Stmt::ImportFrom(import) => {
-                let mut base = package.to_owned();
-                for _ in 1..import.level {
-                    base = base
-                        .rsplit_once('.')
-                        .map_or(String::new(), |(p, _)| p.to_owned());
-                }
-                let module = import.module.as_ref().map(ToString::to_string);
-                let prefix = match (import.level, module) {
-                    (0, Some(module)) => module,
-                    (_, Some(module)) if base.is_empty() => module,
-                    (_, Some(module)) => format!("{base}.{module}"),
-                    (_, None) => base,
-                };
+                let prefix = from_prefix(import, package);
                 if import.names.iter().any(|alias| &alias.name == "*") {
                     stars.push(prefix.clone());
                 }
@@ -369,7 +448,7 @@ fn collect_imports(
             Stmt::Try(t) => {
                 collect_imports(&t.body, package, out, stars);
                 for handler in &t.handlers {
-                    let ruff_python_ast::ExceptHandler::ExceptHandler(h) = handler;
+                    let ExceptHandler::ExceptHandler(h) = handler;
                     collect_imports(&h.body, package, out, stars);
                 }
             }
@@ -396,5 +475,28 @@ mod tests {
         let project = Project::new(&root.path().join("app/views.py"), "app.views");
         let class = project.class("api.base.Base").unwrap();
         assert_eq!(class.qname(), "api.base.Base");
+    }
+
+    #[test]
+    fn public_names_follow_stars_and_skip_private_ones() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write(
+            "app/m.py",
+            "import os.path\nfrom .n import *\n__all__ = ['a']\na, _b = 1, 2\n\ndef f(): ...\n\nclass K: ...\n\nif a:\n    c: int = 1\n",
+        );
+        write("app/n.py", "from .m import *\nz = 1\n_p = 2\n");
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        assert_eq!(
+            project.public_names("app.m").unwrap(),
+            ["os", "z", "a", "f", "K", "c"]
+        );
+        assert!(project.public_names("app.missing").is_none());
     }
 }
