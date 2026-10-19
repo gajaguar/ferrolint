@@ -43,6 +43,10 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
   the normal one. With `BIN` too, ferrolint runs with no temporary
   configuration: it reads the copy's `.pylintrc`, options included, like a project
   does, and `PY_VERSION` is appended to it; `IGNORE` has no effect.
+* `SELECT`: comma-separated rule codes for the temporary configuration's
+  `select`, like `I0011,I0013`. Pylint's informational pragma messages are off
+  by default in both linters: run Pylint with `--enable=I` in `PYLINT` and
+  name them here. It has no effect with `STRIP` and `BIN`.
 * `ONLY`: an extended regular expression on the Pylint msg-id, like
   `^(W0134|W0137)$` or `^W01`; only matching findings are compared, on both
   sides.

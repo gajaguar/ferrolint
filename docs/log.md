@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch K, the informational pragma messages
+  `I0010`, `I0011`, `I0013`, `I0022` and `I0023`, off by default.
+* **pylint-compare.md**: Added `SELECT`.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,

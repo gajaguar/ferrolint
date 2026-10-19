@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use ferrolint_core::Registry;
 use globset::{Glob, GlobMatcher};
 
+use crate::checks;
 use crate::config::Config;
 use crate::discover::display_path;
 use crate::error::{Error, Result};
@@ -29,7 +30,11 @@ impl Selection {
     pub fn new(registry: &Registry, config: &Config) -> Result<Self> {
         let mut enabled: BTreeSet<String> = match &config.select {
             Some(select) => resolve_all(registry, "select", select)?,
-            None => registry.rules().map(|rule| rule.code.clone()).collect(),
+            None => registry
+                .rules()
+                .map(|rule| rule.code.clone())
+                .filter(|code| !checks::PRAGMA_MESSAGES.iter().any(|(id, _)| id == code))
+                .collect(),
         };
         for code in resolve_all(registry, "ignore", &config.ignore)? {
             enabled.remove(&code);
@@ -163,6 +168,25 @@ mod tests {
         ];
         assert_eq!(enabled(&toggles), ["A3"]);
         assert_eq!(enabled(&[(Toggle::Disable, "A3")]), ["A1", "A2"]);
+    }
+
+    #[test]
+    fn pragma_messages_are_off_until_enabled() {
+        let registry = Registry::new([
+            rule("I0011", "I0011", "locally-disabled"),
+            rule("A1", "W0611", "unused-import"),
+        ])
+        .unwrap();
+        let on = |toggles: Vec<(Toggle, String)>| {
+            let config = Config {
+                pylint_disable: toggles,
+                ..Config::default()
+            };
+            let selection = Selection::new(&registry, &config).unwrap();
+            selection.is_enabled("I0011")
+        };
+        assert!(!on(vec![]));
+        assert!(on(vec![(Toggle::Enable, "locally-disabled".into())]));
     }
 
     #[test]

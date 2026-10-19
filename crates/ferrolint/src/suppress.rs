@@ -253,6 +253,11 @@ pub fn spelled(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> V
         Vec::new()
     };
     let end = |block: &Block| index.line(block.range.end().to_u32());
+    let module_end = parsed
+        .syntax()
+        .body
+        .last()
+        .map_or(0, |stmt| index.line(stmt.end().to_u32()));
     let mut spans = Vec::new();
     let mut push = |first: u32, last: u32, codes: Vec<&str>| {
         if !codes.is_empty() {
@@ -298,8 +303,25 @@ pub fn spelled(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> V
                 .find(|b| b.head.is_some_and(|head| index.line(head.to_u32()) == line))
                 .map(|block| (line, end(block)))
         };
+        // Pylint hides its pragma messages from the pragma to the end of the
+        // innermost node, and the module ends with its last statement.
+        let (info, codes): (Vec<&str>, Vec<&str>) = pylint_codes(comment.text, "disable")
+            .into_iter()
+            .partition(|code| {
+                checks::PRAGMA_MESSAGES
+                    .iter()
+                    .any(|(id, symbol)| code == id || code == symbol)
+            });
+        let info_end = if own_line {
+            let inner = blocks.iter().skip(1).rfind(|b| b.range.contains(at));
+            inner.map_or(module_end, end)
+        } else {
+            line
+        };
+        if info_end >= line {
+            push(line, info_end, info);
+        }
         if let Some((first, last)) = scope {
-            let codes = pylint_codes(comment.text, "disable");
             // Pylint reports too-many-lines on line 1, so a module-level
             // pragma reaches it wherever it stands.
             let module_level = own_line && !blocks.iter().skip(1).any(|b| b.range.contains(at));
@@ -508,6 +530,13 @@ mod tests {
             lines("import os\n# pylint: disable=too-many-lines\nx = 1\n"),
             [(1, 4), (2, 4)]
         );
+    }
+
+    #[test]
+    fn pragma_messages_are_hidden_from_the_pragma_to_the_end_of_its_node() {
+        // Not from the def line, and not past the last statement.
+        let source = "# pylint: disable=locally-disabled\ndef f():\n    # pylint: disable=I0011\n    return 1\nx = 2\n# pylint: disable=I0023\n";
+        assert_eq!(lines(source), [(1, 5), (3, 4)]);
     }
 
     #[test]

@@ -1,0 +1,73 @@
+2:I0011:Locally disabling unused-import (W0611)
+2:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+4:I0011:Locally disabling unused-import (W0611)
+6:I0011:Locally disabling unused-variable (W0612)
+6:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+7:I0011:Locally disabling invalid-name (C0103)
+7:I0022:Pragma "disable-msg" is deprecated, use "disable" instead
+8:I0022:Pragma "enable-msg" is deprecated, use "enable" instead
+8:I0023:'W0612' is cryptic: use '# pylint: enable=unused-variable' instead
+9:I0023:'W0611' is cryptic: use '# pylint: enable=unused-import' instead
+10:I0011:Locally disabling unused-import (W0611)
+10:I0023:'w0611' is cryptic: use '# pylint: disable=unused-import' instead
+12:I0011:Locally disabling too-many-lines (C0302)
+13:I0011:Locally disabling astroid-error (F0002)
+13:I0011:Locally disabling config-parse-error (F0011)
+13:I0011:Locally disabling fatal (F0001)
+13:I0011:Locally disabling method-check-failed (F0202)
+13:I0011:Locally disabling parse-error (F0010)
+14:I0011:Locally disabling consider-using-from-import (R0402)
+14:I0011:Locally disabling cyclic-import (R0401)
+14:I0011:Locally disabling deprecated-module (W4901)
+14:I0011:Locally disabling import-error (E0401)
+14:I0011:Locally disabling import-outside-toplevel (C0415)
+14:I0011:Locally disabling import-self (W0406)
+14:I0011:Locally disabling misplaced-future (W0410)
+14:I0011:Locally disabling multiple-imports (C0410)
+14:I0011:Locally disabling preferred-module (W0407)
+14:I0011:Locally disabling reimported (W0404)
+14:I0011:Locally disabling relative-beyond-top-level (E0402)
+14:I0011:Locally disabling shadowed-import (W0416)
+14:I0011:Locally disabling ungrouped-imports (C0412)
+14:I0011:Locally disabling useless-import-alias (C0414)
+14:I0011:Locally disabling wildcard-import (W0401)
+14:I0011:Locally disabling wrong-import-order (C0411)
+14:I0011:Locally disabling wrong-import-position (C0413)
+15:I0011:Locally disabling missing-class-docstring (C0115)
+15:I0011:Locally disabling missing-function-docstring (C0116)
+15:I0011:Locally disabling missing-module-docstring (C0114)
+16:I0011:Locally disabling broad-exception-caught (W0718)
+16:I0023:'W0703' is cryptic: use '# pylint: disable=broad-except' instead
+18:I0010:Unable to consider inline option 'disable'
+19:I0010:Unable to consider inline option 'disable'
+20:I0010:Unable to consider inline option 'disable'
+23:I0010:Unable to consider inline option ''
+24:I0011:Locally disabling unused-import (W0611)
+24:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+25:I0011:Locally disabling unused-variable (W0612)
+25:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+26:I0011:Locally disabling unused-import (W0611)
+26:I0011:Locally disabling unused-variable (W0612)
+26:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+26:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+28:I0011:Locally disabling unused-import (W0611)
+28:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+29:I0011:Locally disabling duplicate-code (R0801)
+29:I0023:'R0801' is cryptic: use '# pylint: disable=duplicate-code' instead
+30:I0011:Locally disabling unused-import (W0611)
+30:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+31:I0010:Unable to consider inline option 'enable'
+31:I0011:Locally disabling unused-import (W0611)
+31:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+32:I0023:'C0114' is cryptic: use '# pylint: enable=missing-module-docstring' instead
+34:I0011:Locally disabling missing-module-docstring (C0114)
+34:I0011:Locally disabling unused-variable (W0612)
+34:I0011:Locally disabling wrong-import-order (C0411)
+34:I0023:'C0114' is cryptic: use '# pylint: disable=missing-module-docstring' instead
+34:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+36:I0011:Locally disabling unused-variable (W0612)
+36:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+37:I0011:Locally disabling bad-inline-option (I0010)
+37:I0011:Locally disabling fixme (W0511)
+37:I0023:'W0511' is cryptic: use '# pylint: disable=fixme' instead
+38:I0010:Unable to consider inline option 'disable'

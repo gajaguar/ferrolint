@@ -1,0 +1,7 @@
+2:I0011:Locally disabling unused-import (W0611)
+2:I0023:'W0611' is cryptic: use '# pylint: disable=unused-import' instead
+4:I0023:'W0612' is cryptic: use '# pylint: disable=unused-variable' instead
+6:I0023:'W0613' is cryptic: use '# pylint: disable=unused-argument' instead
+18:I0011:Locally disabling unused-argument (W0613)
+18:I0023:'W0613' is cryptic: use '# pylint: disable=unused-argument' instead
+19:I0010:Unable to consider inline option 'disable'
