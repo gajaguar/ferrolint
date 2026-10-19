@@ -2,6 +2,8 @@
 
 ## 2026-10-18
 
+* **Out-of-tree plugin**: Added `usage/out-of-tree-plugin.md` - building a
+  plugin from another repository against the SDK by revision.
 * **Roadmap notes**: Retired `backlog.md` and
   `optional-type-inference-engine.md` from the public docs; the implementation
   backlog and the optional type inference engine decision are no longer part
