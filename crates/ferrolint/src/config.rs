@@ -151,26 +151,26 @@ pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<Config> {
 fn read_pylint(path: &Path) -> Result<Option<Config>> {
     let text = read(path)?;
     let name = path.file_name().map(|name| name.to_string_lossy());
-    let (entries, sections, ini) = if name.as_deref() == Some("pyproject.toml") {
+    let (entries, ini) = if name.as_deref() == Some("pyproject.toml") {
         let table: toml::Table = toml::from_str(&text)
             .map_err(|err| Error::config(format!("{}: {}", path.display(), err.message())))?;
-        (pylint::toml(&table), pylint::toml_sections(&table), false)
+        (pylint::toml(&table), false)
     } else {
         let only_pylint = matches!(name.as_deref(), Some("setup.cfg" | "tox.ini"));
-        (pylint::ini(&text, only_pylint), Vec::new(), true)
+        (pylint::ini(&text, only_pylint), true)
     };
     let Some(entries) = entries else {
         return Ok(None);
     };
-    let mut issues = pylint::issues(&entries, ini, &sections);
-    // Without a virtualenv the installed modules are unknown: report nothing.
-    if std::env::var_os("VIRTUAL_ENV").is_some() {
+    // Without a virtualenv the installed modules are unknown: all exist, so
+    // no E0013 and a plugin may add options.
+    let project = std::env::var_os("VIRTUAL_ENV").map(|_| {
         let root = path.parent().unwrap_or(Path::new(""));
-        let project = Project::with_packages(&root.join("pylintrc"), "pylintrc");
-        issues.extend(pylint::plugin_issues(&entries, |module| {
-            project.has_module(module)
-        }));
-    }
+        Project::with_packages(&root.join("pylintrc"), "pylintrc")
+    });
+    let exists = |module: &str| project.as_ref().is_none_or(|p| p.has_module(module));
+    let mut issues = pylint::issues(&entries, ini, exists);
+    issues.extend(pylint::plugin_issues(&entries, exists));
     let settings = Settings::from_entries(entries);
     let py_version = settings
         .py_version
@@ -286,13 +286,15 @@ mod tests {
     }
 
     #[test]
-    fn a_pyproject_reports_unknown_sections() {
+    fn a_pyproject_table_is_flattened_not_checked() {
+        // Pylint 4.1.3 defines E0014 but never emits it: the keys of an unknown
+        // table are options, so `x` is an E0015.
         let issues = issue_codes(
             "pyproject.toml",
-            "[tool.pylint.main]\njobs = 0\n[tool.pylint.messages_control]\ndisable = [\"fixme\"]\n[tool.pylint.mystery]\nx = 1\n",
+            "[tool.pylint.main]\njobs = 0\n[tool.pylint.mystery]\nx = 1\n",
         );
         let codes: Vec<_> = issues.iter().map(|(code, _)| *code).collect();
-        assert_eq!(codes, ["E0014", "E0015"]);
+        assert_eq!(codes, ["E0015"]);
     }
 
     #[test]

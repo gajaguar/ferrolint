@@ -615,18 +615,20 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
   directory above the file, in the standard library or in the
   `site-packages` of the virtualenv `VIRTUAL_ENV` names. Without
   `VIRTUAL_ENV` nothing is reported.
-* `E0014` `bad-configuration-section`: a table under `[tool.pylint]` that is
-  not an option group of Pylint.
+* `E0014` `bad-configuration-section`: never reported. Pylint 4.1.3 defines it
+  but does not emit it: the keys of a `[tool.pylint.<table>]` flatten into
+  options, so an unknown key in any table is an `E0015`.
 * `E0015` `unrecognized-option`: one finding listing every option key Pylint
   does not know.
 
 Known divergences:
 
-* Pylint ignores the section names of an INI file and never reports `E0014`;
-  here only a TOML table is checked. Section names of an INI file are not.
+* `no-self-use` and `R0201` count as known: Pylint reports `R0022` for them
+  unless `pylint.extensions.no_self_use` is in `load-plugins`.
 * A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
-  messages are not listed.
+  messages are not listed. An entry that `E0013` reports does not: Pylint
+  cannot import it, so it adds none.
 * The `R0022` text omits Pylint's link to the release notes.
 
 Not ported: `fatal`, `astroid-error`, `parse-error`, `config-parse-error`,

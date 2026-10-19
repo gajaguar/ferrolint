@@ -67,7 +67,7 @@ pub fn host_rules() -> Vec<RuleInfo> {
         native::rule(
             "E0014",
             "bad-configuration-section",
-            "A `[tool.pylint]` table is not a section Pylint knows.",
+            "Defined by Pylint 4.1.3, which never emits it; ferrolint does not either.",
         ),
         native::rule(
             "E0015",

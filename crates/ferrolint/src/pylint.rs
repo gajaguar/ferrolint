@@ -66,37 +66,30 @@ pub fn message_issue(action: &str, name: &str) -> Option<Issue> {
     })
 }
 
-/// Whether `load-plugins` names a plugin whose options and messages the
-/// generated tables do not list.
-fn foreign_plugin(entries: &[(String, String)]) -> bool {
+/// Whether `load-plugins` names a plugin that `exists` and whose options and
+/// messages the generated tables do not list. A plugin Pylint cannot import
+/// adds none, so the other findings still stand.
+fn foreign_plugin(entries: &[(String, String)], exists: impl Fn(&str) -> bool) -> bool {
     entries
         .iter()
         .filter(|(key, _)| key == "load-plugins")
         .flat_map(|(_, value)| value.split(','))
         .map(str::trim)
         .filter(|plugin| !plugin.is_empty())
-        .any(|plugin| plugin != "pylint_django" && !plugin.starts_with("pylint.extensions"))
+        .any(|plugin| {
+            plugin != "pylint_django" && !plugin.starts_with("pylint.extensions") && exists(plugin)
+        })
 }
 
 /// What Pylint would say about the names in a configuration. `ini` is true for
-/// INI files, whose keys Pylint lowercases; `sections` are the TOML tables
-/// under `[tool.pylint]`.
-pub fn issues(entries: &[(String, String)], ini: bool, sections: &[String]) -> Vec<Issue> {
+/// INI files, whose keys Pylint lowercases.
+pub fn issues(
+    entries: &[(String, String)],
+    ini: bool,
+    exists: impl Fn(&str) -> bool,
+) -> Vec<Issue> {
     let mut out = Vec::new();
-    let normal = |name: &str| name.replace(['_', '-'], " ").to_ascii_lowercase();
-    for section in sections {
-        let wanted = normal(section);
-        if !names::SECTIONS.iter().any(|known| normal(known) == wanted) {
-            out.push(Issue {
-                code: "E0014",
-                message: format!(
-                    "Out-of-place setting encountered in top level configuration-section '{section}' : '{section}'"
-                ),
-                name: None,
-            });
-        }
-    }
-    if foreign_plugin(entries) {
+    if foreign_plugin(entries, exists) {
         return out;
     }
     let mut unknown: Vec<String> = Vec::new();
@@ -146,22 +139,6 @@ pub fn plugin_issues(entries: &[(String, String)], exists: impl Fn(&str) -> bool
             name: None,
         })
         .collect()
-}
-
-/// The names of the tables directly under `[tool.pylint]`.
-pub fn toml_sections(table: &toml::Table) -> Vec<String> {
-    table
-        .get("tool")
-        .and_then(|tool| tool.get("pylint"))
-        .and_then(toml::Value::as_table)
-        .map(|section| {
-            section
-                .iter()
-                .filter(|(_, value)| value.is_table())
-                .map(|(name, _)| name.clone())
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Whether a `disable`/`enable` entry turns rules off or back on.
@@ -358,6 +335,15 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].code, "E0013");
         assert!(issues[0].message.contains("'nowhere.mod'"));
+    }
+
+    #[test]
+    fn only_a_plugin_that_exists_silences_the_option_check() {
+        let entries = ini("[MASTER]\nload-plugins=other\nbogus=1\n", false).unwrap();
+        assert!(issues(&entries, true, |_| true).is_empty());
+        let issues = issues(&entries, true, |_| false);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "E0015");
     }
 
     #[test]
