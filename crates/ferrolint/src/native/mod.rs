@@ -15,6 +15,7 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod astring;
 mod bad_super;
 mod calls;
 mod classes;
@@ -23,6 +24,7 @@ mod contextmgr;
 mod django;
 mod duplicate_args;
 mod exceptions;
+mod extensions;
 mod finally;
 mod flow;
 mod formats;
@@ -89,6 +91,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &django::Django,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
+    &extensions::Extensions,
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
