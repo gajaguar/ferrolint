@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.3.0" }
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.3.1" }
 
 [lints]
 workspace = true

@@ -1,4 +1,4 @@
-package ferrolint:plugin@0.3.0;
+package ferrolint:plugin@0.3.1;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -298,6 +298,29 @@ interface inference {
     infer: func(node: u32) -> inferred;
 }
 
+/// Comment ranges of the current file, for checkers that read comments
+/// (markers, directives) rather than the AST. A host of 0.3.1 still loads
+/// a plugin built against 0.3.0, which imports nothing of this interface.
+@since(version = 0.3.1)
+interface comments {
+    use types.{range};
+
+    /// The ranges of the file's comments, in source order. Each starts at
+    /// its `#` and ends before the line break; the text is
+    /// `source[start.offset..end.offset]`.
+    comment-ranges: func() -> list<range>;
+}
+
+/// The options the configuration gives the calling plugin alone, unlike
+/// the `options` of the `file` record, which every plugin receives.
+@since(version = 0.3.1)
+interface settings {
+    /// The pairs of the plugin's own `options` table in its `[[plugins]]`
+    /// entry, sorted by key, as written; empty when it has none, and
+    /// always empty for a bundled plugin.
+    plugin-options: func() -> list<tuple<string, string>>;
+}
+
 /// The plugin's exports.
 interface checker {
     use types.{ast, diagnostic, file, plugin-info};
@@ -315,5 +338,9 @@ world plugin {
     import semantic;
     @since(version = 0.2.1)
     import inference;
+    @since(version = 0.3.1)
+    import comments;
+    @since(version = 0.3.1)
+    import settings;
     export checker;
 }

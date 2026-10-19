@@ -41,6 +41,8 @@ pub struct Config {
 pub struct PluginEntry {
     pub path: PathBuf,
     pub sha256: String,
+    /// The plugin's own `options` table, sorted by key.
+    pub options: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -84,6 +86,8 @@ fn parse_version(text: &str) -> std::result::Result<(u32, u32), String> {
 struct RawPlugin {
     path: PathBuf,
     sha256: String,
+    #[serde(default)]
+    options: BTreeMap<String, String>,
 }
 
 /// Pylint's configuration files, in the order Pylint looks for them.
@@ -227,6 +231,7 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         .map(|plugin| PluginEntry {
             path: root.join(plugin.path),
             sha256: plugin.sha256.to_ascii_lowercase(),
+            options: plugin.options,
         })
         .collect();
     Config {
@@ -334,9 +339,32 @@ mod tests {
             config.plugins,
             vec![PluginEntry {
                 path: dir.path().join("p.wasm"),
-                sha256: "ab".into()
+                sha256: "ab".into(),
+                options: BTreeMap::new(),
             }]
         );
+    }
+
+    #[test]
+    fn a_plugin_entry_carries_its_own_options_as_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ferrolint.toml");
+        fs::write(
+            &file,
+            "[[plugins]]\npath = \"p.wasm\"\nsha256 = \"ab\"\n[plugins.options]\nz = \"1\"\na = \"x,y\"\n",
+        )
+        .unwrap();
+        let options = load(dir.path(), None).unwrap().plugins.remove(0).options;
+        assert_eq!(
+            options.into_iter().collect::<Vec<_>>(),
+            [("a".into(), "x,y".into()), ("z".into(), "1".into())]
+        );
+        fs::write(
+            &file,
+            "[[plugins]]\npath = \"p.wasm\"\nsha256 = \"ab\"\noptions = { n = 1 }\n",
+        )
+        .unwrap();
+        assert!(load(dir.path(), None).is_err());
     }
 
     fn write(dir: &tempfile::TempDir, name: &str, text: &str) {

@@ -265,6 +265,7 @@ fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
         path: Path::new("<bundled>").join(name),
         bytes: bytes.to_vec(),
         sha256: hex(&Sha256::digest(bytes)),
+        options: Vec::new(),
     });
     let configured = config
         .plugins
@@ -285,6 +286,7 @@ fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
                 path: plugin.path.clone(),
                 bytes,
                 sha256: actual,
+                options: plugin.options.clone().into_iter().collect(),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -454,6 +456,12 @@ impl Linter<'_> {
             let version = format!("{:?}", setup.py_version);
             // A plugin's verdict depends on the options it is sent.
             let options = format!("{:?}", setup.options);
+            // ... and on the options of its own `[[plugins]]` entry.
+            let own: Vec<_> = wanted
+                .iter()
+                .map(|&position| &setup.host.plugins[position].options)
+                .collect();
+            let own = format!("{own:?}");
             cache.key(&[
                 &hex(&Sha256::digest(bytes)),
                 display,
@@ -461,6 +469,7 @@ impl Linter<'_> {
                 &rules,
                 &version,
                 &options,
+                &own,
             ])
         });
         let stored = self
@@ -613,6 +622,23 @@ impl Linter<'_> {
             ast,
             model,
             source: context.source.to_owned(),
+            comments: suppress::comments(context.source, context.parsed.tokens())
+                .iter()
+                .map(|comment| {
+                    let range = context
+                        .index
+                        .range(context.source, comment.start, comment.end);
+                    let position = |at: ferrolint_core::Position| wit::Position {
+                        offset: at.offset,
+                        line: at.line,
+                        column: at.column,
+                    };
+                    wit::Range {
+                        start: position(range.start),
+                        end: position(range.end),
+                    }
+                })
+                .collect(),
         });
         let file = wit::File {
             path: context.display.to_owned(),
