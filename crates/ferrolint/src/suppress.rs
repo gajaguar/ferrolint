@@ -36,6 +36,15 @@ pub fn comments<'a>(source: &'a str, tokens: &Tokens) -> Vec<Comment<'a>> {
         .collect()
 }
 
+/// Whether only whitespace precedes `start` on its line.
+pub fn own_line(source: &str, start: u32) -> bool {
+    let before = &source[..start as usize];
+    before
+        .rsplit(['\n', '\r'])
+        .next()
+        .is_some_and(|line| line.trim().is_empty())
+}
+
 /// What a `noqa` directive in a comment says.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Noqa<'a> {
@@ -381,6 +390,17 @@ impl Suppressions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_line_is_true_only_for_a_comment_alone_on_its_line() {
+        let source = "# top\nx = 1  # trailing\n  \t# indented\r# after cr\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let flags: Vec<_> = comments(source, parsed.tokens())
+            .iter()
+            .map(|comment| own_line(source, comment.start))
+            .collect();
+        assert_eq!(flags, [true, false, true, true]);
+    }
 
     #[test]
     fn noqa_forms() {

@@ -45,8 +45,8 @@ pub struct FileData {
     pub model: Model,
     /// The source text, for the inference queries.
     pub source: String,
-    /// The ranges of the file's comments, for the `comments` query.
-    pub comments: Vec<wit::Range>,
+    /// The file's comments, for the `comments` queries.
+    pub comments: Vec<wit::Comment>,
 }
 
 /// Per-store host state.
@@ -168,6 +168,10 @@ impl wit::ferrolint::plugin::inference::Host for State {
 
 impl wit::ferrolint::plugin::comments::Host for State {
     fn comment_ranges(&mut self) -> wasmtime::Result<Vec<wit::Range>> {
+        Ok(self.file()?.comments.iter().map(|c| c.range).collect())
+    }
+
+    fn comment_list(&mut self) -> wasmtime::Result<Vec<wit::Comment>> {
         Ok(self.file()?.comments.clone())
     }
 }

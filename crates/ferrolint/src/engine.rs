@@ -633,9 +633,12 @@ impl Linter<'_> {
                         line: at.line,
                         column: at.column,
                     };
-                    wit::Range {
-                        start: position(range.start),
-                        end: position(range.end),
+                    wit::Comment {
+                        range: wit::Range {
+                            start: position(range.start),
+                            end: position(range.end),
+                        },
+                        own_line: suppress::own_line(context.source, comment.start),
                     }
                 })
                 .collect(),
