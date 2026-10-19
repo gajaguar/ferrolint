@@ -9,7 +9,7 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprContext, Stmt};
 
-use super::project::{Project, bound};
+use super::project::Project;
 use super::{Checker, Ctx, rule};
 
 const WILDCARD: &str = "W0401";
@@ -51,10 +51,8 @@ impl Checker for Wildcard {
         let allow_all = ctx.option("allow-wildcard-with-all").is_some_and(|v| {
             matches!(v.trim().to_lowercase().as_str(), "y" | "yes" | "true" | "1")
         });
-        // astroid lists a module's names in the order it binds them: its own
-        // first, then what each star brings.
-        let mut order = Vec::new();
-        bound("", &ctx.parsed.syntax().body, &mut Vec::new(), &mut order);
+        // astroid lists a module's names in the order it binds them.
+        let order = project.bound_names(&ctx.parsed.syntax().body);
         for (stmt, origin, top) in &walk.stars {
             let module = project.absolute(origin);
             if wildcard && !(allow_all && project.defines_all(&module)) {
@@ -69,11 +67,6 @@ impl Checker for Wildcard {
             let Some(names) = project.public_names(&module) else {
                 continue;
             };
-            for name in &names {
-                if !order.contains(name) {
-                    order.push(name.clone());
-                }
-            }
             let mut unused: Vec<&str> = names
                 .iter()
                 .map(String::as_str)
@@ -340,6 +333,56 @@ mod tests {
         assert_eq!(
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) i, fh, w, err, cf, k and T from wildcard import of pkg.m"
+        );
+    }
+
+    #[test]
+    fn match_captures_walruses_and_declared_globals_are_bound() {
+        let files = [
+            (
+                "pkg/m.py",
+                "import os\n\n\ndef f():\n    global from_global, from_import\n    from_global = 1\n    from os import path as from_import\n    local = 1\n\n\n\
+                 def g():\n    global declared_only\n\n\n\
+                 match os.name:\n    case [first, *rest] as whole:\n        pass\n    case {'k': v, **extra}:\n        pass\n\n\
+                 if (walrus := 1):\n    pass\ncomp = [(inner := n) for n in range(3)]\nfor i in (w := range(3)):\n    pass\nlam = lambda: (hidden := 1)\n\n\n\
+                 class K:\n    inside = (never := 1)\n\n\ndef fn(a=(d := 1)): ...\n",
+            ),
+            ("pkg/user.py", "from pkg.m import *\n"),
+        ];
+        assert_eq!(
+            run(&files, "pkg/user.py", "pkg.user"),
+            "1:W0614:Unused import(s) os, from_global, f, g, first, rest, whole, v, extra, \
+             walrus, comp, inner, i, w, lam, K, d, fn and from_import from wildcard import of pkg.m"
+        );
+    }
+
+    #[test]
+    fn future_imports_are_not_names_of_the_module() {
+        let files = [
+            (
+                "pkg/m.py",
+                "from __future__ import annotations\nimport os\n",
+            ),
+            ("pkg/user.py", "from pkg.m import *\n"),
+        ];
+        assert_eq!(
+            run(&files, "pkg/user.py", "pkg.user"),
+            "1:W0614:Unused import(s) os from wildcard import of pkg.m"
+        );
+    }
+
+    #[test]
+    fn the_names_of_from_imports_come_after_the_others() {
+        let files = [
+            (
+                "pkg/m.py",
+                "import os\n\n\ndef f(): ...\n\n\nfrom json import loads\n\nVALUE = 1\nimport sys\n",
+            ),
+            ("pkg/user.py", "from pkg.m import *\n"),
+        ];
+        assert_eq!(
+            run(&files, "pkg/user.py", "pkg.user"),
+            "1:W0614:Unused import(s) os, f, VALUE, sys and loads from wildcard import of pkg.m"
         );
     }
 }

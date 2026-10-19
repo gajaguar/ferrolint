@@ -17,7 +17,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use ruff_python_ast::{ExceptHandler, Expr, ModModule, Stmt, StmtClassDef, StmtImportFrom};
+use ruff_python_ast::visitor::{self, Visitor};
+use ruff_python_ast::{
+    Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Pattern, Stmt, StmtClassDef,
+    StmtImportFrom,
+};
 use ruff_python_parser::Parsed;
 
 use ferrolint_core::LineIndex;
@@ -203,8 +207,9 @@ impl Project {
 impl Project {
     /// The names `from module import *` binds, in astroid's order: the public
     /// names the module binds at its top level (also under compound
-    /// statements), then those of the modules it star-imports. `None` when
-    /// the module is not found. Pylint ignores `__all__` here, so this does too.
+    /// statements), then those of its `from` imports and of the modules it
+    /// star-imports, in statement order. `None` when the module is not
+    /// found. Pylint ignores `__all__` here, so this does too.
     pub fn public_names(&self, module: &str) -> Option<Vec<String>> {
         let mut names = Vec::new();
         self.public_at(module, 0, &mut names)?;
@@ -218,84 +223,179 @@ impl Project {
             .is_some_and(|loaded| binds_all(&loaded.parsed.syntax().body))
     }
 
+    /// The names a file with this `body` binds, in astroid's order, as
+    /// [`Project::public_names`] lists them for a module.
+    pub fn bound_names(&self, body: &[Stmt]) -> Vec<String> {
+        let mut names = Vec::new();
+        self.bind_at(&self.package, body, 0, &mut names);
+        names
+    }
+
     fn public_at(&self, module: &str, depth: u8, out: &mut Vec<String>) -> Option<()> {
         let loaded = self.load(module)?;
-        if depth < 8 {
-            let mut stars = Vec::new();
-            bound(
-                &loaded.package,
-                &loaded.parsed.syntax().body,
-                &mut stars,
-                out,
-            );
-            // astroid binds what a star imports after everything the module binds itself.
-            for origin in stars {
-                let _ = self.public_at(&origin, depth + 1, out);
+        self.bind_at(&loaded.package, &loaded.parsed.syntax().body, depth, out);
+        Some(())
+    }
+
+    fn bind_at(&self, package: &str, body: &[Stmt], depth: u8, out: &mut Vec<String>) {
+        if depth >= 8 {
+            return;
+        }
+        let mut late = Vec::new();
+        bound(package, body, &mut late, out);
+        for item in late {
+            match item {
+                Late::Name(name) => add_public(out, &name),
+                Late::Star(origin) => {
+                    let _ = self.public_at(&origin, depth + 1, out);
+                }
             }
         }
-        Some(())
     }
 }
 
+/// What astroid binds after everything else a module binds: the names of
+/// its `from` imports and what each star import brings, in statement order.
+enum Late {
+    Name(String),
+    Star(String),
+}
+
 /// The public names `body` binds at its top level, also under compound
-/// statements, in `out`, and the modules its `from m import *` read in `stars`.
-pub(super) fn bound(package: &str, body: &[Stmt], stars: &mut Vec<String>, out: &mut Vec<String>) {
-    for stmt in body {
+/// statements, in `out`, and the `from` imports astroid binds last in `late`.
+fn bound(package: &str, body: &[Stmt], late: &mut Vec<Late>, out: &mut Vec<String>) {
+    let mut binder = Binder {
+        package,
+        globals: None,
+        late,
+        out,
+    };
+    binder.visit_body(body);
+}
+
+struct Binder<'o> {
+    package: &'o str,
+    /// `None` at the module's scope; in a function or a class, the names it
+    /// declares `global`, the only ones that reach the module.
+    globals: Option<Vec<String>>,
+    late: &'o mut Vec<Late>,
+    out: &'o mut Vec<String>,
+}
+
+impl Binder<'_> {
+    fn binds(&self, name: &str) -> bool {
+        self.globals
+            .as_ref()
+            .is_none_or(|globals| globals.iter().any(|global| global == name))
+    }
+
+    fn bind(&mut self, name: &str) {
+        if self.binds(name) {
+            add_public(self.out, name);
+        }
+    }
+
+    /// Reads `body` as a new scope, which declares no `global` yet.
+    fn scope(&mut self, body: &[Stmt]) {
+        let saved = self.globals.replace(Vec::new());
+        self.visit_body(body);
+        self.globals = saved;
+    }
+}
+
+impl<'a> Visitor<'a> for Binder<'_> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
         match stmt {
-            Stmt::FunctionDef(f) => add_public(out, f.name.as_str()),
-            Stmt::ClassDef(c) => add_public(out, c.name.as_str()),
-            Stmt::Assign(a) => a.targets.iter().for_each(|t| target_names(t, out)),
-            Stmt::AnnAssign(a) => target_names(&a.target, out),
-            Stmt::AugAssign(a) => target_names(&a.target, out),
-            Stmt::TypeAlias(a) => target_names(&a.name, out),
-            Stmt::Import(i) => i.names.iter().for_each(|alias| match &alias.asname {
-                Some(asname) => add_public(out, asname.as_str()),
-                None => add_public(out, alias.name.split('.').next().unwrap_or_default()),
-            }),
-            Stmt::ImportFrom(i) => {
-                for alias in &i.names {
-                    if &alias.name == "*" {
-                        stars.push(from_prefix(i, package));
-                    } else {
-                        add_public(out, alias.asname.as_ref().unwrap_or(&alias.name));
-                    }
+            // A function binds its `global` names while its body is read, before its own name.
+            Stmt::FunctionDef(f) => {
+                self.visit_parameters(&f.parameters);
+                self.scope(&f.body);
+                if self.globals.is_none() {
+                    add_public(self.out, f.name.as_str());
                 }
             }
-            Stmt::If(s) => {
-                bound(package, &s.body, stars, out);
-                for clause in &s.elif_else_clauses {
-                    bound(package, &clause.body, stars, out);
+            Stmt::ClassDef(c) if self.globals.is_none() => {
+                self.scope(&c.body);
+                add_public(self.out, c.name.as_str());
+            }
+            Stmt::ClassDef(c) => self.visit_body(&c.body),
+            Stmt::Global(g) => {
+                if let Some(globals) = &mut self.globals {
+                    globals.extend(g.names.iter().map(ToString::to_string));
                 }
+            }
+            // astroid reads the targets before the value.
+            Stmt::Assign(a) => {
+                a.targets.iter().for_each(|t| self.visit_expr(t));
+                self.visit_expr(&a.value);
             }
             Stmt::For(f) => {
-                target_names(&f.target, out);
-                bound(package, &f.body, stars, out);
-                bound(package, &f.orelse, stars, out);
+                self.visit_expr(&f.target);
+                self.visit_expr(&f.iter);
+                self.visit_body(&f.body);
+                self.visit_body(&f.orelse);
             }
-            Stmt::While(w) => {
-                bound(package, &w.body, stars, out);
-                bound(package, &w.orelse, stars, out);
-            }
-            Stmt::With(w) => {
-                for item in &w.items {
-                    if let Some(target) = &item.optional_vars {
-                        target_names(target, out);
+            Stmt::Import(i) => i.names.iter().for_each(|alias| match &alias.asname {
+                Some(asname) => self.bind(asname.as_str()),
+                None => self.bind(alias.name.split('.').next().unwrap_or_default()),
+            }),
+            // `__future__` names are flags, not names of the module.
+            Stmt::ImportFrom(i)
+                if i.level == 0 && i.module.as_ref().is_some_and(|m| m == "__future__") => {}
+            Stmt::ImportFrom(i) => {
+                for alias in &i.names {
+                    let name = alias.asname.as_ref().unwrap_or(&alias.name);
+                    if &alias.name != "*" {
+                        if self.binds(name) {
+                            self.late.push(Late::Name(name.to_string()));
+                        }
+                    } else if self.globals.is_none() {
+                        self.late.push(Late::Star(from_prefix(i, self.package)));
                     }
                 }
-                bound(package, &w.body, stars, out);
             }
-            Stmt::Try(t) => {
-                bound(package, &t.body, stars, out);
-                for ExceptHandler::ExceptHandler(h) in &t.handlers {
-                    if let Some(name) = &h.name {
-                        add_public(out, name.as_str());
-                    }
-                    bound(package, &h.body, stars, out);
-                }
-                bound(package, &t.orelse, stars, out);
-                bound(package, &t.finalbody, stars, out);
-            }
-            _ => {}
+            _ => visitor::walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        match expr {
+            Expr::Lambda(_) => {}
+            // A store (a walrus' too) or a `del` of a name.
+            Expr::Name(n) if n.ctx != ExprContext::Load => self.bind(n.id.as_str()),
+            _ => visitor::walk_expr(self, expr),
+        }
+    }
+
+    // The target of a comprehension is its own.
+    fn visit_comprehension(&mut self, comprehension: &'a Comprehension) {
+        self.visit_expr(&comprehension.iter);
+        for test in &comprehension.ifs {
+            self.visit_expr(test);
+        }
+    }
+
+    fn visit_except_handler(&mut self, handler: &'a ExceptHandler) {
+        let ExceptHandler::ExceptHandler(h) = handler;
+        if let Some(type_) = &h.type_ {
+            self.visit_expr(type_);
+        }
+        if let Some(name) = &h.name {
+            self.bind(name.as_str());
+        }
+        self.visit_body(&h.body);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'a Pattern) {
+        visitor::walk_pattern(self, pattern);
+        let name = match pattern {
+            Pattern::MatchAs(p) => &p.name,
+            Pattern::MatchStar(p) => &p.name,
+            Pattern::MatchMapping(p) => &p.rest,
+            _ => return,
+        };
+        if let Some(name) = name {
+            self.bind(name.as_str());
         }
     }
 }
@@ -321,16 +421,6 @@ fn binds_all(body: &[Stmt]) -> bool {
 fn add_public(out: &mut Vec<String>, name: &str) {
     if !name.starts_with('_') && !out.iter().any(|seen| seen == name) {
         out.push(name.to_owned());
-    }
-}
-
-fn target_names(target: &Expr, out: &mut Vec<String>) {
-    match target {
-        Expr::Name(n) => add_public(out, n.id.as_str()),
-        Expr::Tuple(t) => t.elts.iter().for_each(|e| target_names(e, out)),
-        Expr::List(l) => l.elts.iter().for_each(|e| target_names(e, out)),
-        Expr::Starred(s) => target_names(&s.value, out),
-        _ => {}
     }
 }
 
