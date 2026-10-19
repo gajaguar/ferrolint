@@ -859,6 +859,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrolint-test-markers"
+version = "0.16.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
 name = "ferrolint-test-probe"
 version = "0.16.0"
 dependencies = [
