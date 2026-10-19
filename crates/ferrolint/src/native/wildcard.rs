@@ -327,6 +327,46 @@ mod tests {
     }
 
     #[test]
+    fn a_dotted_import_binds_only_its_first_component() {
+        let files = [
+            ("a/__init__.py", "x = 1\ny = 2\na = 3\n"),
+            ("a/b.py", "p = 1\nq = 2\nx = 3\n"),
+            ("c1.py", "import a.b\nfrom a.b import *\nprint(a)\n"),
+            ("c2.py", "import a.b\nfrom a import *\nprint(x)\n"),
+            ("c3.py", "from a import *\nimport a.b\nprint(a)\n"),
+            ("c5.py", "import a.b as ab\nfrom a import *\nprint(ab)\n"),
+            (
+                "c8.py",
+                "import a\nfrom a import *\nfrom a.b import *\nprint(q)\n",
+            ),
+        ];
+        let at = |main: &str| run(&files, &format!("{main}.py"), main);
+        // `import a.b` binds `a`, which the module `a` defines too; the import came first.
+        assert_eq!(
+            at("c1"),
+            "2:W0614:Unused import(s) p, q and x from wildcard import of a.b"
+        );
+        assert_eq!(
+            at("c2"),
+            "2:W0614:Unused import(s) a and y from wildcard import of a"
+        );
+        assert_eq!(
+            at("c3"),
+            "1:W0614:Unused import(s) x and y from wildcard import of a"
+        );
+        // `import a.b as ab` binds only `ab`, so the star still lists `a`.
+        assert_eq!(
+            at("c5"),
+            "2:W0614:Unused import(s) x, y and a from wildcard import of a"
+        );
+        assert_eq!(
+            at("c8"),
+            "2:W0614:Unused import(s) x and y from wildcard import of a\n\
+             3:W0614:Unused import(s) p from wildcard import of a.b"
+        );
+    }
+
+    #[test]
     fn a_nested_star_is_bound_after_the_names_of_the_module() {
         let files = [
             ("pkg/m.py", "a = 1\nb = 2\n"),
