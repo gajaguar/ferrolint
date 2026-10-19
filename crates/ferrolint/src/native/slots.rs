@@ -68,7 +68,7 @@ impl Checker for Slots {
 
 /// The value of the class's last `__slots__ = ...` when every binding of the
 /// name is such a statement of the class body.
-fn slots_value(class: &StmtClassDef) -> Option<&Expr> {
+pub(super) fn slots_value(class: &StmtClassDef) -> Option<&Expr> {
     let all = locals(&class.body)
         .into_iter()
         .filter(|(name, _)| name == "__slots__")
@@ -104,7 +104,7 @@ fn items(value: &Expr) -> Option<Vec<&Expr>> {
 }
 
 /// The slot names of a display of strings, `None` when any item is not one.
-fn names(value: &Expr) -> Option<Vec<&str>> {
+pub(super) fn names(value: &Expr) -> Option<Vec<&str>> {
     items(value)?
         .into_iter()
         .map(|item| match item {

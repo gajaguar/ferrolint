@@ -25,3 +25,4 @@
 211:W0201:Attribute 'extra' defined outside __init__
 214:W0201:Attribute 'other' defined outside __init__
 227:R0902:Too many instance attributes (8/7)
+249:W0201:Attribute 'extra' defined outside __init__

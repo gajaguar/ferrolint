@@ -3,12 +3,12 @@
 //! access-member-before-definition and `R0902` too-many-instance-attributes.
 //!
 //! Pylint's instance attributes are the `x.name` targets whose `x` infers to
-//! an instance of the class. shortcut: here `x` is the first parameter of a
-//! method of the class (or of a function or lambda nested in it that does
-//! not rebind it), so an instance made elsewhere (`view = View(); view.a =
-//! 1`) adds nothing; upgrade with a value inference. The ancestors come from
-//! [`super::hierarchy`]: a class without an MRO is not checked by the rules
-//! that look at its ancestors.
+//! an instance of the class, minus those a `__slots__` leaves out. shortcut:
+//! here `x` is the first parameter of a method of the class (or of a function
+//! or lambda nested in it that does not rebind it), or a name bound once to a
+//! call of the class or of `cls` in one of its classmethods; upgrade with a
+//! value inference. The ancestors come from [`super::hierarchy`]: a class
+//! without an MRO is not checked by the rules that look at its ancestors.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -21,6 +21,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::classes::{Env, Local, bases, is_classmethod, is_static, locals, methods, py_repr};
 use super::hierarchy::{Class, Hierarchy};
 use super::misc::csv;
+use super::slots::{names, slots_value};
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -245,6 +246,9 @@ struct Clients<'a, 'e> {
     /// The value of each name bound by a plain `name = value`, by node id.
     values: HashMap<u32, &'a Expr>,
     frames: Vec<(usize, Option<&'a StmtFunctionDef>)>,
+    classes: Vec<&'a StmtClassDef>,
+    /// The first parameter of each classmethod being walked, with its class.
+    cls: Vec<(&'a str, &'a StmtClassDef)>,
     store: Use,
     out: HashMap<usize, Vec<Site<'a>>>,
 }
@@ -279,6 +283,11 @@ impl<'a> Clients<'a, '_> {
     fn class(&self, expr: &Expr, depth: u8) -> Option<&'a StmtClassDef> {
         if depth > 8 {
             return None;
+        }
+        if let Expr::Name(name) = expr
+            && let Some((_, class)) = self.cls.iter().rev().find(|(p, _)| *p == name.id.as_str())
+        {
+            return Some(class);
         }
         if let Some(class) = self.env.class_of(expr) {
             return Some(class);
@@ -331,11 +340,30 @@ impl<'a> Visitor<'a> for Returns<'a> {
 
 impl<'a> Visitor<'a> for Clients<'a, '_> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Stmt::ClassDef(class) = stmt {
+            self.classes.push(class);
+            visitor::walk_stmt(self, stmt);
+            self.classes.pop();
+            return;
+        }
         if let Stmt::FunctionDef(func) = stmt {
+            let p = &func.parameters;
+            let cls = self
+                .classes
+                .last()
+                .filter(|c| {
+                    is_classmethod(func) && methods(&c.body).iter().any(|m| std::ptr::eq(*m, func))
+                })
+                .zip(p.posonlyargs.first().or(p.args.first()))
+                .map(|(class, first)| (first.parameter.name.as_str(), *class));
+            self.cls.extend(cls);
             self.frames
                 .push((std::ptr::from_ref(func).addr(), Some(func)));
             visitor::walk_stmt(self, stmt);
             self.frames.pop();
+            if cls.is_some() {
+                self.cls.pop();
+            }
             return;
         }
         let saved = self.store;
@@ -548,6 +576,8 @@ impl Checker for InstanceAttrs {
             env: &env,
             values: values.0,
             frames: Vec::new(),
+            classes: Vec::new(),
+            cls: Vec::new(),
             store: Use::Assign,
             out: HashMap::new(),
         };
@@ -646,6 +676,23 @@ impl<'a> Walk<'a, '_> {
         func.is_some_and(|f| self.defining.iter().any(|name| name == f.name.as_str()))
     }
 
+    /// astroid's `ClassDef.slots`: the slot names of `class` and its ancestors
+    /// when every one of them has plain `__slots__`; `None` when one has not,
+    /// or when none names a slot. shortcut: a builtin base is not in the MRO,
+    /// where Pylint finds it without slots and lets any attribute through.
+    fn slots(&self, class: &Class<'a>) -> Option<BTreeSet<String>> {
+        let mut out = BTreeSet::new();
+        for found in self.hierarchy.mro(class)? {
+            let value = slots_value(found.def()?)?;
+            let items = match value {
+                Expr::StringLiteral(s) => vec![s.value.to_str()],
+                _ => names(value)?,
+            };
+            out.extend(items.into_iter().map(str::to_owned));
+        }
+        (!out.is_empty()).then_some(out)
+    }
+
     fn class(&mut self, class: &'a StmtClassDef) {
         let mut own = sites(class);
         own.extend(
@@ -655,11 +702,24 @@ impl<'a> Walk<'a, '_> {
                 .flatten()
                 .cloned(),
         );
+        let mro = self.hierarchy.mro(&Class::Local(class));
+        let mut ancestry = mro.as_deref().map(|mro| Ancestry::new(mro, &self.defining));
+        // astroid's `_can_assign_attr`: a `self.x = ...` outside the slots adds nothing.
+        let keep = |site: &Site<'_>, slots: &Option<BTreeSet<String>>| {
+            !site.is_instance_attr() || slots.as_ref().is_none_or(|s| s.contains(site.name))
+        };
+        let slots = self.slots(&Class::Local(class));
+        own.retain(|s| keep(s, &slots));
+        if let (Some(mro), Some(ancestry)) = (&mro, &mut ancestry) {
+            let ancestors = mro.iter().filter(|c| c.def().is_some()).skip(1);
+            for (found, sites) in ancestors.zip(&mut ancestry.sites) {
+                let slots = self.slots(found);
+                sites.retain(|s| keep(s, &slots));
+            }
+        }
         if self.on(TOO_MANY) {
             self.too_many(class, &own);
         }
-        let mro = self.hierarchy.mro(&Class::Local(class));
-        let ancestry = mro.as_deref().map(|mro| Ancestry::new(mro, &self.defining));
         if self.on(HIDDEN)
             && let (Some(mro), Some(ancestry)) = (&mro, &ancestry)
         {
@@ -989,6 +1049,20 @@ mod tests {
         let expected = include_str!("fixtures/instance_attributes.expected").trim_end();
         assert_eq!(
             render(source, &[], &["W0201", "E0202", "E0203", "R0902"]),
+            expected
+        );
+    }
+
+    #[test]
+    fn instance_attribute_slots() {
+        let source = include_str!("fixtures/instance_attribute_slots.py");
+        let expected = include_str!("fixtures/instance_attribute_slots.expected").trim_end();
+        assert_eq!(
+            render(
+                source,
+                &[("max-attributes", "1")],
+                &["W0201", "E0202", "E0203", "R0902"]
+            ),
             expected
         );
     }

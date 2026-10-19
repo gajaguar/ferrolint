@@ -548,11 +548,12 @@ Known divergences:
 * Pylint infers what `x` in `x.name = value` stands for. Here it is the
   first parameter of a method of the class (or of a function or lambda
   nested in it that does not rebind it), or a name bound once in its
-  scope to a call of a class of the file, `x = Model()`, or of a name
-  bound once to such a class or to a call of a function of the file that
-  returns one. An instance reached any other way (`self.root.x = 1`,
-  `cls.manager.model = ...`) gives the class nothing, so its `W0201` is
-  missed.
+  scope to a call of a class of the file, `x = Model()`, of `cls` in a
+  classmethod of the class, or of a name bound once to such a class or to
+  a call of a function of the file that returns one. An instance reached
+  any other way (`self.root.x = 1`, `cls.manager.model = ...`,
+  `x = self.__class__()`, a name bound twice) gives the class nothing, so
+  its `W0201` is missed.
 * The ancestors are those of Batch G: a class whose MRO is unknown is not
   checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
   ancestor tests of `W0201`. A builtin base such as `dict` or
@@ -563,8 +564,12 @@ Known divergences:
 * A method that a defining method calls excuses `W0201` when any call in
   that method has its name as an attribute (`x.prepare()`), where Pylint
   asks that the callee infer to that bound method.
-* `R0902` and `W0201` ignore `__slots__`, which keeps astroid from
-  recording an attribute outside them.
+* `__slots__` keeps astroid from recording an attribute outside them, for
+  `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
+  ancestor of the file or project give plain slots (a string, list, tuple,
+  set or dict of strings) and one of them names a slot. A builtin base
+  other than `object` is not in the MRO here, where Pylint finds it without
+  slots and records every attribute.
 
 ## Batch I: versions, `super()` and duplicate arguments
 
