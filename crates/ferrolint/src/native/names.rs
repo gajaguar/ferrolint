@@ -1016,13 +1016,24 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    fn assigns_typealias(&self, value: &Expr) -> bool {
+    fn assigns_typealias(&self, value: &Expr, depth: u8) -> bool {
         match value {
             Expr::Subscript(s) => matches!(
                 self.qualified(&s.value).as_deref(),
                 Some("typing.Union" | "typing_extensions.Union")
             ),
             Expr::BinOp(b) if b.op == Operator::BitOr => self.type_like(value),
+            // An alias of an alias: astroid infers the name's only value.
+            Expr::Name(name) if depth < 6 => {
+                self.env
+                    .binding(name)
+                    .is_some_and(|b| b.kind == BindingKind::Assignment && b.scope == 0)
+                    && matches!(
+                        self.binds.get(name.id.as_str()).map(Vec::as_slice),
+                        Some([only]) if only.kind == Bk::Name
+                            && only.value.is_some_and(|v| self.assigns_typealias(v, depth + 1))
+                    )
+            }
             _ => false,
         }
     }
@@ -1283,7 +1294,7 @@ impl<'a> Walk<'a, '_> {
                 self.check(kind, name, range, Some(value));
                 return;
             }
-            if self.assigns_typealias(value) {
+            if self.assigns_typealias(value, 0) {
                 self.check("typealias", name, range, None);
                 return;
             }
@@ -1295,7 +1306,7 @@ impl<'a> Walk<'a, '_> {
             let assigner = &values.elts[index];
             if let Some(kind) = self.typevar_kind(assigner) {
                 self.check(kind, name, range, Some(assigner));
-            } else if self.assigns_typealias(assigner) {
+            } else if self.assigns_typealias(assigner, 0) {
                 self.check("typealias", name, range, None);
             }
             return;
