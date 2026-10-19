@@ -20,6 +20,7 @@ mod bad_super;
 mod booleaness;
 mod calls;
 mod classes;
+mod code_style;
 mod conditions;
 mod contextmgr;
 mod django;
@@ -88,6 +89,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &booleaness::Booleaness,
     &calls::Calls,
     &classes::Classes,
+    &code_style::CodeStyle,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &django::Django,
@@ -115,7 +117,7 @@ const CHECKERS: &[&dyn Checker] = &[
 
 /// The native rules Pylint ships disabled: `select` or an `enable` option
 /// turns them on.
-pub const OFF_BY_DEFAULT: &[&str] = &["C1804", "C1805"];
+pub const OFF_BY_DEFAULT: &[&str] = &["C1804", "C1805", "R6105"];
 
 /// Every native rule.
 pub fn rules() -> Vec<RuleInfo> {

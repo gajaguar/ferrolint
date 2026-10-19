@@ -208,4 +208,24 @@ mod tests {
         let toggles = [(Toggle::Enable, "C"), (Toggle::Disable, "C")];
         assert_eq!(enabled(&toggles), ["A1", "A2"]);
     }
+
+    #[test]
+    fn a_message_off_by_default_needs_enable_or_select() {
+        let registry = Registry::new([rule("R6105", "R6105", "prefer-typing-namedtuple")]).unwrap();
+        let codes = |config: &Config| {
+            let selection = Selection::new(&registry, config).unwrap();
+            selection.for_file(Path::new("x.py")).len()
+        };
+        assert_eq!(codes(&Config::default()), 0);
+        let enable = Config {
+            pylint_disable: vec![(Toggle::Enable, "prefer-typing-namedtuple".to_owned())],
+            ..Config::default()
+        };
+        assert_eq!(codes(&enable), 1);
+        let select = Config {
+            select: Some(vec!["R6105".to_owned()]),
+            ..Config::default()
+        };
+        assert_eq!(codes(&select), 1);
+    }
 }

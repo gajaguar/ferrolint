@@ -142,6 +142,19 @@ impl Model {
             .map(|resolved| self.output(resolved))
     }
 
+    /// Whether `name` is bound in the function, lambda, class or module that
+    /// holds `node` (a comprehension does not count), or in the module.
+    pub fn is_frame_or_module_local(&self, node: u32, name: &str) -> bool {
+        let mut id = self.scope_of_node(node);
+        while let Some(scope) = id.map(|id| &self.scopes[id as usize]) {
+            if !matches!(scope.kind, ScopeKind::Comprehension | ScopeKind::TypeParams) {
+                return scope.names.contains_key(name) || self.scopes[0].names.contains_key(name);
+            }
+            id = scope.parent;
+        }
+        false
+    }
+
     /// Whether `binding` is the only binding of its name in its scope.
     pub fn is_sole_binding(&self, binding: u32) -> bool {
         let Some(data) = self.bindings.get(binding as usize) else {
