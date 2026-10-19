@@ -72,3 +72,6 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 
 pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, SELECT, PY_VERSION, MSG (also compare the message), STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex)
 	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" SELECT="$(SELECT)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" tools/pylint-compare.sh
+
+# `plugins` is also a directory, so without this make calls the target up to date.
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare
