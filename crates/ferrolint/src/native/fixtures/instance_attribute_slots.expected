@@ -1,0 +1,7 @@
+1:R0902:Too many instance attributes (2/1)
+27:R0902:Too many instance attributes (2/1)
+34:R0902:Too many instance attributes (2/1)
+44:R0902:Too many instance attributes (2/1)
+70:R0902:Too many instance attributes (2/1)
+75:W0201:Attribute 'm' defined outside __init__
+76:W0201:Attribute 'n' defined outside __init__

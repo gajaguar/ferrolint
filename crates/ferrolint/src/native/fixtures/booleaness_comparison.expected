@@ -1,0 +1,42 @@
+20:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+22:C1803:"tup == ()" can be simplified to "not tup", if it is strictly a sequence, as an empty tuple is falsey
+24:C1803:"dct == {}" can be simplified to "not dct", if it is strictly a sequence, as an empty dict is falsey
+26:C1803:"st == []" can be simplified to "not st", if it is strictly a sequence, as an empty list is falsey
+28:C1803:"txt == []" can be simplified to "not txt", if it is strictly a sequence, as an empty list is falsey
+30:C1803:"byt == []" can be simplified to "not byt", if it is strictly a sequence, as an empty list is falsey
+38:C1803:"listcall == []" can be simplified to "not listcall", if it is strictly a sequence, as an empty list is falsey
+40:C1803:"dictcall == {}" can be simplified to "not dictcall", if it is strictly a sequence, as an empty dict is falsey
+42:C1803:"strcall == []" can be simplified to "not strcall", if it is strictly a sequence, as an empty list is falsey
+44:C1803:"tuplecall == ()" can be simplified to "not tuplecall", if it is strictly a sequence, as an empty tuple is falsey
+48:C1803:"alias == []" can be simplified to "not alias", if it is strictly a sequence, as an empty list is falsey
+50:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+52:C1803:"x == []" can be simplified to "not x", if it is strictly a sequence, as an empty list is falsey
+56:C1803:"x != ()" can be simplified to "x", if it is strictly a sequence, as an empty tuple is falsey
+58:C1803:"x == []" can be simplified to "not x", if it is strictly a sequence, as an empty list is falsey
+60:C1803:"x != []" can be simplified to "x", if it is strictly a sequence, as an empty list is falsey
+62:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+64:C1803:"lst < []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+66:C1803:"lst >= {}" can be simplified to "not lst", if it is strictly a sequence, as an empty dict is falsey
+76:C1803:"list(...) == []" can be simplified to "not list(...)", if it is strictly a sequence, as an empty list is falsey
+78:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+80:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+83:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+84:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+85:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+86:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+89:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+90:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+91:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+92:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+93:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+94:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+96:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+100:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+101:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+102:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+103:C1803:"lst != []" can be simplified to "lst", if it is strictly a sequence, as an empty list is falsey
+105:C1803:"lst != []" can be simplified to "bool(lst)", if it is strictly a sequence, as an empty list is falsey
+111:C1803:"items == []" can be simplified to "not items", if it is strictly a sequence, as an empty list is falsey
+111:C1803:"names != ()" can be simplified to "bool(names)", if it is strictly a sequence, as an empty tuple is falsey
+116:C1803:"members == {}" can be simplified to "not members", if it is strictly a sequence, as an empty dict is falsey
+119:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey

@@ -43,9 +43,18 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
   the normal one. With `BIN` too, ferrolint runs with no temporary
   configuration: it reads the copy's `.pylintrc`, options included, like a project
   does, and `PY_VERSION` is appended to it; `IGNORE` has no effect.
+* `SELECT`: comma-separated rule codes for the temporary configuration's
+  `select`, like `I0011,I0013`. Pylint's informational pragma messages are off
+  by default in both linters: run Pylint with `--enable=I` in `PYLINT` and
+  name them here. It has no effect with `STRIP` and `BIN`.
 * `ONLY`: an extended regular expression on the Pylint msg-id, like
   `^(W0134|W0137)$` or `^W01`; only matching findings are compared, on both
   sides.
+* `MSG`: set to `1` to compare the message as well as the line. Pylint then
+  runs with a template that adds its message, and each finding becomes
+  `path:line:Pxxxx:message`, with whitespace collapsed on both sides. A
+  `PYLINT_OUT` reused with `MSG=1` must come from a `MSG=1` run, since
+  a file without messages yields no Pylint findings.
 
 Pylint takes minutes on a large codebase, so keep `PYLINT_OUT` and delete it
 when the code or the Pylint configuration changes.
@@ -55,7 +64,8 @@ when the code or the Pylint configuration changes.
 Each finding becomes `path:line:Pxxxx`, with the Pylint code that the rule
 declares, and each side is reduced to a set. The tool prints `solo-ferrolint`
 and `solo-pylint` with their counts and exits with 1 if either has a finding.
-It compares the line, not the column or the message.
+It compares the line, not the column; `MSG=1` adds the message, so a finding
+whose message differs in wording shows up as a solo finding on each side.
 
 A finding in a configuration file is compared too, as `.pylintrc:1:E0015`:
 both tools put it on line 1 of the file. Pylint reports `E0013` under the

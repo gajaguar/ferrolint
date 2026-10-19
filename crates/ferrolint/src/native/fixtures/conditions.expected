@@ -96,3 +96,4 @@
 239:C0325:Unnecessary parens after 'not' keyword
 242:C0117:Consider changing "not 1 == 2" to "1 != 2"
 242:C0325:Unnecessary parens after 'not' keyword
+246:R1727:Boolean condition 'a.get('k', 1) or True' will always evaluate to 'True'

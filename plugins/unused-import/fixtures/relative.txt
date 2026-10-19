@@ -1,3 +1,5 @@
 2:0:W0611:unused-import:Unused import sibling
 3:0:W0611:unused-import:Unused thing imported from pkg as other
 4:0:W0611:unused-import:Unused helper imported from parent.module
+11:4:W0611:unused-import:Unused local_other imported from  as renamed
+12:4:W0611:unused-import:Unused local_thing imported from pkg

@@ -23,3 +23,6 @@
 34:C0103:Type alias name "sub" doesn't conform to predefined naming style
 35:C0103:Class name "clsAlias" doesn't conform to PascalCase naming style
 36:C0103:Class name "clsLower" doesn't conform to PascalCase naming style
+38:C0103:Type alias name "aliasA" doesn't conform to predefined naming style
+39:C0103:Type alias name "aliasB" doesn't conform to predefined naming style
+40:C0103:Type alias name "aliasC" doesn't conform to predefined naming style

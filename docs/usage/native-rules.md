@@ -13,7 +13,9 @@ the scope model of the file, with no plugin. Its code is the Pylint msg-id,
 so `C0209` and `consider-using-f-string` name the same rule, and its message
 is Pylint's own text, so the output compares line by line.
 
-Native rules are active by default like every other rule. They select,
+Native rules are active by default like every other rule, except the messages
+that Pylint ships disabled (`C1804`, `C1805`, `R6105` and the pragma messages
+of Batch N). They select,
 ignore and suppress like a plugin's: with `select`, `ignore`, a
 `# pylint: disable=` comment or `# noqa: C0209`. They read the Pylint
 options that the configuration carries (see
@@ -231,8 +233,7 @@ call:
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
   literal, a container, a lambda, or `not`, `-` and `+` of one; Pylint also
   folds operations and comparisons of constants and names that hold them.
-  The code a message quotes is the source text, except for strings, `not`,
-  comparisons and boolean operations, which are written as astroid does.
+  The code a message quotes is written as astroid does.
 * `C0117` fires for a comparison whose two sides have a known type: a
   literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
   a call of a builtin class, or `len` of one of these. Pylint infers more.
@@ -286,11 +287,17 @@ Imports:
   and a star in a function or class, and counts the names in the file's own
   literal `__all__` as read. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
-  and packages of `VIRTUAL_ENV`), so a module that is not found, or is a C
-  module, is skipped (a module is also matched by the case it is spelled
-  in, even where the file system ignores it); the result depends on another
-  file, so it is as stale as the cache is (see the project module's shortcut
-  note).
+  and packages of `VIRTUAL_ENV`), so a module that is not found is skipped
+  (a module is also matched by the case it is spelled in, even where the
+  file system ignores it); the result depends on another file, so it is as
+  stale as the cache is (see the project module's shortcut note). A C or
+  builtin module of the standard library (`math`, `itertools`, `time`) has
+  no file, so its public names, sorted as Python's `dir` lists them, come
+  from a table that `make c-module-names` dumps into
+  `src/c_module_names.rs` from one Python version (3.14); another version
+  may bind other names, a module of another platform is missing, and
+  `builtins` lacks the type names (`generator`, `NoneType`, ...) that
+  astroid adds to it.
 
 Variables and scopes:
 
@@ -548,11 +555,12 @@ Known divergences:
 * Pylint infers what `x` in `x.name = value` stands for. Here it is the
   first parameter of a method of the class (or of a function or lambda
   nested in it that does not rebind it), or a name bound once in its
-  scope to a call of a class of the file, `x = Model()`, or of a name
-  bound once to such a class or to a call of a function of the file that
-  returns one. An instance reached any other way (`self.root.x = 1`,
-  `cls.manager.model = ...`) gives the class nothing, so its `W0201` is
-  missed.
+  scope to a call of a class of the file, `x = Model()`, of `cls` in a
+  classmethod of the class, or of a name bound once to such a class or to
+  a call of a function of the file that returns one. An instance reached
+  any other way (`self.root.x = 1`, `cls.manager.model = ...`,
+  `x = self.__class__()`, a name bound twice) gives the class nothing, so
+  its `W0201` is missed.
 * The ancestors are those of Batch G: a class whose MRO is unknown is not
   checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
   ancestor tests of `W0201`. A builtin base such as `dict` or
@@ -563,8 +571,12 @@ Known divergences:
 * A method that a defining method calls excuses `W0201` when any call in
   that method has its name as an attribute (`x.prepare()`), where Pylint
   asks that the callee infer to that bound method.
-* `R0902` and `W0201` ignore `__slots__`, which keeps astroid from
-  recording an attribute outside them.
+* `__slots__` keeps astroid from recording an attribute outside them, for
+  `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
+  ancestor of the file or project give plain slots (a string, list, tuple,
+  set or dict of strings) and one of them names a slot. A builtin base
+  other than `object` is not in the MRO here, where Pylint finds it without
+  slots and records every attribute.
 
 ## Batch I: versions, `super()` and duplicate arguments
 
@@ -629,8 +641,9 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* `no-self-use` and `R0201` count as known: Pylint reports `R0022` for them
-  unless `pylint.extensions.no_self_use` is in `load-plugins`.
+* `no-self-use` and `R0201` in a `disable` or `enable` option are `R0022`
+  unless `pylint.extensions.no_self_use` is in `load-plugins`. In an inline
+  pragma they still count as known.
 * A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint
@@ -643,3 +656,175 @@ Not ported: `fatal`, `astroid-error`, `parse-error`, `config-parse-error`,
 `wrong-spelling-*` family: they report a failure of Pylint's own machinery or
 need what ferrolint does not run (astroid, a Django setup, a spelling
 dictionary).
+
+## Batch K: messages of Pylint's bundled extensions
+
+These five rules port checkers of `pylint.extensions`. Like the
+`pylint_django` messages, they report only when the option `load-plugins`
+names the extension (a comma list), because Pylint loads none of them by
+default. A `.pylintrc` project carries the option already; a
+`ferrolint.toml` project must set it:
+
+```toml
+[options]
+load-plugins = "pylint.extensions.while_used, pylint.extensions.confusing_elif"
+```
+
+* `W0149` `while-used` (`pylint.extensions.while_used`): every `while` loop,
+  on its `while` line.
+* `C3401` `dict-init-mutate` (`pylint.extensions.dict_init_mutate`): a
+  statement `d = {...}` that a subscript assignment `d[k] = v` follows at once
+  in the same block. The message suggests the literal with the keys of the
+  assignments that follow in a row, cut after 64 characters. A tuple target,
+  a chained target, an annotated target and a dict comprehension do not match.
+* `R3501` `consider-refactoring-into-while-condition`
+  (`pylint.extensions.consider_refactoring_into_while_condition`): a loop
+  whose condition is a truthy constant and whose first statements are `if`
+  statements that start with `break`, with their `elif` branches. The message
+  gives the inverted conditions to move into the `while`.
+* `R5601` `confusing-consecutive-elif` (`pylint.extensions.confusing_elif`):
+  an `elif` right after an `if` block whose last statement is an `if` with no
+  `else`, reported on the `elif` line.
+* `R6106` `consider-math-not-float` (`pylint.extensions.code_style`):
+  `float('inf')`, `float('-inf')` and `float('nan')` on the builtin, including
+  a misspelling such as `float('infinty')`, which reads as the closest of
+  `inf` and `nan` as Pylint's `difflib` match does. A string with only digits,
+  signs, dots and `e` is a number and stays silent.
+
+Known divergences:
+
+* The message of `C3401`, `R3501` and `R6106` quotes expressions the way
+  astroid prints them. A lambda, an f-string and a complex number with an
+  exponent print as their source text or in Rust's form instead.
+* `R6106` sees the callee `float` and `builtins.float`, including a name
+  imported from `builtins`. Pylint also infers a call through an alias such as
+  `f = float` and `f('inf')`; that one is not reported.
+* The `code_style` extension's other messages are not ported here.
+
+## Batch L: literal comparisons and slices
+
+* `C1803` `use-implicit-booleaness-not-comparison`: `==`, `!=`, `<`, `<=`, `>`
+  or `>=` between a value and an empty list, tuple or dict literal, with the
+  value on either side. The message suggests `not x`, or for `!=` `x` in a
+  truth test (`if`, `while`, `assert`, a conditional expression, `not`, a
+  comprehension filter, `bool(...)`, `any`/`all` of a generator, `filter` of a
+  lambda, and `and`/`or` inside them) and `bool(x)` elsewhere.
+* `C1804` `use-implicit-booleaness-not-comparison-to-string` and `C1805`
+  `use-implicit-booleaness-not-comparison-to-zero`: `==`, `!=`, `is` or
+  `is not` against `""` or against `0`, `0.0` or `0j` (not `False`). Pylint
+  ships both disabled, so ferrolint reports them only when `select` names
+  them or an `enable` option reaches them (`enable=C1804`, `enable=all`).
+* `E1143` `unhashable-member`: a list, dict or set as a dict key, a set
+  member, or the subscript of a dict literal.
+* `E1144` `invalid-slice-step`: `x[::0]` on a list, tuple, string or bytes;
+  assigning or deleting a slice is checked for a list only, as Pylint does.
+  A step of `False`, `0.0` or `0j` counts, `-0` does not.
+
+Known divergences:
+
+* Pylint infers the compared or subscripted value. Here a value has a type
+  only when it is a list, tuple, dict, set, string or bytes literal, a call
+  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name bound once
+  by a plain assignment to one of those. A parameter, an attribute, a call of
+  another function, an instance of a class, a name bound twice, `range(...)`
+  and `slice(...)` objects are silent where Pylint may report.
+* `C1803` is silent for a number, a float and a bool, as in Pylint, but
+  Pylint also reports a `None`, a class, a function, a module and an instance
+  of a class without `__bool__`; those are not reported.
+* A category toggle (`enable=C`) does not reach a native rule, so it does not
+  turn `C1804` or `C1805` on; name them or use `all`.
+* `E1143` checks only the key or member itself: a comprehension, a
+  conditional expression and an instance of a class are not looked at.
+* `R6104` `consider-using-augmented-assign`, the `code_style` extension's
+  other message, is not ported; Pylint disables it by default.
+
+## Batch M: the code_style and bad_builtin messages
+
+Like Batch K, these report only when `load-plugins` names the extension's
+module.
+
+* `R6101` `consider-using-namedtuple-or-dataclass`
+  (`pylint.extensions.code_style`): a dict of more than one entry, written as
+  the value of a module-level assignment or of an annotated assignment marked
+  `Final` (`Final`, `typing.Final`, `Final[...]`), whose values are all dicts
+  with string keys and one key in common, or all lists or tuples of one
+  non-zero length that are not all made of dicts. Reported on the dict.
+* `R6102` `consider-using-tuple`: a list literal as the iterable of a `for`
+  statement or of a comprehension clause. An `async for` statement is not
+  reported, as in Pylint.
+* `R6103` `consider-using-assignment-expr`: an `if` whose test is a name, a
+  `not` name or a comparison with one operator on a name, right after a
+  one-line `name = value` or `name: T = value`. The message holds the whole
+  `if` line with the first occurrence of the name replaced, as Pylint does it.
+  Nothing is reported when `py-version` is below 3.8, when the suggestion is
+  longer than `max-line-length-suggestions` (`max-line-length` when it is 0,
+  100 by default) with the column of the `if`, or when a comparison is
+  followed by another `if` testing the same name (a `match` fits better). It
+  reads the `if` that opens a chain, so an `elif` never reports.
+* `R6105` `prefer-typing-namedtuple` (`pylint.extensions.code_style`): a call
+  to `collections.namedtuple`, through `import collections`, an alias or a
+  `from` import. Pylint disables it by default and so does ferrolint: it
+  reports after `enable=prefer-typing-namedtuple` (or `enable=all`) in a
+  Pylint configuration, or with `select`.
+* `W0141` `bad-builtin` (`pylint.extensions.bad_builtin`): a call by name to
+  a function listed in `bad-functions` (`map` and `filter` by default) that
+  neither the function around the call nor the module binds. The message for
+  `map` and `filter` adds the hint to use a list comprehension.
+
+Known divergences:
+
+* `R6101` takes a dict key as a string only when it is a string literal;
+  Pylint also infers a name or an expression to a string, and then compares
+  the keys by their printed text.
+* `R6103` prints an f-string and a lambda in the suggestion as their source
+  text (see the divergences of Batch K).
+* `R6105` sees the callee through the imports of `collections` only; Pylint
+  also infers a call through an alias such as `maker = namedtuple`.
+
+## Batch N: the messages about `# pylint:` pragmas
+
+Pylint tells about its own pragmas with informational messages that it leaves
+off by default, and so does ferrolint: they report when `select` lists them or
+a Pylint `enable` names them by id or symbol (`enable=locally-disabled`).
+
+A pragma is read as Pylint reads it: the last `pylint:` of a comment counts,
+up to the next `;` or `#`, so `# pylint: disable=a; enable=b` is only the
+`disable`.
+
+* `I0010` `bad-inline-option`: `disable`, `enable`, `disable-next`,
+  `disable-msg` or `enable-msg` with no names, or with names but no `=`. The
+  message quotes the keyword.
+* `I0011` `locally-disabled`: one finding per message a `disable`,
+  `disable-next` or `disable-msg` pragma turns off, on the pragma's line (the
+  next one for `disable-next`), as `Locally disabling unused-import (W0611)`.
+  A category letter (`disable=W`) or a checker name (`disable=imports`) gives
+  one finding for each of its messages. A legacy id or symbol gives the
+  current message.
+* `I0013` `file-ignored`: `skip-file`, `disable-all` or `disable=all`. Pylint
+  stops reading the pragmas of the file there, and so do these five rules;
+  ferrolint still lints the file.
+* `I0022` `deprecated-pragma`: `disable-msg`, `enable-msg`, `disable-all` or
+  `disable=all`, with the pragma to use instead.
+* `I0023` `use-symbolic-message-instead`: a message named by its id in a
+  `disable`, `enable`, `disable-next`, `disable-msg` or `enable-msg` pragma.
+  A skipped file gets none.
+
+A `disable` pragma hides these five messages from its own line to the end of
+the innermost block, and the module ends with its last statement: a pragma
+after it hides nothing, and a pragma never hides a message above it. This is
+not the block rule of the other messages.
+
+Known divergences:
+
+* Only Pylint's own messages are known: a name that belongs to an extension,
+  to `pylint_django` or to a plugin gives no `I0011` and no `I0023`.
+* `disable-next=all` and `disable-msg=all` give no `I0011`; Pylint gives one
+  for each message that is off by default.
+* `enable=I` and the other category letters do not switch these messages on
+  (they never reach a native rule); name them by id or symbol.
+* A comment after a backslash continuation is reported on its own line, and
+  the names of one pragma hide one another only through the block rule above.
+* `I0020` `suppressed-message` and `I0021` `useless-suppression` are not
+  ported: they need to know which pragma silenced each finding, and `I0021`
+  would call a pragma useless when it names a message ferrolint does not
+  implement.

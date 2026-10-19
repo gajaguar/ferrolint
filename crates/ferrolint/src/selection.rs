@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use ferrolint_core::Registry;
 use globset::{Glob, GlobMatcher};
 
+use crate::checks;
 use crate::config::Config;
 use crate::discover::display_path;
 use crate::error::{Error, Result};
@@ -29,7 +30,12 @@ impl Selection {
     pub fn new(registry: &Registry, config: &Config) -> Result<Self> {
         let mut enabled: BTreeSet<String> = match &config.select {
             Some(select) => resolve_all(registry, "select", select)?,
-            None => registry.rules().map(|rule| rule.code.clone()).collect(),
+            None => registry
+                .rules()
+                .map(|rule| rule.code.clone())
+                .filter(|code| !crate::native::OFF_BY_DEFAULT.contains(&code.as_str()))
+                .filter(|code| !checks::PRAGMA_MESSAGES.iter().any(|(id, _)| id == code))
+                .collect(),
         };
         for code in resolve_all(registry, "ignore", &config.ignore)? {
             enabled.remove(&code);
@@ -166,6 +172,55 @@ mod tests {
     }
 
     #[test]
+    fn a_rule_pylint_ships_disabled_needs_an_enable() {
+        let registry = Registry::new([
+            rule("A1", "W0611", "unused-import"),
+            rule(
+                "C1804",
+                "C1804",
+                "use-implicit-booleaness-not-comparison-to-string",
+            ),
+        ])
+        .unwrap();
+        let with = |toggles: Vec<(Toggle, String)>| {
+            let config = Config {
+                pylint_disable: toggles,
+                ..Config::default()
+            };
+            let selection = Selection::new(&registry, &config).unwrap();
+            selection
+                .for_file(Path::new("x.py"))
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(with(vec![]), ["A1"]);
+        assert_eq!(
+            with(vec![(Toggle::Enable, "C1804".into())]),
+            ["A1", "C1804"]
+        );
+        assert_eq!(with(vec![(Toggle::Enable, "all".into())]), ["A1", "C1804"]);
+    }
+
+    #[test]
+    fn pragma_messages_are_off_until_enabled() {
+        let registry = Registry::new([
+            rule("I0011", "I0011", "locally-disabled"),
+            rule("A1", "W0611", "unused-import"),
+        ])
+        .unwrap();
+        let on = |toggles: Vec<(Toggle, String)>| {
+            let config = Config {
+                pylint_disable: toggles,
+                ..Config::default()
+            };
+            let selection = Selection::new(&registry, &config).unwrap();
+            selection.is_enabled("I0011")
+        };
+        assert!(!on(vec![]));
+        assert!(on(vec![(Toggle::Enable, "locally-disabled".into())]));
+    }
+
+    #[test]
     fn categories_and_all_expand_and_enable_reverts_in_order() {
         assert_eq!(enabled(&[(Toggle::Disable, "W")]), ["A3"]);
         assert_eq!(enabled(&[(Toggle::Disable, "all")]).len(), 0);
@@ -173,5 +228,25 @@ mod tests {
         assert_eq!(enabled(&toggles), ["A1"]);
         let toggles = [(Toggle::Enable, "C"), (Toggle::Disable, "C")];
         assert_eq!(enabled(&toggles), ["A1", "A2"]);
+    }
+
+    #[test]
+    fn a_message_off_by_default_needs_enable_or_select() {
+        let registry = Registry::new([rule("R6105", "R6105", "prefer-typing-namedtuple")]).unwrap();
+        let codes = |config: &Config| {
+            let selection = Selection::new(&registry, config).unwrap();
+            selection.for_file(Path::new("x.py")).len()
+        };
+        assert_eq!(codes(&Config::default()), 0);
+        let enable = Config {
+            pylint_disable: vec![(Toggle::Enable, "prefer-typing-namedtuple".to_owned())],
+            ..Config::default()
+        };
+        assert_eq!(codes(&enable), 1);
+        let select = Config {
+            select: Some(vec!["R6105".to_owned()]),
+            ..Config::default()
+        };
+        assert_eq!(codes(&select), 1);
     }
 }

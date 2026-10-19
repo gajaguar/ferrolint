@@ -129,14 +129,17 @@ impl UnusedImport {
         let Some(binding) = cx.resolve(alias) else {
             return;
         };
+        // Pylint words a relative import with no module ("from . import x")
+        // as "import x" in a module and as "x imported from " in a function.
         let imported = match module.map(|module| module.trim_start_matches('.')) {
-            None | Some("") => match asname {
-                None => format!("import {dotted}"),
-                Some(asname) => format!("{dotted} imported as {asname}"),
-            },
-            Some(module) => match asname {
+            Some(module) if !module.is_empty() || scope.kind == ScopeKind::Function => match asname
+            {
                 None => format!("{dotted} imported from {module}"),
                 Some(asname) => format!("{dotted} imported from {module} as {asname}"),
+            },
+            _ => match asname {
+                None => format!("import {dotted}"),
+                Some(asname) => format!("{dotted} imported as {asname}"),
             },
         };
         self.imports.push(Import {

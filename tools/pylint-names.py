@@ -20,6 +20,13 @@ from pylint.message._deleted_message_ids import (
 
 linter = PyLinter()
 initialize(linter)
+# Pylint's own messages, before an extension or a plugin adds its own.
+core = [
+    (m.msgid, m.symbol, m.msgid, m.symbol, m.checker_name)
+    for m in linter.msgs_store.messages
+]
+for m in linter.msgs_store.messages:
+    core.extend((i, s, m.msgid, m.symbol, m.checker_name) for i, s in m.old_names)
 extensions = [
     f"pylint.extensions.{m.name}"
     for m in pkgutil.iter_modules(pylint.extensions.__path__)
@@ -61,6 +68,13 @@ emit("OPTIONS", "Every option Pylint, its extensions and `pylint_django` accept.
 emit("CHECKERS", "The checker names, which `disable` and `enable` accept like a category.", linter._checkers)
 emit("MESSAGES", "Every message id and symbol, current or legacy, sorted.", known)
 emit("DELETED", "Message ids and symbols Pylint removed or moved to an extension.", deleted)
+print("/// Pylint's own messages as `(id, symbol, current id, current symbol, checker)`;")
+print("/// a legacy name has the current message's id and symbol after its own.")
+print("#[rustfmt::skip]")
+print("pub const CORE_MESSAGES: &[(&str, &str, &str, &str, &str)] = &[")
+for row in sorted(core):
+    print("    (" + ", ".join(f'"{v}"' for v in row) + "),")
+print("];\n")
 print(
     "/// Whether `name` is in the sorted `list`.\n"
     "pub fn contains(list: &[&str], name: &str) -> bool {\n"

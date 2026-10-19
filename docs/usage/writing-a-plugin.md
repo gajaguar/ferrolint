@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 
 [dependencies.ferrolint-plugin-sdk]
 path = "../../crates/ferrolint-plugin-sdk"
-version = "=0.3.1"
+version = "=0.4.0"
 ```
 
 Pin the SDK exactly: its version is the version of the
@@ -71,9 +71,10 @@ export_checker!(NoPrint);
   option set only for this plugin, in the `options` table of its
   `[[plugins]]` entry. `plugins/test-markers` uses both: it reports the
   comments that hold a marker its `markers` option names.
-* A plugin built with SDK 0.3.1 needs a host of contract 0.3.1. That host
-  still loads plugins built with SDK 0.3.0, but not with 0.2.x: rebuild
-  those.
+* A plugin built with SDK 0.4.0 needs a host of contract 0.4.0. That host
+  refuses plugins built with SDK 0.3.x or older: rebuild those.
+* A `Comment` also has `own_line`, true when only whitespace precedes it on
+  its line, so a plugin can tell a comment-only line from a trailing comment.
 * A `Diagnostic` takes its rule's severity unless it sets one, and may
   carry a `Fix` (`Fix::replace`, `Fix::delete`). The host reports a fix and
   never applies it.

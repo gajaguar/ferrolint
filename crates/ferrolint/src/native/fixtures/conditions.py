@@ -240,3 +240,9 @@ class Eq:
 
     def __eq__(self, other):
         return not (1 == 2)
+
+
+def multiline(a):
+    if a.get(
+        'k',   1) or True:
+        pass

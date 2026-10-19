@@ -97,7 +97,7 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
                 self.out.push(self.ctx.report(
                     RETURN,
                     stmt,
-                    "'return' shouldn't be used inside a 'finally' block",
+                    "'return' shadowed by the 'finally' clause.",
                 ));
             }
             // A `break` leaves a loop that started outside the `finally`.
@@ -108,7 +108,7 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
                 self.out.push(self.ctx.report(
                     BREAK,
                     stmt,
-                    "'break' shouldn't be used inside a 'finally' block",
+                    "'break' discouraged inside 'finally' clause",
                 ));
             }
             _ => visitor::walk_stmt(self, stmt),
@@ -118,32 +118,12 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::native::lint;
+    use crate::native::classes::render;
 
     #[test]
     fn return_and_break_in_finally() {
-        let source = "\
-def f():
-    try:
-        pass
-    finally:
-        return 1
-
-for _ in []:
-    try:
-        pass
-    finally:
-        break
-
-try:
-    pass
-finally:
-    for _ in []:
-        break
-    def g():
-        return 2
-";
-        let found = lint(source);
-        assert_eq!(found, [(5, "W0134".to_owned()), (11, "W0137".to_owned())]);
+        let source = include_str!("fixtures/finally.py");
+        let expected = include_str!("fixtures/finally.expected").trim_end();
+        assert_eq!(render(source, &[], &["W0134", "W0137"]), expected);
     }
 }

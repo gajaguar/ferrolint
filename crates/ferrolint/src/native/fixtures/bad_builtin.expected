@@ -1,0 +1,15 @@
+6:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+7:W0141:Used builtin function 'filter'. Using a list comprehension can be clearer.
+11:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+12:W0141:Used builtin function 'filter'. Using a list comprehension can be clearer.
+12:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+15:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+20:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+36:W0141:Used builtin function 'filter'. Using a list comprehension can be clearer.
+42:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+51:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+55:W0141:Used builtin function 'filter'. Using a list comprehension can be clearer.
+55:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+58:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+62:W0141:Used builtin function 'map'. Using a list comprehension can be clearer.
+65:W0141:Used builtin function 'filter'. Using a list comprehension can be clearer.

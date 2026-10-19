@@ -23,9 +23,10 @@ pub trait Semantic {
             resolved: false,
         }
     }
-    /// The ranges of the file's comments, in source order. A native test
-    /// that does not care answers that there are none.
-    fn comment_ranges(&self) -> Vec<Range> {
+    /// The file's comments in source order, each as its range and whether
+    /// it is alone on its line. A native test that does not care answers
+    /// that there are none.
+    fn comment_list(&self) -> Vec<(Range, bool)> {
         Vec::new()
     }
     /// The options the configuration gives this plugin alone, sorted by
@@ -40,6 +41,8 @@ pub trait Semantic {
 pub struct Comment<'a> {
     pub range: Range,
     pub text: &'a str,
+    /// True when only whitespace precedes the comment on its line.
+    pub own_line: bool,
 }
 
 /// The host's answers, through the contract's `semantic` import.
@@ -62,8 +65,11 @@ impl Semantic for HostSemantic {
         crate::bindings::ferrolint::plugin::inference::infer(node)
     }
 
-    fn comment_ranges(&self) -> Vec<Range> {
-        crate::bindings::ferrolint::plugin::comments::comment_ranges()
+    fn comment_list(&self) -> Vec<(Range, bool)> {
+        crate::bindings::ferrolint::plugin::comments::comment_list()
+            .into_iter()
+            .map(|comment| (comment.range, comment.own_line))
+            .collect()
     }
 
     fn plugin_options(&self) -> Vec<(String, String)> {
@@ -133,12 +139,16 @@ impl<'a> Context<'a> {
         self.comments.get_or_init(|| {
             let source = self.file.source.as_str();
             self.semantic
-                .comment_ranges()
+                .comment_list()
                 .into_iter()
-                .filter_map(|range| {
+                .filter_map(|(range, own_line)| {
                     let text =
                         source.get(range.start.offset as usize..range.end.offset as usize)?;
-                    Some(Comment { range, text })
+                    Some(Comment {
+                        range,
+                        text,
+                        own_line,
+                    })
                 })
                 .collect()
         })
@@ -264,18 +274,21 @@ mod tests {
         fn resolve(&self, _node: u32) -> Option<Binding> {
             None
         }
-        fn comment_ranges(&self) -> Vec<Range> {
-            // `# one` at offsets 2..7 and `# two` at 10..15; a third
-            // range past the source is dropped.
+        fn comment_list(&self) -> Vec<(Range, bool)> {
+            // `# one` at offsets 2..7 (trailing) and `# two` at 10..15
+            // (alone on its line); a third range past the source is dropped.
             let at = |offset| crate::Position {
                 offset,
                 line: 1,
                 column: offset + 1,
             };
-            [(2, 7), (10, 15), (90, 95)]
-                .map(|(start, end)| Range {
-                    start: at(start),
-                    end: at(end),
+            [(2, 7, false), (10, 15, true), (90, 95, true)]
+                .map(|(start, end, own_line)| {
+                    let range = Range {
+                        start: at(start),
+                        end: at(end),
+                    };
+                    (range, own_line)
                 })
                 .to_vec()
         }
@@ -299,6 +312,8 @@ mod tests {
         let cx = Context::new(&file, &[], &semantic);
         let texts: Vec<_> = cx.comments().iter().map(|comment| comment.text).collect();
         assert_eq!(texts, ["# one", "# two"]);
+        let own_lines: Vec<_> = cx.comments().iter().map(|c| c.own_line).collect();
+        assert_eq!(own_lines, [false, true]);
     }
 
     #[test]

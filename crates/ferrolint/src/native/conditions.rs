@@ -8,8 +8,7 @@
 //! when it is written as a literal, or is a name bound once to a function,
 //! class, lambda or generator expression of this file; a condition folds
 //! only literals, containers and `not`/`-`/`+` of them; `C0117` needs a
-//! literal on both sides. The code that a message quotes is the source text,
-//! not astroid's rendering of it. Upgrade with an inference of values.
+//! literal on both sides. Upgrade with an inference of values.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -22,6 +21,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange};
 
+use super::astring::as_string;
 use super::classes::{Env, py_repr};
 use super::flow::{const_truth, own_returns};
 use super::{Checker, Ctx, rule};
@@ -162,8 +162,7 @@ impl<'a> Walk<'a, '_> {
         &self.env.ctx.source[expr.range()]
     }
 
-    /// The expression as astroid prints it, for the parts a message quotes
-    /// most often; the source text for any other part.
+    /// The expression as astroid prints it.
     fn show(&self, expr: &'a Expr) -> String {
         let wrap = |e: &'a Expr| {
             let text = self.show(e);
@@ -192,27 +191,12 @@ impl<'a> Walk<'a, '_> {
             }
             Expr::UnaryOp(u) if u.op == UnaryOp::Not => format!("not {}", wrap(&u.operand)),
             Expr::BoolOp(_) => self.render(&Self::original(expr)),
-            other => self.text(other).to_owned(),
+            other => as_string(self.env.ctx.source, other),
         }
     }
 
     /// Record the value of every simple assignment, for the names it binds.
     fn collect(&mut self, body: &'a [Stmt]) {
-        struct Assigned<'a, 'm>(&'m mut HashMap<u32, &'a Expr>);
-        impl<'a> Visitor<'a> for Assigned<'a, '_> {
-            fn visit_stmt(&mut self, stmt: &'a Stmt) {
-                if let Stmt::Assign(assign) = stmt {
-                    for target in &assign.targets {
-                        if let Expr::Name(name) = target
-                            && let Some(id) = name.node_index().load().as_u32()
-                        {
-                            self.0.insert(id, &assign.value);
-                        }
-                    }
-                }
-                visitor::walk_stmt(self, stmt);
-            }
-        }
         Assigned(&mut self.assigned).visit_body(body);
     }
 
@@ -1122,6 +1106,24 @@ impl Walk<'_, '_> {
             }
             other => literal_type(other),
         }
+    }
+}
+
+/// The value of every simple assignment, by the node id of each name it binds.
+pub(super) struct Assigned<'a, 'm>(pub &'m mut HashMap<u32, &'a Expr>);
+
+impl<'a> Visitor<'a> for Assigned<'a, '_> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Stmt::Assign(assign) = stmt {
+            for target in &assign.targets {
+                if let Expr::Name(name) = target
+                    && let Some(id) = name.node_index().load().as_u32()
+                {
+                    self.0.insert(id, &assign.value);
+                }
+            }
+        }
+        visitor::walk_stmt(self, stmt);
     }
 }
 

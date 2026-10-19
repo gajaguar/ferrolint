@@ -237,3 +237,19 @@ class Fields:
 
     def __post_init__(self, h):
         self.j = h
+
+
+class Factory:
+    def __init__(self):
+        self.known = 1
+
+    @classmethod
+    def build(cls):
+        made = cls()
+        made.extra = 1
+        return made
+
+    def not_a_classmethod(cls):
+        made = cls()
+        made.skipped = 1
+        return made

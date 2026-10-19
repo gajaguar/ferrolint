@@ -15,14 +15,18 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod astring;
 mod bad_super;
+mod booleaness;
 mod calls;
 mod classes;
+mod code_style;
 mod conditions;
 mod contextmgr;
 mod django;
 mod duplicate_args;
 mod exceptions;
+mod extensions;
 mod finally;
 mod flow;
 mod formats;
@@ -82,13 +86,16 @@ pub trait Checker: Sync {
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
     &bad_super::BadSuper,
+    &booleaness::Booleaness,
     &calls::Calls,
     &classes::Classes,
+    &code_style::CodeStyle,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &django::Django,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
+    &extensions::Extensions,
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
@@ -107,6 +114,10 @@ const CHECKERS: &[&dyn Checker] = &[
     &versions::Versions,
     &wildcard::Wildcard,
 ];
+
+/// The native rules Pylint ships disabled: `select` or an `enable` option
+/// turns them on.
+pub const OFF_BY_DEFAULT: &[&str] = &["C1804", "C1805", "R6105"];
 
 /// Every native rule.
 pub fn rules() -> Vec<RuleInfo> {

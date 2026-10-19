@@ -35,3 +35,6 @@ sub = A | B
 clsAlias = A
 clsLower = int
 x_y = A()
+aliasA = Union[int, str]
+aliasB = aliasA
+aliasC = aliasB

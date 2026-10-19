@@ -1,0 +1,2 @@
+5:W0134:'return' shadowed by the 'finally' clause.
+12:W0137:'break' discouraged inside 'finally' clause

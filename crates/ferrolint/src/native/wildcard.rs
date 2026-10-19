@@ -327,6 +327,46 @@ mod tests {
     }
 
     #[test]
+    fn a_dotted_import_binds_only_its_first_component() {
+        let files = [
+            ("a/__init__.py", "x = 1\ny = 2\na = 3\n"),
+            ("a/b.py", "p = 1\nq = 2\nx = 3\n"),
+            ("c1.py", "import a.b\nfrom a.b import *\nprint(a)\n"),
+            ("c2.py", "import a.b\nfrom a import *\nprint(x)\n"),
+            ("c3.py", "from a import *\nimport a.b\nprint(a)\n"),
+            ("c5.py", "import a.b as ab\nfrom a import *\nprint(ab)\n"),
+            (
+                "c8.py",
+                "import a\nfrom a import *\nfrom a.b import *\nprint(q)\n",
+            ),
+        ];
+        let at = |main: &str| run(&files, &format!("{main}.py"), main);
+        // `import a.b` binds `a`, which the module `a` defines too; the import came first.
+        assert_eq!(
+            at("c1"),
+            "2:W0614:Unused import(s) p, q and x from wildcard import of a.b"
+        );
+        assert_eq!(
+            at("c2"),
+            "2:W0614:Unused import(s) a and y from wildcard import of a"
+        );
+        assert_eq!(
+            at("c3"),
+            "1:W0614:Unused import(s) x and y from wildcard import of a"
+        );
+        // `import a.b as ab` binds only `ab`, so the star still lists `a`.
+        assert_eq!(
+            at("c5"),
+            "2:W0614:Unused import(s) x, y and a from wildcard import of a"
+        );
+        assert_eq!(
+            at("c8"),
+            "2:W0614:Unused import(s) x and y from wildcard import of a\n\
+             3:W0614:Unused import(s) p from wildcard import of a.b"
+        );
+    }
+
+    #[test]
     fn a_nested_star_is_bound_after_the_names_of_the_module() {
         let files = [
             ("pkg/m.py", "a = 1\nb = 2\n"),
@@ -461,6 +501,32 @@ mod tests {
         assert_eq!(
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) os, f, VALUE, sys and loads from wildcard import of pkg.m"
+        );
+    }
+
+    #[test]
+    fn a_c_module_lists_its_public_names() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            ("pkg/c.py", "from atexit import *\nz = 1\n"),
+            ("pkg/direct.py", "from atexit import *\nunregister()\n"),
+            ("pkg/chained.py", "from pkg.c import *\n"),
+            ("shadow/atexit.py", "mine = 1\n"),
+            ("shadow/user.py", "from atexit import *\n"),
+        ];
+        let at = |main: &str, module: &str| run(&files, main, module);
+        assert_eq!(
+            at("pkg/direct.py", "pkg.direct"),
+            "1:W0614:Unused import(s) register from wildcard import of atexit"
+        );
+        assert_eq!(
+            at("pkg/chained.py", "pkg.chained"),
+            "1:W0614:Unused import(s) z, register and unregister from wildcard import of pkg.c"
+        );
+        // A file of the project hides the C module of the same name.
+        assert_eq!(
+            at("shadow/user.py", "shadow.user"),
+            "1:W0614:Unused import(s) mine from wildcard import of atexit"
         );
     }
 }

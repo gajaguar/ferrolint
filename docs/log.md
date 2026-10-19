@@ -2,6 +2,31 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `R1727` and the other messages of the condition rules
+  quote the code as astroid prints it, not as written.
+* **pylint-compare.md**: Documented `MSG=1`, which compares the message as
+  well as the line, with whitespace collapsed.
+* **native-rules.md**: `W0614` lists the public names of the standard
+  library's C and builtin modules (`math`, `itertools`) from a generated table.
+* **Plugin comment position**: Contract 0.4.0 adds `comments.comment-list`
+  with the `own-line` flag. Updated `requirements/plugin-contract.md` and
+  `usage/writing-a-plugin.md`.
+
+* **native-rules.md**: Added Batch L - `C1803`, `C1804`, `C1805`, `E1143` and
+  `E1144`, on literals and names bound once to one; `C1804` and `C1805` are off
+  unless selected or enabled, as in Pylint.
+* **native-rules.md**: Added Batch K - `W0149`, `C3401`, `R3501`, `R5601` and
+  `R6106`, the Pylint extension messages that one walk decides, gated on
+  `load-plugins`.
+* **native-rules.md**: Added Batch M - `R6101`, `R6102`, `R6103`, `R6105` and
+  `W0141`, the `code_style` and `bad_builtin` extension messages; `R6105`
+  is off until `enable` or `select` names it.
+* **native-rules.md**: Added Batch N, the informational pragma messages
+  `I0010`, `I0011`, `I0013`, `I0022` and `I0023`, off by default.
+* **pylint-compare.md**: Added `SELECT`.
+* **native-rules.md**: `R0902`, `W0201`, `E0202` and `E0203` drop an
+  attribute outside the `__slots__` of the class and its ancestors, and
+  `x = cls()` in a classmethod gives the class an attribute like `x = Model()`.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,
