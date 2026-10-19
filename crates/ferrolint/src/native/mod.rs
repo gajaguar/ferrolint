@@ -35,6 +35,7 @@ mod misc;
 mod names;
 mod overrides;
 mod project;
+pub use project::Project;
 mod scopes;
 mod slots;
 mod special;

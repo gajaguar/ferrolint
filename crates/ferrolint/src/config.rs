@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
-use crate::pylint::{self, Settings, Toggle};
+use crate::native::Project;
+use crate::pylint::{self, Issue, Settings, Toggle};
 
 /// The settings a run uses, with plugin paths made absolute.
 #[derive(Clone, Debug, Default)]
@@ -30,6 +31,10 @@ pub struct Config {
     pub pylint_disable: Vec<(Toggle, String)>,
     /// The other Pylint options, as written; plugins receive them.
     pub options: BTreeMap<String, String>,
+    /// The Pylint file the settings came from, when they did.
+    pub pylint_file: Option<PathBuf>,
+    /// What Pylint would report about that file's names.
+    pub issues: Vec<Issue>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -142,17 +147,26 @@ pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<Config> {
 fn read_pylint(path: &Path) -> Result<Option<Config>> {
     let text = read(path)?;
     let name = path.file_name().map(|name| name.to_string_lossy());
-    let entries = if name.as_deref() == Some("pyproject.toml") {
+    let (entries, sections, ini) = if name.as_deref() == Some("pyproject.toml") {
         let table: toml::Table = toml::from_str(&text)
             .map_err(|err| Error::config(format!("{}: {}", path.display(), err.message())))?;
-        pylint::toml(&table)
+        (pylint::toml(&table), pylint::toml_sections(&table), false)
     } else {
         let only_pylint = matches!(name.as_deref(), Some("setup.cfg" | "tox.ini"));
-        pylint::ini(&text, only_pylint)
+        (pylint::ini(&text, only_pylint), Vec::new(), true)
     };
     let Some(entries) = entries else {
         return Ok(None);
     };
+    let mut issues = pylint::issues(&entries, ini, &sections);
+    // Without a virtualenv the installed modules are unknown: report nothing.
+    if std::env::var_os("VIRTUAL_ENV").is_some() {
+        let root = path.parent().unwrap_or(Path::new(""));
+        let project = Project::with_packages(&root.join("pylintrc"), "pylintrc");
+        issues.extend(pylint::plugin_issues(&entries, |module| {
+            project.has_module(module)
+        }));
+    }
     let settings = Settings::from_entries(entries);
     let py_version = settings
         .py_version
@@ -166,6 +180,8 @@ fn read_pylint(path: &Path) -> Result<Option<Config>> {
     config.py_version = py_version;
     config.pylint_disable = settings.toggles;
     config.options = settings.options;
+    config.pylint_file = Some(path.to_path_buf());
+    config.issues = issues;
     Ok(Some(config))
 }
 
@@ -224,6 +240,8 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         py_version: raw.py_version,
         pylint_disable: Vec::new(),
         options: raw.options,
+        pylint_file: None,
+        issues: Vec::new(),
     }
 }
 
@@ -237,6 +255,48 @@ mod tests {
         fs::write(dir.path().join("ferrolint.toml"), "unknown-key = []\n").unwrap();
         let error = load(dir.path(), None).unwrap_err();
         assert!(error.message.contains("unknown-key"), "{error}");
+    }
+
+    fn issue_codes(file: &str, text: &str) -> Vec<(&'static str, String)> {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(file), text).unwrap();
+        let config = load(dir.path(), None).unwrap();
+        config
+            .issues
+            .into_iter()
+            .map(|i| (i.code, i.message))
+            .collect()
+    }
+
+    #[test]
+    fn a_pylintrc_reports_unknown_options_and_message_names() {
+        let issues = issue_codes(
+            ".pylintrc",
+            "[MASTER]\nbogus=1\nload-plugins=pylint_django\n[MESSAGES CONTROL]\ndisable=fixme,nope,print-statement,C,design\nenable=other\n[FORMAT]\nmax-line-length=99\nZed=2\n",
+        );
+        let codes: Vec<_> = issues.iter().map(|(code, _)| *code).collect();
+        assert_eq!(codes, ["W0012", "R0022", "W0012", "E0015"]);
+        assert!(issues[0].1.contains("'nope'"), "{issues:?}");
+        assert_eq!(issues[3].1, "Unrecognized option found: bogus, zed");
+    }
+
+    #[test]
+    fn a_pyproject_reports_unknown_sections() {
+        let issues = issue_codes(
+            "pyproject.toml",
+            "[tool.pylint.main]\njobs = 0\n[tool.pylint.messages_control]\ndisable = [\"fixme\"]\n[tool.pylint.mystery]\nx = 1\n",
+        );
+        let codes: Vec<_> = issues.iter().map(|(code, _)| *code).collect();
+        assert_eq!(codes, ["E0014", "E0015"]);
+    }
+
+    #[test]
+    fn an_unlisted_plugin_silences_the_option_check() {
+        let issues = issue_codes(
+            ".pylintrc",
+            "[MASTER]\nload-plugins=other_plugin\nbogus=1\n",
+        );
+        assert!(issues.is_empty(), "{issues:?}");
     }
 
     #[test]

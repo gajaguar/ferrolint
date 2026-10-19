@@ -247,6 +247,49 @@ fn ac_02b_pylintrc_is_read_when_no_ferrolint_config_exists() {
 }
 
 #[test]
+fn ac_02d_unknown_pylint_names_are_reported() {
+    let project = Project::new();
+    project
+        .write(
+            ".pylintrc",
+            "[MASTER]\nbogus=1\n[MESSAGES CONTROL]\ndisable=FL002,nope\n",
+        )
+        .write(
+            "a.py",
+            "x = 1  # pylint: wrongkey=1\ny = 2  # pylint: disable=nope2, FL002, line-too-long\n",
+        );
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let lines = run.finding_lines();
+    for expected in [
+        ".pylintrc:1:1: error E0015 (unrecognized-option) Unrecognized option found: bogus",
+        ".pylintrc:1:1: warning W0012 (unknown-option-value) Unknown option value for '--disable', expected a valid pylint message and got 'nope'",
+    ] {
+        assert!(lines.contains(&expected), "{expected}: {lines:?}");
+    }
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("a.py:1:") && l.contains("E0011")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("a.py:2:") && l.contains("'nope2'")),
+        "{lines:?}"
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.starts_with("a.py:2:") && l.contains("W0012"))
+            .count(),
+        1,
+        "{lines:?}"
+    );
+}
+
+#[test]
 fn ac_02c_pep_695_syntax_is_linted() {
     let project = Project::new();
     project.write(

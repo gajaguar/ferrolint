@@ -161,13 +161,18 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         .map_or(0, |setup| setup.host.compiles());
     let stats = linter.counters.stats(displays.len(), compiles, lint_time);
     drop(linter);
-    let Setup { registry, .. } = setup
+    let Setup {
+        registry,
+        selection,
+        ..
+    } = setup
         .into_inner()
         .unwrap_or_else(|| Err(Error::plugin("plugin loading did not finish")))?;
     let mut findings = Vec::new();
     for result in per_file {
         findings.extend(result?);
     }
+    findings.extend(config_findings(cwd, &config, &registry, &selection));
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
     let mut displays = displays;
@@ -179,6 +184,36 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         diff_base: options.diff_base.clone(),
         stats,
     })
+}
+
+/// What Pylint would report about its own configuration file, for the rules
+/// the selection enables and the message names the registry does not know.
+fn config_findings(
+    cwd: &Path,
+    config: &Config,
+    registry: &Registry,
+    selection: &Selection,
+) -> Vec<Finding> {
+    let Some(file) = &config.pylint_file else {
+        return Vec::new();
+    };
+    let path = discover::display_path(cwd, file);
+    config
+        .issues
+        .iter()
+        .filter(|issue| {
+            let known = issue
+                .name
+                .as_deref()
+                .is_some_and(|name| registry.resolve(name).is_some());
+            !known && selection.is_enabled(issue.code)
+        })
+        .map(|issue| Finding {
+            path: path.clone(),
+            aliases: registry.aliases(issue.code),
+            diagnostic: checks::config_diagnostic(issue.code, &issue.message),
+        })
+        .collect()
 }
 
 /// What linting needs from the plugins: the loaded plugins, the rule
@@ -501,7 +536,8 @@ impl Linter<'_> {
             entry.unparsable = true;
             return Ok((entry, Vec::new()));
         };
-        entry.host = checks::check(&source, &parsed, &index);
+        let known = |name: &str| setup.registry.resolve(name).is_some();
+        entry.host = checks::check(&source, &parsed, &index, &known);
         if parsed.has_no_syntax_errors() && native::wanted(enabled) {
             let flat = ast::flatten(&source, &index, parsed.syntax());
             let model = Model::build(

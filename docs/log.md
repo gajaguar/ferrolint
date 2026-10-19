@@ -10,6 +10,8 @@
 * **native-rules.md**: Added Batch I - the unsupported-version rules
   `W2601` to `W2607`, `E1003` bad-super-call and `E0108`
   duplicate-argument-name, with their divergences.
+* **native-rules.md**: Added Batch J, the Pylint configuration and pragma
+  messages (`E0011` to `E0015`, `R0022`) and the messages left not ported.
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

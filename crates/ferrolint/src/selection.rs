@@ -59,6 +59,12 @@ impl Selection {
         })
     }
 
+    /// Whether `code` reports outside any file, as the configuration's own
+    /// findings do.
+    pub fn is_enabled(&self, code: &str) -> bool {
+        self.enabled.contains(code)
+    }
+
     /// The codes that report for the file at `path`.
     pub fn for_file(&self, path: &Path) -> BTreeSet<String> {
         let relative = display_path(&self.root, path);

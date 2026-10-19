@@ -13,6 +13,7 @@ mod host;
 mod infer;
 mod native;
 mod pylint;
+mod pylint_names;
 mod report;
 mod selection;
 mod semantic;

@@ -4,6 +4,7 @@ use ferrolint_core::{Diagnostic, LineIndex, RuleInfo, Severity};
 use ruff_python_ast::ModModule;
 use ruff_python_parser::Parsed;
 
+use crate::native;
 use crate::suppress::{self, Noqa};
 
 /// A plugin aborted on a file: it trapped, ran out of fuel or time.
@@ -24,7 +25,7 @@ pub fn host_rules() -> Vec<RuleInfo> {
             pylint_symbol: pylint.map(|(_, symbol)| symbol.into()),
             plugin: None,
         };
-    vec![
+    let mut rules = vec![
         rule(
             PLUGIN_ABORTED,
             "plugin-aborted",
@@ -46,7 +47,57 @@ pub fn host_rules() -> Vec<RuleInfo> {
             Severity::Error,
             Some(("E0001", "syntax-error")),
         ),
-    ]
+    ];
+    rules.extend([
+        native::rule(
+            "E0011",
+            "unrecognized-inline-option",
+            "A `# pylint:` comment sets an option Pylint does not know.",
+        ),
+        native::rule(
+            "W0012",
+            "unknown-option-value",
+            "A `disable`/`enable` option or `# pylint:` pragma names a message Pylint does not know.",
+        ),
+        native::rule(
+            "E0013",
+            "bad-plugin-value",
+            "A module in `load-plugins` cannot be found.",
+        ),
+        native::rule(
+            "E0014",
+            "bad-configuration-section",
+            "A `[tool.pylint]` table is not a section Pylint knows.",
+        ),
+        native::rule(
+            "E0015",
+            "unrecognized-option",
+            "A Pylint configuration sets an option Pylint does not know.",
+        ),
+        native::rule(
+            "R0022",
+            "useless-option-value",
+            "A `disable`/`enable` option or `# pylint:` pragma names a message Pylint removed.",
+        ),
+    ]);
+    rules
+}
+
+/// A finding of the Pylint configuration file, at its first line as Pylint
+/// reports it.
+pub fn config_diagnostic(code: &str, message: &str) -> Diagnostic {
+    let start = ferrolint_core::Position {
+        offset: 0,
+        line: 1,
+        column: 1,
+    };
+    Diagnostic {
+        code: code.into(),
+        message: message.into(),
+        range: ferrolint_core::Range { start, end: start },
+        severity: native::rule(code, "", "").severity,
+        fix: None,
+    }
 }
 
 /// A diagnostic for a file that is not UTF-8 and cannot be parsed.
@@ -61,7 +112,15 @@ pub fn not_utf8() -> Diagnostic {
 }
 
 /// The host rules' diagnostics for one parsed file.
-pub fn check(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> Vec<Diagnostic> {
+///
+/// `known` tells whether the rule registry resolves a message name, so a
+/// plugin's rule named in a pragma is not reported as unknown.
+pub fn check(
+    source: &str,
+    parsed: &Parsed<ModModule>,
+    index: &LineIndex,
+    known: &dyn Fn(&str) -> bool,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     if let Some(error) = parsed.errors().first() {
         diagnostics.push(Diagnostic {
@@ -77,6 +136,30 @@ pub fn check(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> Vec
         });
     }
     for comment in suppress::comments(source, parsed.tokens()) {
+        for (key, names) in suppress::pylint_options(comment.text) {
+            let issues = if matches!(
+                key,
+                "disable" | "enable" | "disable-next" | "disable-msg" | "enable-msg"
+            ) {
+                names
+                    .into_iter()
+                    .filter(|name| !known(name))
+                    .filter_map(|name| crate::pylint::message_issue(key, name))
+                    .map(|issue| (issue.code, issue.message))
+                    .collect()
+            } else {
+                vec![("E0011", format!("Unrecognized file option '{key}'"))]
+            };
+            for (code, message) in issues {
+                diagnostics.push(Diagnostic {
+                    code: code.into(),
+                    message,
+                    range: index.range(source, comment.start, comment.end),
+                    severity: native::rule(code, "", "").severity,
+                    fix: None,
+                });
+            }
+        }
         if suppress::noqa(comment.text) == Some(Noqa::Bare) {
             diagnostics.push(Diagnostic {
                 code: BARE_NOQA.into(),

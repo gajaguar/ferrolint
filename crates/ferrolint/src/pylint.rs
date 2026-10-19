@@ -5,6 +5,165 @@
 
 use std::collections::BTreeMap;
 
+use crate::pylint_names::{self as names, contains};
+
+/// A finding about the configuration file itself, before the registry decides
+/// whether it applies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Issue {
+    /// The Pylint msg-id.
+    pub code: &'static str,
+    pub message: String,
+    /// The message name a W0012/R0022 is about; the registry may know it.
+    pub name: Option<String>,
+}
+
+const CATEGORIES: [&str; 12] = [
+    "c",
+    "r",
+    "w",
+    "e",
+    "f",
+    "i",
+    "convention",
+    "refactor",
+    "warning",
+    "error",
+    "fatal",
+    "info",
+];
+
+/// The W0012 or R0022 for a `disable`/`enable`/pragma name that is no Pylint
+/// message, category, checker or `all`.
+pub fn message_issue(action: &str, name: &str) -> Option<Issue> {
+    let lower = name.to_ascii_lowercase();
+    let upper = name.to_ascii_uppercase();
+    let known = lower == "all"
+        || lower.starts_with("rp")
+        || CATEGORIES.contains(&lower.as_str())
+        || contains(names::CHECKERS, &lower)
+        || contains(names::MESSAGES, name)
+        || contains(names::MESSAGES, &upper);
+    if known {
+        return None;
+    }
+    let name_owned = Some(name.to_owned());
+    if contains(names::DELETED, name) || contains(names::DELETED, &upper) {
+        return Some(Issue {
+            code: "R0022",
+            message: format!(
+                "Useless option value for '{action}', '{name}' was removed from pylint or moved to an optional extension."
+            ),
+            name: name_owned,
+        });
+    }
+    Some(Issue {
+        code: "W0012",
+        message: format!(
+            "Unknown option value for '{action}', expected a valid pylint message and got '{name}'"
+        ),
+        name: name_owned,
+    })
+}
+
+/// Whether `load-plugins` names a plugin whose options and messages the
+/// generated tables do not list.
+fn foreign_plugin(entries: &[(String, String)]) -> bool {
+    entries
+        .iter()
+        .filter(|(key, _)| key == "load-plugins")
+        .flat_map(|(_, value)| value.split(','))
+        .map(str::trim)
+        .filter(|plugin| !plugin.is_empty())
+        .any(|plugin| plugin != "pylint_django" && !plugin.starts_with("pylint.extensions"))
+}
+
+/// What Pylint would say about the names in a configuration. `ini` is true for
+/// INI files, whose keys Pylint lowercases; `sections` are the TOML tables
+/// under `[tool.pylint]`.
+pub fn issues(entries: &[(String, String)], ini: bool, sections: &[String]) -> Vec<Issue> {
+    let mut out = Vec::new();
+    let normal = |name: &str| name.replace(['_', '-'], " ").to_ascii_lowercase();
+    for section in sections {
+        let wanted = normal(section);
+        if !names::SECTIONS.iter().any(|known| normal(known) == wanted) {
+            out.push(Issue {
+                code: "E0014",
+                message: format!(
+                    "Out-of-place setting encountered in top level configuration-section '{section}' : '{section}'"
+                ),
+                name: None,
+            });
+        }
+    }
+    if foreign_plugin(entries) {
+        return out;
+    }
+    let mut unknown: Vec<String> = Vec::new();
+    for (key, value) in entries {
+        let key = if ini {
+            key.to_ascii_lowercase()
+        } else {
+            key.clone()
+        };
+        if !contains(names::OPTIONS, &key) {
+            if !unknown.contains(&key) {
+                unknown.push(key);
+            }
+        } else if key == "disable" || key == "enable" {
+            out.extend(
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .filter_map(|item| message_issue(&format!("--{key}"), item)),
+            );
+        }
+    }
+    if !unknown.is_empty() {
+        out.push(Issue {
+            code: "E0015",
+            message: format!("Unrecognized option found: {}", unknown.join(", ")),
+            name: None,
+        });
+    }
+    out
+}
+
+/// The E0013 for each `load-plugins` module that `exists` does not find.
+pub fn plugin_issues(entries: &[(String, String)], exists: impl Fn(&str) -> bool) -> Vec<Issue> {
+    entries
+        .iter()
+        .filter(|(key, _)| key == "load-plugins")
+        .flat_map(|(_, value)| value.split(','))
+        .map(str::trim)
+        .filter(|plugin| !plugin.is_empty() && !exists(plugin))
+        .map(|plugin| Issue {
+            code: "E0013",
+            message: format!(
+                "Plugin '{plugin}' is impossible to load, is it installed ? ('No module named '{plugin}'')"
+            ),
+            name: None,
+        })
+        .collect()
+}
+
+/// The names of the tables directly under `[tool.pylint]`.
+pub fn toml_sections(table: &toml::Table) -> Vec<String> {
+    table
+        .get("tool")
+        .and_then(|tool| tool.get("pylint"))
+        .and_then(toml::Value::as_table)
+        .map(|section| {
+            section
+                .iter()
+                .filter(|(_, value)| value.is_table())
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Whether a `disable`/`enable` entry turns rules off or back on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Toggle {
@@ -190,6 +349,15 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         assert_eq!(settings.ignore, ["CVS"]);
         assert!(settings.options.contains_key("load-plugins"));
         assert!(!settings.options.contains_key("disable"));
+    }
+
+    #[test]
+    fn a_missing_plugin_module_is_e0013() {
+        let entries = ini("[MASTER]\nload-plugins=pylint_django, nowhere.mod\n", false).unwrap();
+        let issues = plugin_issues(&entries, |module| module == "pylint_django");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "E0013");
+        assert!(issues[0].message.contains("'nowhere.mod'"));
     }
 
     #[test]

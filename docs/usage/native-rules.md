@@ -576,3 +576,45 @@ Known divergences:
   the project or the active environment (see Batch G), where Pylint
   reports the name of an argument it cannot infer. A class whose MRO is
   unknown is skipped too.
+
+## Batch J: Pylint configuration and pragmas
+
+These rules read the names in a Pylint configuration file and in `# pylint:`
+comments. A configuration finding sits on line 1 of the file, as Pylint
+reports it, and only a Pylint file gets them (`.pylintrc`, `pylintrc`,
+`pyproject.toml`, `setup.cfg`, `tox.ini`); `ferrolint.toml` already rejects
+unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
+`pylint_django` 2.8.0, dumped by `make pylint-names` into
+`src/pylint_names.rs`.
+
+* `E0011` `unrecognized-inline-option`: a `# pylint: key=` comment whose key is
+  not `disable`, `enable`, `disable-next`, `disable-msg` or `enable-msg`.
+* `W0012` `unknown-option-value`: a `disable` or `enable` option, or a pragma,
+  names a message, category or checker Pylint does not know. A name the rule
+  registry resolves, such as a plugin's rule, is known.
+* `R0022` `useless-option-value`: the same, for a message Pylint removed or
+  moved to an extension.
+* `E0013` `bad-plugin-value`: a `load-plugins` module is in no project
+  directory above the file, in the standard library or in the
+  `site-packages` of the virtualenv `VIRTUAL_ENV` names. Without
+  `VIRTUAL_ENV` nothing is reported.
+* `E0014` `bad-configuration-section`: a table under `[tool.pylint]` that is
+  not an option group of Pylint.
+* `E0015` `unrecognized-option`: one finding listing every option key Pylint
+  does not know.
+
+Known divergences:
+
+* Pylint ignores the section names of an INI file and never reports `E0014`;
+  here only a TOML table is checked. Section names of an INI file are not.
+* A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
+  silences `E0015`, `W0012` and `R0022` for the file: its options and
+  messages are not listed.
+* The `R0022` text omits Pylint's link to the release notes.
+
+Not ported: `fatal`, `astroid-error`, `parse-error`, `config-parse-error`,
+`method-check-failed`, `django-not-configured`, `django-not-available`,
+`django-not-available-placeholder`, `c-extension-no-member` and the
+`wrong-spelling-*` family: they report a failure of Pylint's own machinery or
+need what ferrolint does not run (astroid, a Django setup, a spelling
+dictionary).
