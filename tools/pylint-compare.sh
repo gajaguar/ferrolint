@@ -134,9 +134,10 @@ fi
 sed -nE -e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ [A-Z0-9]+ \(([A-Z][0-9]{4})[,)].*/\1:\2:\3/p' \
 	-e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ ([A-Z][0-9]{4}) .*/\1:\2:\3/p' \
 	"$work/ferrolint.out" | LC_ALL=C sort -u >"$work/ferrolint.norm"
+# A configuration finding (`.pylintrc:1:E0015`) has the same shape as one in a .py file.
 # shortcut: pylint . lints git-ignored files that ferrolint's walk skips; list
 # the files instead when comparing a tree with generated code.
-grep -E '^[^:]+\.py:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" | sed 's|^\./||' |
+grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" | sed 's|^\./||' |
 	LC_ALL=C sort -u >"$work/pylint.norm"
 
 if [ -n "${ONLY:-}" ]; then
