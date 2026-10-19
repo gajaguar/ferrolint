@@ -503,4 +503,30 @@ mod tests {
             "1:W0614:Unused import(s) os, f, VALUE, sys and loads from wildcard import of pkg.m"
         );
     }
+
+    #[test]
+    fn a_c_module_lists_its_public_names() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            ("pkg/c.py", "from atexit import *\nz = 1\n"),
+            ("pkg/direct.py", "from atexit import *\nunregister()\n"),
+            ("pkg/chained.py", "from pkg.c import *\n"),
+            ("shadow/atexit.py", "mine = 1\n"),
+            ("shadow/user.py", "from atexit import *\n"),
+        ];
+        let at = |main: &str, module: &str| run(&files, main, module);
+        assert_eq!(
+            at("pkg/direct.py", "pkg.direct"),
+            "1:W0614:Unused import(s) register from wildcard import of atexit"
+        );
+        assert_eq!(
+            at("pkg/chained.py", "pkg.chained"),
+            "1:W0614:Unused import(s) z, register and unregister from wildcard import of pkg.c"
+        );
+        // A file of the project hides the C module of the same name.
+        assert_eq!(
+            at("shadow/user.py", "shadow.user"),
+            "1:W0614:Unused import(s) mine from wildcard import of atexit"
+        );
+    }
 }

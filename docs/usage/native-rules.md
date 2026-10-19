@@ -286,11 +286,17 @@ Imports:
   and a star in a function or class, and counts the names in the file's own
   literal `__all__` as read. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
-  and packages of `VIRTUAL_ENV`), so a module that is not found, or is a C
-  module, is skipped (a module is also matched by the case it is spelled
-  in, even where the file system ignores it); the result depends on another
-  file, so it is as stale as the cache is (see the project module's shortcut
-  note).
+  and packages of `VIRTUAL_ENV`), so a module that is not found is skipped
+  (a module is also matched by the case it is spelled in, even where the
+  file system ignores it); the result depends on another file, so it is as
+  stale as the cache is (see the project module's shortcut note). A C or
+  builtin module of the standard library (`math`, `itertools`, `time`) has
+  no file, so its public names, sorted as Python's `dir` lists them, come
+  from a table that `make c-module-names` dumps into
+  `src/c_module_names.rs` from one Python version (3.14); another version
+  may bind other names, a module of another platform is missing, and
+  `builtins` lacks the type names (`generator`, `NoneType`, ...) that
+  astroid adds to it.
 
 Variables and scopes:
 
