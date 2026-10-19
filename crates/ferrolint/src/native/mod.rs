@@ -21,6 +21,7 @@ mod classes;
 mod conditions;
 mod contextmgr;
 mod django;
+mod duplicate_args;
 mod exceptions;
 mod finally;
 mod flow;
@@ -84,6 +85,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &django::Django,
+    &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
     &finally::Finally,
     &flow::Flow,
