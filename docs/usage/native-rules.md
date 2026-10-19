@@ -13,8 +13,9 @@ the scope model of the file, with no plugin. Its code is the Pylint msg-id,
 so `C0209` and `consider-using-f-string` name the same rule, and its message
 is Pylint's own text, so the output compares line by line.
 
-Native rules are active by default like every other rule, except the two
-that Pylint ships disabled (`C1804`, `C1805`). They select,
+Native rules are active by default like every other rule, except the messages
+that Pylint ships disabled (`C1804`, `C1805`, `R6105` and the pragma messages
+of Batch N). They select,
 ignore and suppress like a plugin's: with `select`, `ignore`, a
 `# pylint: disable=` comment or `# noqa: C0209`. They read the Pylint
 options that the configuration carries (see
@@ -775,3 +776,50 @@ Known divergences:
   text (see the divergences of Batch K).
 * `R6105` sees the callee through the imports of `collections` only; Pylint
   also infers a call through an alias such as `maker = namedtuple`.
+## Batch N: the messages about `# pylint:` pragmas
+
+Pylint tells about its own pragmas with informational messages that it leaves
+off by default, and so does ferrolint: they report when `select` lists them or
+a Pylint `enable` names them by id or symbol (`enable=locally-disabled`).
+
+A pragma is read as Pylint reads it: the last `pylint:` of a comment counts,
+up to the next `;` or `#`, so `# pylint: disable=a; enable=b` is only the
+`disable`.
+
+* `I0010` `bad-inline-option`: `disable`, `enable`, `disable-next`,
+  `disable-msg` or `enable-msg` with no names, or with names but no `=`. The
+  message quotes the keyword.
+* `I0011` `locally-disabled`: one finding per message a `disable`,
+  `disable-next` or `disable-msg` pragma turns off, on the pragma's line (the
+  next one for `disable-next`), as `Locally disabling unused-import (W0611)`.
+  A category letter (`disable=W`) or a checker name (`disable=imports`) gives
+  one finding for each of its messages. A legacy id or symbol gives the
+  current message.
+* `I0013` `file-ignored`: `skip-file`, `disable-all` or `disable=all`. Pylint
+  stops reading the pragmas of the file there, and so do these five rules;
+  ferrolint still lints the file.
+* `I0022` `deprecated-pragma`: `disable-msg`, `enable-msg`, `disable-all` or
+  `disable=all`, with the pragma to use instead.
+* `I0023` `use-symbolic-message-instead`: a message named by its id in a
+  `disable`, `enable`, `disable-next`, `disable-msg` or `enable-msg` pragma.
+  A skipped file gets none.
+
+A `disable` pragma hides these five messages from its own line to the end of
+the innermost block, and the module ends with its last statement: a pragma
+after it hides nothing, and a pragma never hides a message above it. This is
+not the block rule of the other messages.
+
+Known divergences:
+
+* Only Pylint's own messages are known: a name that belongs to an extension,
+  to `pylint_django` or to a plugin gives no `I0011` and no `I0023`.
+* `disable-next=all` and `disable-msg=all` give no `I0011`; Pylint gives one
+  for each message that is off by default.
+* `enable=I` and the other category letters do not switch these messages on
+  (they never reach a native rule); name them by id or symbol.
+* A comment after a backslash continuation is reported on its own line, and
+  the names of one pragma hide one another only through the block rule above.
+* `I0020` `suppressed-message` and `I0021` `useless-suppression` are not
+  ported: they need to know which pragma silenced each finding, and `I0021`
+  would call a pragma useless when it names a message ferrolint does not
+  implement.

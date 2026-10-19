@@ -70,22 +70,5 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 			> "$${file%.py}.txt.new" && mv "$${file%.py}.txt.new" "$${file%.py}.txt"; \
 	done
 
-pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, PY_VERSION, STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex), MSG (also compare the message)
-	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" tools/pylint-compare.sh
-
-release-tag: ## Tag the base branch as v<package.version> and push the tag (minor and major bumps)
-	@version=$$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1); base=$(BASE:origin/%=%); tag=v$$version; \
-	test "$$version" && test "$$(git rev-parse --abbrev-ref HEAD)" = "$$base" && test -z "$$(git status --porcelain)" || { echo "release-tag: run it from a clean $$base, which must have a version in Cargo.toml"; exit 1; }; \
-	git fetch --quiet origin && test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/$$base)" || { echo "release-tag: $$base is not at origin/$$base"; exit 1; }; \
-	git rev-parse --quiet --verify "refs/tags/$$tag" >/dev/null && { echo "release-tag: $$tag already exists"; exit 1; }; \
-	git tag -s "$$tag" -m "$$tag" && git push origin "$$tag"
-
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare release-tag
-
-pylint-names: ## Regenerate src/pylint_names.rs from Pylint 4.1.3 and pylint_django — accepts PYTHON (the interpreter of a virtualenv that has both)
-	$(PYTHON) tools/pylint-names.py > crates/ferrolint/src/pylint_names.rs
-	$(MAKE) fmt FILES=crates/ferrolint/src/pylint_names.rs
-
-c-module-names: ## Regenerate src/c_module_names.rs from the standard library's C and builtin modules — accepts PYTHON (the interpreter whose version the table describes)
-	$(PYTHON) tools/c-module-names.py > crates/ferrolint/src/c_module_names.rs
-	$(MAKE) fmt FILES=crates/ferrolint/src/c_module_names.rs
+pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, SELECT, PY_VERSION, MSG (also compare the message), STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex)
+	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" SELECT="$(SELECT)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" tools/pylint-compare.sh

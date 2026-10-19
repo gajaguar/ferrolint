@@ -19,6 +19,9 @@
 * **native-rules.md**: Added Batch M - `R6101`, `R6102`, `R6103`, `R6105` and
   `W0141`, the `code_style` and `bad_builtin` extension messages; `R6105`
   is off until `enable` or `select` names it.
+* **native-rules.md**: Added Batch N, the informational pragma messages
+  `I0010`, `I0011`, `I0013`, `I0022` and `I0023`, off by default.
+* **pylint-compare.md**: Added `SELECT`.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,

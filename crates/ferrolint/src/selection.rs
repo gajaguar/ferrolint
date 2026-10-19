@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use ferrolint_core::Registry;
 use globset::{Glob, GlobMatcher};
 
+use crate::checks;
 use crate::config::Config;
 use crate::discover::display_path;
 use crate::error::{Error, Result};
@@ -33,6 +34,7 @@ impl Selection {
                 .rules()
                 .map(|rule| rule.code.clone())
                 .filter(|code| !crate::native::OFF_BY_DEFAULT.contains(&code.as_str()))
+                .filter(|code| !checks::PRAGMA_MESSAGES.iter().any(|(id, _)| id == code))
                 .collect(),
         };
         for code in resolve_all(registry, "ignore", &config.ignore)? {
@@ -197,6 +199,25 @@ mod tests {
             ["A1", "C1804"]
         );
         assert_eq!(with(vec![(Toggle::Enable, "all".into())]), ["A1", "C1804"]);
+    }
+
+    #[test]
+    fn pragma_messages_are_off_until_enabled() {
+        let registry = Registry::new([
+            rule("I0011", "I0011", "locally-disabled"),
+            rule("A1", "W0611", "unused-import"),
+        ])
+        .unwrap();
+        let on = |toggles: Vec<(Toggle, String)>| {
+            let config = Config {
+                pylint_disable: toggles,
+                ..Config::default()
+            };
+            let selection = Selection::new(&registry, &config).unwrap();
+            selection.is_enabled("I0011")
+        };
+        assert!(!on(vec![]));
+        assert!(on(vec![(Toggle::Enable, "locally-disabled".into())]));
     }
 
     #[test]

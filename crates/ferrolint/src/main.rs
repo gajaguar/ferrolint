@@ -13,6 +13,7 @@ mod error;
 mod host;
 mod infer;
 mod native;
+mod pragma;
 mod pylint;
 mod pylint_names;
 mod report;

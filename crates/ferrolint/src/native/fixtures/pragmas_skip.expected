@@ -1,0 +1,3 @@
+2:I0011:Locally disabling unused-import (W0611)
+4:I0013:Ignoring entire file
+4:I0022:Pragma "disable=all" is deprecated, use "skip-file" instead

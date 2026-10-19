@@ -14,6 +14,17 @@ pub const BARE_NOQA: &str = "FL002";
 /// The file does not parse.
 pub const SYNTAX_ERROR: &str = "FL003";
 
+/// Pylint's informational pragma messages, as msg-id and symbol. Pylint
+/// leaves them off by default: they report only when `select` or a Pylint
+/// `enable` names them.
+pub const PRAGMA_MESSAGES: &[(&str, &str)] = &[
+    ("I0010", "bad-inline-option"),
+    ("I0011", "locally-disabled"),
+    ("I0013", "file-ignored"),
+    ("I0022", "deprecated-pragma"),
+    ("I0023", "use-symbolic-message-instead"),
+];
+
 pub fn host_rules() -> Vec<RuleInfo> {
     let rule =
         |code: &str, name: &str, summary: &str, severity, pylint: Option<(&str, &str)>| RuleInfo {
@@ -49,6 +60,31 @@ pub fn host_rules() -> Vec<RuleInfo> {
         ),
     ];
     rules.extend([
+        native::rule(
+            "I0010",
+            "bad-inline-option",
+            "A `# pylint:` option is badly formatted: a keyword with no message names or no `=`.",
+        ),
+        native::rule(
+            "I0011",
+            "locally-disabled",
+            "A `# pylint:` comment disables a message, a category or a checker.",
+        ),
+        native::rule(
+            "I0013",
+            "file-ignored",
+            "A `# pylint: skip-file`, `disable-all` or `disable=all` comment ends the file for Pylint.",
+        ),
+        native::rule(
+            "I0022",
+            "deprecated-pragma",
+            "A `# pylint:` comment uses `disable-msg`, `enable-msg`, `disable-all` or `disable=all`.",
+        ),
+        native::rule(
+            "I0023",
+            "use-symbolic-message-instead",
+            "A `# pylint:` comment enables or disables a message by its id, not its symbol.",
+        ),
         native::rule(
             "E0011",
             "unrecognized-inline-option",
@@ -135,7 +171,9 @@ pub fn check(
             fix: None,
         });
     }
-    for comment in suppress::comments(source, parsed.tokens()) {
+    let comments = suppress::comments(source, parsed.tokens());
+    diagnostics.extend(crate::pragma::informational(source, &comments, index));
+    for comment in comments {
         for (key, names) in suppress::pylint_options(comment.text) {
             let issues = if matches!(
                 key,
