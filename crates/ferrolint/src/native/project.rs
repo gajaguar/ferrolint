@@ -201,61 +201,121 @@ impl Project {
 }
 
 impl Project {
-    /// The names `from module import *` binds, in order: the public names
-    /// bound at the top level of the module (also under `if` and `try`),
-    /// and those of the modules it star-imports. `None` when the module is
-    /// not found. Pylint ignores `__all__` here, so this does too.
+    /// The names `from module import *` binds, in astroid's order: the public
+    /// names the module binds at its top level (also under compound
+    /// statements), then those of the modules it star-imports. `None` when
+    /// the module is not found. Pylint ignores `__all__` here, so this does too.
     pub fn public_names(&self, module: &str) -> Option<Vec<String>> {
         let mut names = Vec::new();
         self.public_at(module, 0, &mut names)?;
         Some(names)
     }
 
+    /// Whether the top level of `module` binds `__all__` (also under `if`
+    /// and `try`); `false` when the module is not found.
+    pub fn defines_all(&self, module: &str) -> bool {
+        self.load(module)
+            .is_some_and(|loaded| binds_all(&loaded.parsed.syntax().body))
+    }
+
     fn public_at(&self, module: &str, depth: u8, out: &mut Vec<String>) -> Option<()> {
         let loaded = self.load(module)?;
         if depth < 8 {
-            self.bound(&loaded, &loaded.parsed.syntax().body, depth, out);
+            let mut stars = Vec::new();
+            bound(
+                &loaded.package,
+                &loaded.parsed.syntax().body,
+                &mut stars,
+                out,
+            );
+            // astroid binds what a star imports after everything the module binds itself.
+            for origin in stars {
+                let _ = self.public_at(&origin, depth + 1, out);
+            }
         }
         Some(())
     }
+}
 
-    fn bound(&self, module: &Module, body: &[Stmt], depth: u8, out: &mut Vec<String>) {
-        for stmt in body {
-            match stmt {
-                Stmt::FunctionDef(f) => add_public(out, f.name.as_str()),
-                Stmt::ClassDef(c) => add_public(out, c.name.as_str()),
-                Stmt::Assign(a) => a.targets.iter().for_each(|t| target_names(t, out)),
-                Stmt::AnnAssign(a) => target_names(&a.target, out),
-                Stmt::Import(i) => i.names.iter().for_each(|alias| match &alias.asname {
-                    Some(asname) => add_public(out, asname.as_str()),
-                    None => add_public(out, alias.name.split('.').next().unwrap_or_default()),
-                }),
-                Stmt::ImportFrom(i) => {
-                    for alias in &i.names {
-                        if &alias.name == "*" {
-                            let origin = from_prefix(i, &module.package);
-                            let _ = self.public_at(&origin, depth + 1, out);
-                        } else {
-                            add_public(out, alias.asname.as_ref().unwrap_or(&alias.name));
-                        }
+/// The public names `body` binds at its top level, also under compound
+/// statements, in `out`, and the modules its `from m import *` read in `stars`.
+pub(super) fn bound(package: &str, body: &[Stmt], stars: &mut Vec<String>, out: &mut Vec<String>) {
+    for stmt in body {
+        match stmt {
+            Stmt::FunctionDef(f) => add_public(out, f.name.as_str()),
+            Stmt::ClassDef(c) => add_public(out, c.name.as_str()),
+            Stmt::Assign(a) => a.targets.iter().for_each(|t| target_names(t, out)),
+            Stmt::AnnAssign(a) => target_names(&a.target, out),
+            Stmt::AugAssign(a) => target_names(&a.target, out),
+            Stmt::TypeAlias(a) => target_names(&a.name, out),
+            Stmt::Import(i) => i.names.iter().for_each(|alias| match &alias.asname {
+                Some(asname) => add_public(out, asname.as_str()),
+                None => add_public(out, alias.name.split('.').next().unwrap_or_default()),
+            }),
+            Stmt::ImportFrom(i) => {
+                for alias in &i.names {
+                    if &alias.name == "*" {
+                        stars.push(from_prefix(i, package));
+                    } else {
+                        add_public(out, alias.asname.as_ref().unwrap_or(&alias.name));
                     }
                 }
-                Stmt::If(s) => {
-                    self.bound(module, &s.body, depth, out);
-                    for clause in &s.elif_else_clauses {
-                        self.bound(module, &clause.body, depth, out);
-                    }
-                }
-                Stmt::Try(t) => {
-                    self.bound(module, &t.body, depth, out);
-                    for ExceptHandler::ExceptHandler(h) in &t.handlers {
-                        self.bound(module, &h.body, depth, out);
-                    }
-                }
-                _ => {}
             }
+            Stmt::If(s) => {
+                bound(package, &s.body, stars, out);
+                for clause in &s.elif_else_clauses {
+                    bound(package, &clause.body, stars, out);
+                }
+            }
+            Stmt::For(f) => {
+                target_names(&f.target, out);
+                bound(package, &f.body, stars, out);
+                bound(package, &f.orelse, stars, out);
+            }
+            Stmt::While(w) => {
+                bound(package, &w.body, stars, out);
+                bound(package, &w.orelse, stars, out);
+            }
+            Stmt::With(w) => {
+                for item in &w.items {
+                    if let Some(target) = &item.optional_vars {
+                        target_names(target, out);
+                    }
+                }
+                bound(package, &w.body, stars, out);
+            }
+            Stmt::Try(t) => {
+                bound(package, &t.body, stars, out);
+                for ExceptHandler::ExceptHandler(h) in &t.handlers {
+                    if let Some(name) = &h.name {
+                        add_public(out, name.as_str());
+                    }
+                    bound(package, &h.body, stars, out);
+                }
+                bound(package, &t.orelse, stars, out);
+                bound(package, &t.finalbody, stars, out);
+            }
+            _ => {}
         }
     }
+}
+
+/// Whether the top level of a module binds `__all__`, also under `if` and `try`.
+fn binds_all(body: &[Stmt]) -> bool {
+    let is_all = |target: &Expr| matches!(target, Expr::Name(n) if n.id.as_str() == "__all__");
+    body.iter().any(|stmt| match stmt {
+        Stmt::Assign(a) => a.targets.iter().any(is_all),
+        Stmt::AnnAssign(a) => is_all(&a.target),
+        Stmt::AugAssign(a) => is_all(&a.target),
+        Stmt::If(s) => binds_all(&s.body) || s.elif_else_clauses.iter().any(|c| binds_all(&c.body)),
+        Stmt::Try(t) => {
+            binds_all(&t.body)
+                || t.handlers
+                    .iter()
+                    .any(|ExceptHandler::ExceptHandler(h)| binds_all(&h.body))
+        }
+        _ => false,
+    })
 }
 
 fn add_public(out: &mut Vec<String>, name: &str) {
@@ -495,7 +555,7 @@ mod tests {
         let project = Project::new(&root.path().join("app/views.py"), "app.views");
         assert_eq!(
             project.public_names("app.m").unwrap(),
-            ["os", "z", "a", "f", "K", "c"]
+            ["os", "a", "f", "K", "c", "z"]
         );
         assert!(project.public_names("app.missing").is_none());
     }

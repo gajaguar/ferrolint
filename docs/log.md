@@ -2,6 +2,9 @@
 
 ## 2026-10-18
 
+* **native-rules.md**: Added `W0401` wildcard-import next to `W0614`, with
+  `allow-wildcard-with-all`, and the cases of `W0614` checked against Pylint
+  (private names, a star in a function, redefined names, nested stars).
 * **Out-of-tree plugin**: Added `usage/out-of-tree-plugin.md` - building a
   plugin from another repository against the SDK by revision.
 * **Roadmap notes**: Retired `backlog.md` and

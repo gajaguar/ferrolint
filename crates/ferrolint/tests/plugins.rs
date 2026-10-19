@@ -20,8 +20,9 @@ fn findings(package: &str, source: &str) -> Vec<String> {
     assert!(run.code <= 1, "{run:?}");
     run.finding_lines()
         .iter()
-        // the sources name things as they like; `C0103` is not under test
-        .filter(|line| !line.contains(" C0103 "))
+        // the sources name things as they like and import `*`; `C0103` and
+        // `W0401` are not under test
+        .filter(|line| !line.contains(" C0103 ") && !line.contains(" W0401 "))
         .map(|line| {
             let (location, rest) = line.split_once(": ").unwrap();
             let message = rest.split_once(") ").map_or(rest, |(_, message)| message);
