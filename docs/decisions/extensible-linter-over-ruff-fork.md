@@ -54,8 +54,8 @@ never sees a diff.
 
 * Ruff parser crates are pinned to one git tag with a documented upgrade
   process; a bump is its own change with its own test.
-* Type inference is phase 2: the plugin query API ships with AST and
-  scope/binding queries first, and an inference API lands inside it later
-  without breaking plugin ABI.
+* Type inference is an extension, not a base requirement: the plugin query
+  API ships with AST and scope/binding queries, and the type inference query
+  was added inside it in contract 0.2.1 without breaking plugin ABI.
 * Rule coverage grows write-a-plugin by write-a-plugin; nothing in ferrolint
   pretends to replace Ruff's catalog.
