@@ -24,6 +24,9 @@
 * **native-rules.md**: Added Batch N, the informational pragma messages
   `I0010`, `I0011`, `I0013`, `I0022` and `I0023`, off by default.
 * **pylint-compare.md**: Added `SELECT`.
+* **native-rules.md**: `R0902`, `W0201`, `E0202` and `E0203` drop an
+  attribute outside the `__slots__` of the class and its ancestors, and
+  `x = cls()` in a classmethod gives the class an attribute like `x = Model()`.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,
