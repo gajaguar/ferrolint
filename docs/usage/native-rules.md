@@ -629,8 +629,9 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* `no-self-use` and `R0201` count as known: Pylint reports `R0022` for them
-  unless `pylint.extensions.no_self_use` is in `load-plugins`.
+* `no-self-use` and `R0201` in a `disable` or `enable` option are `R0022`
+  unless `pylint.extensions.no_self_use` is in `load-plugins`. In an inline
+  pragma they still count as known.
 * A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint

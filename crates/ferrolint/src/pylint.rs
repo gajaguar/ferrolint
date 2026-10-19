@@ -47,23 +47,26 @@ pub fn message_issue(action: &str, name: &str) -> Option<Issue> {
     if known {
         return None;
     }
-    let name_owned = Some(name.to_owned());
     if contains(names::DELETED, name) || contains(names::DELETED, &upper) {
-        return Some(Issue {
-            code: "R0022",
-            message: format!(
-                "Useless option value for '{action}', '{name}' was removed from pylint or moved to an optional extension."
-            ),
-            name: name_owned,
-        });
+        return Some(moved_issue(action, name));
     }
     Some(Issue {
         code: "W0012",
         message: format!(
             "Unknown option value for '{action}', expected a valid pylint message and got '{name}'"
         ),
-        name: name_owned,
+        name: Some(name.to_owned()),
     })
+}
+
+fn moved_issue(action: &str, name: &str) -> Issue {
+    Issue {
+        code: "R0022",
+        message: format!(
+            "Useless option value for '{action}', '{name}' was removed from pylint or moved to an optional extension."
+        ),
+        name: Some(name.to_owned()),
+    }
 }
 
 /// Whether `load-plugins` names a plugin that `exists` and whose options and
@@ -92,6 +95,11 @@ pub fn issues(
     if foreign_plugin(entries, exists) {
         return out;
     }
+    let self_use_loaded = entries
+        .iter()
+        .filter(|(key, _)| key == "load-plugins")
+        .flat_map(|(_, value)| value.split(','))
+        .any(|plugin| plugin.trim() == "pylint.extensions.no_self_use");
     let mut unknown: Vec<String> = Vec::new();
     for (key, value) in entries {
         let key = if ini {
@@ -109,7 +117,15 @@ pub fn issues(
                     .split(',')
                     .map(str::trim)
                     .filter(|item| !item.is_empty())
-                    .filter_map(|item| message_issue(&format!("--{key}"), item)),
+                    .filter_map(|item| {
+                        let action = format!("--{key}");
+                        if !self_use_loaded
+                            && matches!(item.to_ascii_lowercase().as_str(), "no-self-use" | "r0201")
+                        {
+                            return Some(moved_issue(&action, item));
+                        }
+                        message_issue(&action, item)
+                    }),
             );
         }
     }
@@ -344,6 +360,22 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         let issues = issues(&entries, true, |_| false);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].code, "E0015");
+    }
+
+    #[test]
+    fn no_self_use_is_r0022_unless_its_extension_is_loaded() {
+        let off = ini("[MASTER]\ndisable=no-self-use,R0201\n", false).unwrap();
+        let codes: Vec<_> = issues(&off, true, |_| true)
+            .iter()
+            .map(|i| i.code)
+            .collect();
+        assert_eq!(codes, ["R0022", "R0022"]);
+        let on = ini(
+            "[MASTER]\nload-plugins=pylint.extensions.no_self_use\ndisable=no-self-use\n",
+            false,
+        )
+        .unwrap();
+        assert_eq!(issues(&on, true, |_| true), []);
     }
 
     #[test]
