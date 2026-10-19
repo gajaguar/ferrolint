@@ -163,7 +163,7 @@ fn self_assigning_variable() {
 /// The unused-import component with every `@0.3.1` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
-fn respelled_plugin(version: &[u8; 6]) -> Vec<u8> {
+fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
     let (prefix, current) = (b"ferrolint:plugin/", b"@0.3.1");
     let mut rewritten = 0;
@@ -175,7 +175,7 @@ fn respelled_plugin(version: &[u8; 6]) -> Vec<u8> {
                 .position(|&byte| byte == b'@')
             && bytes[start + at..].starts_with(current)
         {
-            bytes[start + at..start + at + 6].copy_from_slice(version);
+            bytes[start + at..start + at + 6].copy_from_slice(&version);
             rewritten += 1;
         }
     }
@@ -199,7 +199,7 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 #[test]
 fn a_plugin_built_against_contract_0_2_x_is_refused() {
     // 0.3.0 changed the `file` record, so a 0.2.x build is not compatible.
-    let run = lint_with(&respelled_plugin(b"@0.2.1"));
+    let run = lint_with(&respelled_plugin(*b"@0.2.1"));
     assert_eq!(run.code, 2, "{run:?}");
     assert!(run.stderr.contains("ferrolint:plugin"), "{run:?}");
 }
@@ -207,7 +207,7 @@ fn a_plugin_built_against_contract_0_2_x_is_refused() {
 #[test]
 fn a_plugin_built_against_contract_0_3_0_still_loads() {
     // 0.3.1 only adds interfaces, which a 0.3.0 plugin does not import.
-    let run = lint_with(&respelled_plugin(b"@0.3.0"));
+    let run = lint_with(&respelled_plugin(*b"@0.3.0"));
     assert_eq!(run.code, 1, "{run:?}");
     assert!(run.stdout.contains("IMP001"), "{run:?}");
 }
