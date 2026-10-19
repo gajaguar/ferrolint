@@ -2,6 +2,8 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `R1727` and the other messages of the condition rules
+  quote the code as astroid prints it, not as written.
 * **pylint-compare.md**: Documented `MSG=1`, which compares the message as
   well as the line, with whitespace collapsed.
 * **native-rules.md**: `W0614` lists the public names of the standard

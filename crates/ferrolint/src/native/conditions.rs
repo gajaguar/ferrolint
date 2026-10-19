@@ -8,8 +8,7 @@
 //! when it is written as a literal, or is a name bound once to a function,
 //! class, lambda or generator expression of this file; a condition folds
 //! only literals, containers and `not`/`-`/`+` of them; `C0117` needs a
-//! literal on both sides. The code that a message quotes is the source text,
-//! not astroid's rendering of it. Upgrade with an inference of values.
+//! literal on both sides. Upgrade with an inference of values.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -22,6 +21,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange};
 
+use super::astring::as_string;
 use super::classes::{Env, py_repr};
 use super::flow::{const_truth, own_returns};
 use super::{Checker, Ctx, rule};
@@ -162,8 +162,7 @@ impl<'a> Walk<'a, '_> {
         &self.env.ctx.source[expr.range()]
     }
 
-    /// The expression as astroid prints it, for the parts a message quotes
-    /// most often; the source text for any other part.
+    /// The expression as astroid prints it.
     fn show(&self, expr: &'a Expr) -> String {
         let wrap = |e: &'a Expr| {
             let text = self.show(e);
@@ -192,7 +191,7 @@ impl<'a> Walk<'a, '_> {
             }
             Expr::UnaryOp(u) if u.op == UnaryOp::Not => format!("not {}", wrap(&u.operand)),
             Expr::BoolOp(_) => self.render(&Self::original(expr)),
-            other => self.text(other).to_owned(),
+            other => as_string(self.env.ctx.source, other),
         }
     }
 

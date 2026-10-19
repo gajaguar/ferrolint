@@ -233,8 +233,7 @@ call:
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
   literal, a container, a lambda, or `not`, `-` and `+` of one; Pylint also
   folds operations and comparisons of constants and names that hold them.
-  The code a message quotes is the source text, except for strings, `not`,
-  comparisons and boolean operations, which are written as astroid does.
+  The code a message quotes is written as astroid does.
 * `C0117` fires for a comparison whose two sides have a known type: a
   literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
   a call of a builtin class, or `len` of one of these. Pylint infers more.
