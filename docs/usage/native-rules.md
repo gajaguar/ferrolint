@@ -264,17 +264,27 @@ Imports:
 * `W0407` `preferred-module`, from `preferred-modules`
   (`module:preferred`, comma separated), including Pylint's match of a key
   that is only a substring of the root module.
+* `W0401` `wildcard-import`: a `from m import *`, reported at the import as
+  `Wildcard import m` (the module as written, without the dots of a
+  relative import). Like Pylint it skips an `__init__.py`, and it reports
+  one in a function or class too. `allow-wildcard-with-all` excuses a
+  module that binds `__all__` (also under `if` and `try`, by `=`, `+=` or an
+  annotation); a module that is not found is never excused.
 * `W0614` `unused-wildcard-import`: the public names of a `from m import *`
-  module (top-level bindings, imports included, nested stars followed)
-  that the file never reads, reported at the import as
-  `Unused import(s) a, b and c from wildcard import of m`. Like Pylint it
-  ignores the `__all__` of the imported module, skips an `__init__.py`, and
-  counts the names in the file's own literal `__all__` as read. Divergences:
-  a module is found as base classes are (the directories above the file,
-  and the standard library and packages of `VIRTUAL_ENV`), so a module that
-  is not found, or is a C module, is skipped; the result depends on another
-  file, so it is as stale as the cache is (see the project module's
-  shortcut note).
+  module that the file never reads, reported at the import as
+  `Unused import(s) a, b and c from wildcard import of m`. The names are
+  those the module binds at its top level (imports, and names bound under
+  `if`, `for`, `while`, `with` and `try`, including `except ... as` and
+  `+=`), then those of the modules it star-imports, in astroid's order;
+  names that start with an underscore are left out. Like Pylint it
+  ignores the `__all__` of the imported module, skips an `__init__.py`
+  and a star in a function or class, and counts the names in the file's own
+  literal `__all__` as read. Divergences: a module is found as base
+  classes are (the directories above the file, and the standard library
+  and packages of `VIRTUAL_ENV`), so a module that is not found, or is a C
+  module, is skipped; the names bound by a `match` capture, a walrus and a
+  `global` in a function are not seen; the result depends on another file, so
+  it is as stale as the cache is (see the project module's shortcut note).
 
 Variables and scopes:
 
