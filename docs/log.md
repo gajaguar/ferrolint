@@ -10,6 +10,9 @@
   with the `own-line` flag. Updated `requirements/plugin-contract.md` and
   `usage/writing-a-plugin.md`.
 
+* **native-rules.md**: Added Batch L - `C1803`, `C1804`, `C1805`, `E1143` and
+  `E1144`, on literals and names bound once to one; `C1804` and `C1805` are off
+  unless selected or enabled, as in Pylint.
 * **native-rules.md**: Added Batch K - `W0149`, `C3401`, `R3501`, `R5601` and
   `R6106`, the Pylint extension messages that one walk decides, gated on
   `load-plugins`.

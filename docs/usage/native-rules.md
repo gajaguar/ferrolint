@@ -13,7 +13,8 @@ the scope model of the file, with no plugin. Its code is the Pylint msg-id,
 so `C0209` and `consider-using-f-string` name the same rule, and its message
 is Pylint's own text, so the output compares line by line.
 
-Native rules are active by default like every other rule. They select,
+Native rules are active by default like every other rule, except the two
+that Pylint ships disabled (`C1804`, `C1805`). They select,
 ignore and suppress like a plugin's: with `select`, `ignore`, a
 `# pylint: disable=` comment or `# noqa: C0209`. They read the Pylint
 options that the configuration carries (see
@@ -694,3 +695,38 @@ Known divergences:
   imported from `builtins`. Pylint also infers a call through an alias such as
   `f = float` and `f('inf')`; that one is not reported.
 * The `code_style` extension's other messages are not ported here.
+
+## Batch L: literal comparisons and slices
+
+* `C1803` `use-implicit-booleaness-not-comparison`: `==`, `!=`, `<`, `<=`, `>`
+  or `>=` between a value and an empty list, tuple or dict literal, with the
+  value on either side. The message suggests `not x`, or for `!=` `x` in a
+  truth test (`if`, `while`, `assert`, a conditional expression, `not`, a
+  comprehension filter, `bool(...)`, `any`/`all` of a generator, `filter` of a
+  lambda, and `and`/`or` inside them) and `bool(x)` elsewhere.
+* `C1804` `use-implicit-booleaness-not-comparison-to-string` and `C1805`
+  `use-implicit-booleaness-not-comparison-to-zero`: `==`, `!=`, `is` or
+  `is not` against `""` or against `0`, `0.0` or `0j` (not `False`). Pylint
+  ships both disabled, so ferrolint reports them only when `select` names
+  them or an `enable` option reaches them (`enable=C1804`, `enable=all`).
+* `E1143` `unhashable-member`: a list, dict or set as a dict key, a set
+  member, or the subscript of a dict literal.
+* `E1144` `invalid-slice-step`: `x[::0]` on a list, tuple, string or bytes;
+  assigning or deleting a slice is checked for a list only, as Pylint does.
+  A step of `False`, `0.0` or `0j` counts, `-0` does not.
+
+Known divergences:
+
+* Pylint infers the compared or subscripted value. Here a value has a type
+  only when it is a list, tuple, dict, set, string or bytes literal, a call
+  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name bound once
+  by a plain assignment to one of those. A parameter, an attribute, a call of
+  another function, an instance of a class, a name bound twice, `range(...)`
+  and `slice(...)` objects are silent where Pylint may report.
+* `C1803` is silent for a number, a float and a bool, as in Pylint, but
+  Pylint also reports a `None`, a class, a function, a module and an instance
+  of a class without `__bool__`; those are not reported.
+* A category toggle (`enable=C`) does not reach a native rule, so it does not
+  turn `C1804` or `C1805` on; name them or use `all`.
+* `E1143` checks only the key or member itself: a comprehension, a
+  conditional expression and an instance of a class are not looked at.

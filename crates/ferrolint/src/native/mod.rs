@@ -17,6 +17,7 @@ use crate::semantic::Model;
 mod abstract_methods;
 mod astring;
 mod bad_super;
+mod booleaness;
 mod calls;
 mod classes;
 mod conditions;
@@ -84,6 +85,7 @@ pub trait Checker: Sync {
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
     &bad_super::BadSuper,
+    &booleaness::Booleaness,
     &calls::Calls,
     &classes::Classes,
     &conditions::Conditions,
@@ -110,6 +112,10 @@ const CHECKERS: &[&dyn Checker] = &[
     &versions::Versions,
     &wildcard::Wildcard,
 ];
+
+/// The native rules Pylint ships disabled: `select` or an `enable` option
+/// turns them on.
+pub const OFF_BY_DEFAULT: &[&str] = &["C1804", "C1805"];
 
 /// Every native rule.
 pub fn rules() -> Vec<RuleInfo> {

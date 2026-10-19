@@ -29,7 +29,11 @@ impl Selection {
     pub fn new(registry: &Registry, config: &Config) -> Result<Self> {
         let mut enabled: BTreeSet<String> = match &config.select {
             Some(select) => resolve_all(registry, "select", select)?,
-            None => registry.rules().map(|rule| rule.code.clone()).collect(),
+            None => registry
+                .rules()
+                .map(|rule| rule.code.clone())
+                .filter(|code| !crate::native::OFF_BY_DEFAULT.contains(&code.as_str()))
+                .collect(),
         };
         for code in resolve_all(registry, "ignore", &config.ignore)? {
             enabled.remove(&code);
@@ -163,6 +167,36 @@ mod tests {
         ];
         assert_eq!(enabled(&toggles), ["A3"]);
         assert_eq!(enabled(&[(Toggle::Disable, "A3")]), ["A1", "A2"]);
+    }
+
+    #[test]
+    fn a_rule_pylint_ships_disabled_needs_an_enable() {
+        let registry = Registry::new([
+            rule("A1", "W0611", "unused-import"),
+            rule(
+                "C1804",
+                "C1804",
+                "use-implicit-booleaness-not-comparison-to-string",
+            ),
+        ])
+        .unwrap();
+        let with = |toggles: Vec<(Toggle, String)>| {
+            let config = Config {
+                pylint_disable: toggles,
+                ..Config::default()
+            };
+            let selection = Selection::new(&registry, &config).unwrap();
+            selection
+                .for_file(Path::new("x.py"))
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(with(vec![]), ["A1"]);
+        assert_eq!(
+            with(vec![(Toggle::Enable, "C1804".into())]),
+            ["A1", "C1804"]
+        );
+        assert_eq!(with(vec![(Toggle::Enable, "all".into())]), ["A1", "C1804"]);
     }
 
     #[test]

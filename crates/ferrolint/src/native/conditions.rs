@@ -198,21 +198,6 @@ impl<'a> Walk<'a, '_> {
 
     /// Record the value of every simple assignment, for the names it binds.
     fn collect(&mut self, body: &'a [Stmt]) {
-        struct Assigned<'a, 'm>(&'m mut HashMap<u32, &'a Expr>);
-        impl<'a> Visitor<'a> for Assigned<'a, '_> {
-            fn visit_stmt(&mut self, stmt: &'a Stmt) {
-                if let Stmt::Assign(assign) = stmt {
-                    for target in &assign.targets {
-                        if let Expr::Name(name) = target
-                            && let Some(id) = name.node_index().load().as_u32()
-                        {
-                            self.0.insert(id, &assign.value);
-                        }
-                    }
-                }
-                visitor::walk_stmt(self, stmt);
-            }
-        }
         Assigned(&mut self.assigned).visit_body(body);
     }
 
@@ -1122,6 +1107,24 @@ impl Walk<'_, '_> {
             }
             other => literal_type(other),
         }
+    }
+}
+
+/// The value of every simple assignment, by the node id of each name it binds.
+pub(super) struct Assigned<'a, 'm>(pub &'m mut HashMap<u32, &'a Expr>);
+
+impl<'a> Visitor<'a> for Assigned<'a, '_> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Stmt::Assign(assign) = stmt {
+            for target in &assign.targets {
+                if let Expr::Name(name) = target
+                    && let Some(id) = name.node_index().load().as_u32()
+                {
+                    self.0.insert(id, &assign.value);
+                }
+            }
+        }
+        visitor::walk_stmt(self, stmt);
     }
 }
 
