@@ -2,6 +2,8 @@
 
 ## 2026-10-18
 
+* **pylint-compare.md**: Described the comparison of configuration
+  findings (`.pylintrc:1:E0015`) and the `E0013` path divergence.
 * **Out-of-tree plugin**: Added `usage/out-of-tree-plugin.md` - building a
   plugin from another repository against the SDK by revision.
 * **Roadmap notes**: Retired `backlog.md` and

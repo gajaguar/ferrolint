@@ -57,6 +57,13 @@ declares, and each side is reduced to a set. The tool prints `solo-ferrolint`
 and `solo-pylint` with their counts and exits with 1 if either has a finding.
 It compares the line, not the column or the message.
 
+A finding in a configuration file is compared too, as `.pylintrc:1:E0015`:
+both tools put it on line 1 of the file. Pylint reports `E0013` under the
+module name `Command line or configuration file` instead of a path, so that
+finding always shows as `solo-pylint` (and as `solo-ferrolint` under the
+file). The temporary configuration of a run without `BIN` and `STRIP` does not
+read `.pylintrc`, so only a bundled `BIN` with `STRIP` compares these.
+
 ## Differences to expect
 
 A project that disables `redefined-builtin` in its `.pylintrc` needs
