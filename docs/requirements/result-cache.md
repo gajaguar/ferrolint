@@ -14,7 +14,8 @@ configuration does not get parsed and walked a second time.
 * The cache key is the triple hash of the file content, each plugin's
   WASM binary, and the effective configuration that changes results
   (select, ignore, per-file-ignores, suppressions options) - including
-  the `options` sent to plugins, which a plugin's verdict may depend on.
+  the `options` sent to plugins, shared and per plugin, which a plugin's
+  verdict may depend on.
   Any of the three changing invalidates the entry; nothing more or less
   does.
 * A cache hit replays the stored diagnostics of that file, plugin for

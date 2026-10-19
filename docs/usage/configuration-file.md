@@ -22,6 +22,7 @@ py-version = "3.14"                  # default: none; MAJOR.MINOR
 [[plugins]]                          # external plugins only, in run order
 path = "plugins/unused_import.wasm"
 sha256 = "<the file's lowercase hex SHA-256>"
+options = { markers = "TODO, FIXME" }  # this plugin's own options, as text
 
 [per-file-ignores]
 "tests/*.py" = ["W0611"]
@@ -39,6 +40,12 @@ max-args = "3"
   plugins of a release binary (see [Plugins](plugins.md)); no `[[plugins]]`
   table is needed for them. `[[plugins]]` names external plugins only, and
   a bundled one repeated there is a duplicate rule code error.
+* A `[[plugins]]` entry may carry an `options` table of text values that
+  only that plugin reads, unlike the top-level `[options]`, which every
+  plugin receives. Write it inline, or as `[plugins.options]` right after
+  the entry. A bundled plugin takes none, and a Pylint file cannot name
+  plugins, so these options need a `ferrolint.toml` or
+  `[tool.ferrolint]`. Changing one re-runs that plugin on every file.
 * `exclude` uses gitignore syntax: `vendor/` matches a directory anywhere,
   `/vendor/` only at the root. It filters what a directory walk discovers;
   a file named on the command line is always linted.

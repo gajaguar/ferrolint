@@ -2,6 +2,12 @@
 
 ## 2026-10-18
 
+* **Plugin comments and options**: Contract 0.3.1 adds the comment-ranges and
+  per-plugin options queries. Updated `requirements/plugin-contract.md` (with
+  why the options are a query), `requirements/plugin-sdk.md`,
+  `requirements/configuration.md`, `requirements/result-cache.md`,
+  `usage/configuration-file.md`, `usage/writing-a-plugin.md`,
+  `usage/result-cache.md` and `usage/plugins.md`.
 * **Out-of-tree plugin**: Added `usage/out-of-tree-plugin.md` - building a
   plugin from another repository against the SDK by revision.
 * **Roadmap notes**: Retired `backlog.md` and

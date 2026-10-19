@@ -45,6 +45,12 @@ table: `select` and `ignore` work on their codes and Pylint spellings
 alone. `make release-build` and `make wheel` build the binary this way.
 A binary from `cargo build`, such as the one the tests run, bundles none.
 
+None of the eleven reads an option or a comment range. A plugin's own
+`options` table in `[[plugins]]` and the comment query are for external
+plugins (see [Configuration file](configuration-file.md) and
+[Writing a plugin](writing-a-plugin.md)); a bundled plugin always gets an
+empty table.
+
 Errors name a bundled plugin as `<bundled>/<file>`. A `[[plugins]]` entry
 that repeats one fails with the duplicate rule code error; `[[plugins]]`
 is for external plugins, which still need `path` and `sha256`.

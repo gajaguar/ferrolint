@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 
 [dependencies.ferrolint-plugin-sdk]
 path = "../../crates/ferrolint-plugin-sdk"
-version = "=0.3.0"
+version = "=0.3.1"
 ```
 
 Pin the SDK exactly: its version is the version of the
@@ -66,8 +66,14 @@ export_checker!(NoPrint);
   best-effort type. Report on an inferred type only when its `resolved`
   is true; `plugins/not-callable` shows the pattern. `option("max-args")`
   gives a configuration option as text, or none when it is unset.
-* A plugin built with SDK 0.3.0 needs a host of contract 0.3.0, which does
-  not load plugins built with SDK 0.2.x: rebuild them.
+* `comments()` lists the file's comments, each with its `range` and
+  `text` (the `#` included), and `plugin_option("markers")` reads an
+  option set only for this plugin, in the `options` table of its
+  `[[plugins]]` entry. `plugins/test-markers` uses both: it reports the
+  comments that hold a marker its `markers` option names.
+* A plugin built with SDK 0.3.1 needs a host of contract 0.3.1. That host
+  still loads plugins built with SDK 0.3.0, but not with 0.2.x: rebuild
+  those.
 * A `Diagnostic` takes its rule's severity unless it sets one, and may
   carry a `Fix` (`Fix::replace`, `Fix::delete`). The host reports a fix and
   never applies it.
@@ -84,6 +90,7 @@ export_checker!(NoPrint);
 [[plugins]]
 path = "target/wasm32-wasip2/release/my_plugin.wasm"
 sha256 = "…"   # sha256sum target/wasm32-wasip2/release/my_plugin.wasm
+options = { markers = "TODO" }   # optional: read with plugin_option
 ```
 
 ## Parity with Pylint

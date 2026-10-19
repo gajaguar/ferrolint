@@ -15,10 +15,11 @@ A run keeps its results in `.ferrolint-cache/` in the working directory;
 * A file's entry is keyed on everything its results depend on: its bytes,
   its path and module name, the rules that report for it (after `select`,
   `ignore` and `per-file-ignores`), `py-version`, the options sent to
-  plugins and the linter build (its
-  version and executable). Inside, each plugin's diagnostics are stored under the
-  SHA-256 of the plugin binary, and outputs of plugins no longer
-  configured are dropped when the entry is rewritten.
+  plugins (the shared `[options]` and each plugin's own `options`) and the
+  linter build (its version and executable). Inside, each plugin's
+  diagnostics are stored under the SHA-256 of the plugin binary, and
+  outputs of plugins no longer configured are dropped when the entry is
+  rewritten.
 * A file whose entry holds every plugin it needs replays without being
   parsed. Otherwise the run parses it, runs only the plugins the entry
   lacks and rewrites the entry. Changing one plugin reruns that plugin
