@@ -16,7 +16,7 @@
 * **native-rules.md**: Added Batch K - `W0149`, `C3401`, `R3501`, `R5601` and
   `R6106`, the Pylint extension messages that one walk decides, gated on
   `load-plugins`.
-* **native-rules.md**: Added Batch L - `R6101`, `R6102`, `R6103`, `R6105` and
+* **native-rules.md**: Added Batch M - `R6101`, `R6102`, `R6103`, `R6105` and
   `W0141`, the `code_style` and `bad_builtin` extension messages; `R6105`
   is off until `enable` or `select` names it.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
