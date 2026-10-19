@@ -142,10 +142,10 @@ impl Project {
         self.roots.iter().find_map(|root| {
             let file = root.join(&relative).with_extension("py");
             let init = root.join(&relative).join("__init__.py");
-            if file.is_file() {
+            if file.is_file() && exact_case(&file) {
                 Some((file, false))
             } else {
-                init.is_file().then_some((init, true))
+                (init.is_file() && init.parent().is_some_and(exact_case)).then_some((init, true))
             }
         })
     }
@@ -437,6 +437,17 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
     found
 }
 
+/// Whether the last component of `path` is spelled as its directory lists
+/// it: macOS and Windows would open `iterTools.py` as `itertools.py`.
+fn exact_case(path: &Path) -> bool {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    std::fs::read_dir(dir).is_ok_and(|mut entries| {
+        entries.any(|entry| entry.is_ok_and(|entry| entry.file_name() == name))
+    })
+}
+
 /// The standard library of the interpreter that made the environment
 /// `env`, read from its `pyvenv.cfg`.
 fn stdlib(env: &Path) -> Option<PathBuf> {
@@ -558,5 +569,16 @@ mod tests {
             ["os", "a", "f", "K", "c", "z"]
         );
         assert!(project.public_names("app.missing").is_none());
+    }
+
+    #[test]
+    fn a_module_is_found_by_the_case_it_is_spelled_in() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("misc/Inner")).unwrap();
+        std::fs::write(root.path().join("misc/Inner/__init__.py"), "").unwrap();
+        std::fs::write(root.path().join("misc/iterTools.py"), "").unwrap();
+        let project = Project::new(&root.path().join("misc/user.py"), "misc.user");
+        assert!(project.has_module("iterTools") && project.has_module("Inner"));
+        assert!(!project.has_module("itertools") && !project.has_module("inner"));
     }
 }
