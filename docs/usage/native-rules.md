@@ -780,6 +780,7 @@ Known divergences:
   text (see the divergences of Batch K).
 * `R6105` sees the callee through the imports of `collections` only; Pylint
   also infers a call through an alias such as `maker = namedtuple`.
+
 ## Batch N: the messages about `# pylint:` pragmas
 
 Pylint tells about its own pragmas with informational messages that it leaves

@@ -4,12 +4,15 @@ attribution
 capsys
 commitizen
 conventionalkit
+CREIWF
 cspell
+Dicted
 direnv
 distyl
 doesn
 envrc
 español
+falsey
 fastmcp
 fromlineno
 frontmatter
@@ -18,6 +21,10 @@ gitlint
 gitmoji
 gpgsign
 ifscale
+infinty
+infj
+infx
+inifinity
 katex
 klass
 kwonlyargs
@@ -27,7 +34,11 @@ mise
 musllinux
 cpio
 dotrc
+nanj
+nnan
 pypa
+recognise
+replacen
 retagged
 ncols
 negativa
@@ -104,3 +115,4 @@ fspath
 ixin
 pyvenv
 Variadics
+xpylint
