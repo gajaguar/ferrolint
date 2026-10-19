@@ -15,6 +15,7 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod bad_super;
 mod calls;
 mod classes;
 mod conditions;
@@ -77,6 +78,7 @@ pub trait Checker: Sync {
 
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
+    &bad_super::BadSuper,
     &calls::Calls,
     &classes::Classes,
     &conditions::Conditions,
