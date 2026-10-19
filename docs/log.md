@@ -4,6 +4,9 @@
 
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
+* **native-rules.md**: `W0614` now sees the names of `match` captures,
+  walruses and `global` assignments, leaves out `from __future__` names, lists
+  `from` imports last and matches module names by case.
 
 ## 2026-10-18
 

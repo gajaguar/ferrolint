@@ -275,9 +275,11 @@ Imports:
   `Unused import(s) a, b and c from wildcard import of m` (`m` as written,
   without the dots of a relative import). The names are
   those the module binds at its top level (imports, and names bound under
-  `if`, `for`, `while`, `with` and `try`, including `except ... as` and
-  `+=`), then those of the modules it star-imports, in astroid's order;
-  names that start with an underscore are left out. The first statement
+  `if`, `for`, `while`, `with`, `match` and `try`, including `except ... as`,
+  `+=`, walruses and the names a function assigns after declaring them
+  `global`), then those of its `from` imports and of the modules it
+  star-imports, in astroid's order; names that start with an underscore
+  and those of `from __future__` are left out. The first statement
   that binds a name lists it: a later star leaves out a name an earlier
   star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
@@ -285,9 +287,10 @@ Imports:
   literal `__all__` as read. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
   and packages of `VIRTUAL_ENV`), so a module that is not found, or is a C
-  module, is skipped; the names bound by a `match` capture, a walrus and a
-  `global` in a function are not seen; the result depends on another file, so
-  it is as stale as the cache is (see the project module's shortcut note).
+  module, is skipped (a module is also matched by the case it is spelled
+  in, even where the file system ignores it); the result depends on another
+  file, so it is as stale as the cache is (see the project module's shortcut
+  note).
 
 Variables and scopes:
 
