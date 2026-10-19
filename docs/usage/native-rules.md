@@ -264,6 +264,17 @@ Imports:
 * `W0407` `preferred-module`, from `preferred-modules`
   (`module:preferred`, comma separated), including Pylint's match of a key
   that is only a substring of the root module.
+* `W0614` `unused-wildcard-import`: the public names of a `from m import *`
+  module (top-level bindings, imports included, nested stars followed)
+  that the file never reads, reported at the import as
+  `Unused import(s) a, b and c from wildcard import of m`. Like Pylint it
+  ignores the `__all__` of the imported module, skips an `__init__.py`, and
+  counts the names in the file's own literal `__all__` as read. Divergences:
+  a module is found as base classes are (the directories above the file,
+  and the standard library and packages of `VIRTUAL_ENV`), so a module that
+  is not found, or is a C module, is skipped; the result depends on another
+  file, so it is as stale as the cache is (see the project module's
+  shortcut note).
 
 Variables and scopes:
 
@@ -285,10 +296,6 @@ Names and calls:
 
 Not ported:
 
-* `W0614` `unused-wildcard-import` needs the names that the imported module
-  exports, so the module has to be found and parsed; the host rules know
-  neither the path of the file nor the import search path. No wildcard import
-  was found in the code the rule was measured on.
 * `W0602`, `W0604` and `W0642` are Ruff's `PLW0602`, `PLW0604` and
   `PLW0642`; `W0613` `unused-argument` is Ruff's `ARG` family and needs the
   ancestors of a method to excuse an override. The `global` logic of `W0602`

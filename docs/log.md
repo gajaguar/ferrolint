@@ -2,6 +2,9 @@
 
 ## 2026-10-18
 
+* **native-rules.md**: Moved `W0614` unused-wildcard-import from not ported
+  to implemented, with its divergences.
+
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

@@ -51,7 +51,7 @@ impl Checker for Wildcard {
             let Some((last, rest)) = unused.split_last() else {
                 continue;
             };
-            let list = if rest.is_empty() {
+            let joined = if rest.is_empty() {
                 (*last).to_owned()
             } else {
                 format!("{} and {last}", rest.join(", "))
@@ -59,7 +59,7 @@ impl Checker for Wildcard {
             out.push(ctx.report(
                 UNUSED,
                 *stmt,
-                format!("Unused import(s) {list} from wildcard import of {module}"),
+                format!("Unused import(s) {joined} from wildcard import of {module}"),
             ));
         }
     }
@@ -137,16 +137,19 @@ mod tests {
                 "pkg/m.py",
                 "import os\na = 1\nb = 2\n_c = 3\n\ndef f(): ...\n\nclass K: ...\n",
             ),
-            ("pkg/allm.py", "__all__ = ['x', 'y']\nx = 1\ny = 2\nz = 3\n"),
+            (
+                "pkg/listed.py",
+                "__all__ = ['x', 'y']\nx = 1\ny = 2\nz = 3\n",
+            ),
             (
                 "pkg/user.py",
-                "from pkg.m import *\nfrom .allm import *\nfrom pkg.gone import *\nfrom json import *\n\nprint(a, x)\n",
+                "from pkg.m import *\nfrom .listed import *\nfrom pkg.gone import *\nfrom json import *\n\nprint(a, x)\n",
             ),
         ];
         assert_eq!(
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) os, b, f and K from wildcard import of pkg.m\n\
-             2:W0614:Unused import(s) y and z from wildcard import of pkg.allm"
+             2:W0614:Unused import(s) y and z from wildcard import of pkg.listed"
         );
     }
 
