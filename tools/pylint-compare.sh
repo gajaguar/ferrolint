@@ -137,7 +137,9 @@ sed -nE -e 's/^([^:]+):([0-9]+):[0-9]+: [a-z]+ [A-Z0-9]+ \(([A-Z][0-9]{4})[,)].*
 # A configuration finding (`.pylintrc:1:E0015`) has the same shape as one in a .py file.
 # shortcut: pylint . lints git-ignored files that ferrolint's walk skips; list
 # the files instead when comparing a tree with generated code.
-grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" | sed 's|^\./||' |
+# Pylint names E0013's module "Command line or configuration file", not a path.
+grep -E '^[^:]+:[0-9]+:[A-Z][0-9]{4}$' "$pylint_out" |
+	sed -e 's|^\./||' -e 's|^Command line or configuration file:|.pylintrc:|' |
 	LC_ALL=C sort -u >"$work/pylint.norm"
 
 if [ -n "${ONLY:-}" ]; then
