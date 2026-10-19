@@ -44,6 +44,7 @@ const PLUGIN_PACKAGES: &[&str] = &[
     "ferrolint-plugin-unnecessary-pass",
     "ferrolint-plugin-unused-import",
     "ferrolint-plugin-unused-variable",
+    "ferrolint-test-markers",
     "ferrolint-test-probe",
     "ferrolint-test-sandbox",
     "ferrolint-test-runaway",

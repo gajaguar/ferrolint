@@ -7,6 +7,12 @@
 * **native-rules.md**: Added `W0401` wildcard-import next to `W0614`, with
   `allow-wildcard-with-all`, and the cases of `W0614` checked against Pylint
   (private names, a star in a function, redefined names, nested stars).
+* **Plugin comments and options**: Contract 0.3.1 adds the comment-ranges and
+  per-plugin options queries. Updated `requirements/plugin-contract.md` (with
+  why the options are a query), `requirements/plugin-sdk.md`,
+  `requirements/configuration.md`, `requirements/result-cache.md`,
+  `usage/configuration-file.md`, `usage/writing-a-plugin.md`,
+  `usage/result-cache.md` and `usage/plugins.md`.
 * **Out-of-tree plugin**: Added `usage/out-of-tree-plugin.md` - building a
   plugin from another repository against the SDK by revision.
 * **Roadmap notes**: Retired `backlog.md` and

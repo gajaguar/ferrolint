@@ -45,6 +45,8 @@ pub struct FileData {
     pub model: Model,
     /// The source text, for the inference queries.
     pub source: String,
+    /// The ranges of the file's comments, for the `comments` query.
+    pub comments: Vec<wit::Range>,
 }
 
 /// Per-store host state.
@@ -53,6 +55,8 @@ pub struct State {
     table: ResourceTable,
     limits: StoreLimits,
     file: Option<Arc<FileData>>,
+    /// The options of the plugin this store runs, for the `settings` query.
+    options: Vec<(String, String)>,
 }
 
 impl WasiView for State {
@@ -85,6 +89,7 @@ impl State {
             table: ResourceTable::new(),
             limits: StoreLimitsBuilder::new().memory_size(MEMORY_LIMIT).build(),
             file: None,
+            options: Vec::new(),
         }
     }
 
@@ -161,11 +166,25 @@ impl wit::ferrolint::plugin::inference::Host for State {
     }
 }
 
+impl wit::ferrolint::plugin::comments::Host for State {
+    fn comment_ranges(&mut self) -> wasmtime::Result<Vec<wit::Range>> {
+        Ok(self.file()?.comments.clone())
+    }
+}
+
+impl wit::ferrolint::plugin::settings::Host for State {
+    fn plugin_options(&mut self) -> wasmtime::Result<Vec<(String, String)>> {
+        Ok(self.options.clone())
+    }
+}
+
 /// A plugin file read and checked against its pinned SHA-256.
 pub struct PluginSource {
     pub path: PathBuf,
     pub bytes: Vec<u8>,
     pub sha256: String,
+    /// The plugin's own options, sorted by key; empty for a bundled plugin.
+    pub options: Vec<(String, String)>,
 }
 
 /// A plugin whose rules are known. It compiles on first use when its
@@ -174,6 +193,8 @@ pub struct LoadedPlugin {
     pub name: String,
     pub rules: Vec<RuleInfo>,
     pub sha256: String,
+    /// The options its `[[plugins]]` entry gives it.
+    pub options: Vec<(String, String)>,
     source: PluginSource,
     pre: OnceLock<std::result::Result<PluginPre<State>, String>>,
 }
@@ -229,6 +250,7 @@ impl Host {
                                 name: meta.name,
                                 rules: meta.rules,
                                 sha256: source.sha256.clone(),
+                                options: source.options.clone(),
                                 source,
                                 pre: OnceLock::new(),
                             });
@@ -301,6 +323,11 @@ impl Host {
             Err(err) => return Outcome::Aborted(describe(&err)),
         };
         instance.store.data_mut().file = Some(Arc::clone(data));
+        instance
+            .store
+            .data_mut()
+            .options
+            .clone_from(&loaded.options);
         let result = arm(&mut instance.store).and_then(|()| {
             instance.plugin.ferrolint_plugin_checker().call_check(
                 &mut instance.store,
@@ -394,6 +421,7 @@ fn load_one(engine: &Engine, linker: &Linker<State>, source: PluginSource) -> Re
         name: info.name,
         rules,
         sha256: source.sha256.clone(),
+        options: source.options.clone(),
         source,
         pre: OnceLock::from(Ok(pre)),
     })

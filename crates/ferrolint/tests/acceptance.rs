@@ -1033,6 +1033,55 @@ fn plugin_options_reach_the_plugin_and_key_the_cache() {
     );
 }
 
+#[test]
+fn a_plugin_reads_comments_and_its_own_options_and_they_key_the_cache() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-markers", "markers.wasm");
+    let configure = |markers: &str, shared: &str| {
+        project.write(
+            "ferrolint.toml",
+            format!(
+                "select = [\"MRK001\"]\n{shared}\n{plugin}[plugins.options]\nmarkers = \"{markers}\"\n"
+            ),
+        );
+    };
+    let lines = |run: &support::Run| -> Vec<String> {
+        run.finding_lines()
+            .iter()
+            .map(|line| line.split(": ").next().unwrap().to_owned())
+            .collect()
+    };
+    // The marker inside the string is not a comment.
+    project.write(
+        "a.py",
+        "x = 1  # TODO: fix\ny = 2  # fine\n# FIXME later\ns = \"# TODO\"\n",
+    );
+    configure("TODO, FIXME", "");
+    let cold = project.run(&["--stats", "--no-cache"]);
+    assert_eq!(lines(&cold), ["a.py:1:8", "a.py:3:1"], "{cold:?}");
+    assert!(cold.stdout.contains("TODO: # TODO: fix"), "{cold:?}");
+
+    let first = project.run(&["--stats"]);
+    assert_eq!(stats(&first)["plugin-runs"], 1, "{first:?}");
+    let warm = project.run(&["--stats"]);
+    assert_eq!(stats(&warm)["plugin-runs"], 0, "{warm:?}");
+
+    // Another value for the plugin's own option is a new cache key.
+    configure("FIXME", "");
+    let run = project.run(&["--stats"]);
+    assert_eq!(lines(&run), ["a.py:3:1"], "{run:?}");
+    assert_eq!(
+        (stats(&run)["parsed"], stats(&run)["plugin-runs"]),
+        (1, 1),
+        "{run:?}"
+    );
+
+    // The shared `[options]` table is not the plugin's own table.
+    configure("", "[options]\nmarkers = \"TODO\"\n");
+    let run = project.run(&["--no-cache"]);
+    assert_eq!(run.code, 0, "{run:?}");
+}
+
 // Performance (AC-26..AC-28, NFR-01, NFR-02, NFR-05)
 
 #[test]

@@ -1,7 +1,9 @@
 //! What a checker sees of the current file, and how it asks the host.
 
+use std::cell::OnceCell;
+
 use crate::bindings::ferrolint::plugin::semantic;
-use crate::{Binding, Diagnostic, File, Inferred, Node, NodeKind, Origin, Scope};
+use crate::{Binding, Diagnostic, File, Inferred, Node, NodeKind, Origin, Range, Scope};
 
 /// The scope and binding queries the host answers about the current file.
 /// Plugins use the host's answers; a native test can supply its own.
@@ -21,6 +23,23 @@ pub trait Semantic {
             resolved: false,
         }
     }
+    /// The ranges of the file's comments, in source order. A native test
+    /// that does not care answers that there are none.
+    fn comment_ranges(&self) -> Vec<Range> {
+        Vec::new()
+    }
+    /// The options the configuration gives this plugin alone, sorted by
+    /// key. A native test that does not care answers that there are none.
+    fn plugin_options(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+}
+
+/// A comment of the file: its range and its text, `#` included.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Comment<'a> {
+    pub range: Range,
+    pub text: &'a str,
 }
 
 /// The host's answers, through the contract's `semantic` import.
@@ -42,6 +61,14 @@ impl Semantic for HostSemantic {
     fn infer(&self, node: u32) -> Inferred {
         crate::bindings::ferrolint::plugin::inference::infer(node)
     }
+
+    fn comment_ranges(&self) -> Vec<Range> {
+        crate::bindings::ferrolint::plugin::comments::comment_ranges()
+    }
+
+    fn plugin_options(&self) -> Vec<(String, String)> {
+        crate::bindings::ferrolint::plugin::settings::plugin_options()
+    }
 }
 
 /// The current file, its nodes, the host's queries and the diagnostics
@@ -51,6 +78,10 @@ pub struct Context<'a> {
     nodes: &'a [Node<'a>],
     semantic: &'a dyn Semantic,
     diagnostics: Vec<Diagnostic>,
+    // Asked of the host on first use, so a plugin that never reads them
+    // never calls the query.
+    comments: OnceCell<Vec<Comment<'a>>>,
+    plugin_options: OnceCell<Vec<(String, String)>>,
 }
 
 impl<'a> Context<'a> {
@@ -60,6 +91,8 @@ impl<'a> Context<'a> {
             nodes,
             semantic,
             diagnostics: Vec::new(),
+            comments: OnceCell::new(),
+            plugin_options: OnceCell::new(),
         }
     }
 
@@ -82,6 +115,33 @@ impl<'a> Context<'a> {
     pub fn option(&self, key: &str) -> Option<&str> {
         let found = self.file.options.iter().find(|(name, _)| name == key);
         found.map(|(_, value)| value.as_str())
+    }
+
+    /// The option `key` the plugin's own `[[plugins]]` entry sets in its
+    /// `options` table, as written; none when it does not. Unlike
+    /// [`option`](Self::option), no other plugin sees it.
+    pub fn plugin_option(&self, key: &str) -> Option<&str> {
+        let options = self
+            .plugin_options
+            .get_or_init(|| self.semantic.plugin_options());
+        let found = options.iter().find(|(name, _)| name == key);
+        found.map(|(_, value)| value.as_str())
+    }
+
+    /// The file's comments, in source order, each with its text.
+    pub fn comments(&self) -> &[Comment<'a>] {
+        self.comments.get_or_init(|| {
+            let source = self.file.source.as_str();
+            self.semantic
+                .comment_ranges()
+                .into_iter()
+                .filter_map(|range| {
+                    let text =
+                        source.get(range.start.offset as usize..range.end.offset as usize)?;
+                    Some(Comment { range, text })
+                })
+                .collect()
+        })
     }
 
     /// Every node, in pre-order; a node's id is its index.
@@ -184,5 +244,70 @@ impl<'a> Context<'a> {
 
     pub(crate) fn into_diagnostics(self) -> Vec<Diagnostic> {
         self.diagnostics
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The host's answers for a file, as a native test supplies them.
+    struct Fake;
+
+    impl Semantic for Fake {
+        fn scope_of(&self, _node: u32) -> Scope {
+            unreachable!()
+        }
+        fn visible_bindings(&self, _node: u32) -> Vec<Binding> {
+            Vec::new()
+        }
+        fn resolve(&self, _node: u32) -> Option<Binding> {
+            None
+        }
+        fn comment_ranges(&self) -> Vec<Range> {
+            // `# one` at offsets 2..7 and `# two` at 10..15; a third
+            // range past the source is dropped.
+            let at = |offset| crate::Position {
+                offset,
+                line: 1,
+                column: offset + 1,
+            };
+            [(2, 7), (10, 15), (90, 95)]
+                .map(|(start, end)| Range {
+                    start: at(start),
+                    end: at(end),
+                })
+                .to_vec()
+        }
+        fn plugin_options(&self) -> Vec<(String, String)> {
+            vec![("markers".into(), "a,b".into())]
+        }
+    }
+
+    fn file() -> File {
+        File {
+            path: "a.py".into(),
+            module: "a".into(),
+            source: "x # one\ny # two\n".into(),
+            options: vec![("shared".into(), "1".into())],
+        }
+    }
+
+    #[test]
+    fn comments_pair_each_range_with_its_text() {
+        let (file, semantic) = (file(), Fake);
+        let cx = Context::new(&file, &[], &semantic);
+        let texts: Vec<_> = cx.comments().iter().map(|comment| comment.text).collect();
+        assert_eq!(texts, ["# one", "# two"]);
+    }
+
+    #[test]
+    fn plugin_options_are_apart_from_the_shared_options() {
+        let (file, semantic) = (file(), Fake);
+        let cx = Context::new(&file, &[], &semantic);
+        assert_eq!(cx.plugin_option("markers"), Some("a,b"));
+        assert_eq!(cx.plugin_option("shared"), None);
+        assert_eq!(cx.option("shared"), Some("1"));
+        assert_eq!(cx.option("markers"), None);
     }
 }

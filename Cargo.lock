@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-plugin-sdk"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]
@@ -853,6 +853,13 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-plugin-unused-variable"
+version = "0.16.0"
+dependencies = [
+ "ferrolint-plugin-sdk",
+]
+
+[[package]]
+name = "ferrolint-test-markers"
 version = "0.16.0"
 dependencies = [
  "ferrolint-plugin-sdk",

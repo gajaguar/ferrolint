@@ -25,6 +25,15 @@ SDK.
   and ignores its meaning, and a changed option changes the
   [result cache](result-cache.md) key, since a plugin's verdict may
   depend on it.
+* Two more queries, about the current file and the calling plugin, come
+  from contract 0.3.1:
+  * `comments.comment-ranges` returns the ranges of the file's comments in
+    source order, each from its `#` to the end of the line; the text is
+    the source between the offsets, so a `#` inside a string is not one.
+  * `settings.plugin-options` returns the plugin's own options, the
+    `options` table of its `[[plugins]]` entry, as (key, value) text pairs
+    sorted by key; it is empty for a plugin without the table and for a
+    bundled plugin.
 * The host owns the AST; the interface exchanges only serializable data,
   so a plugin never holds a host pointer between event calls.
 * Per diagnostic, the plugin returns a diagnostic record with exactly:
@@ -43,3 +52,18 @@ record's shape, so a host of 0.3.0 refuses a plugin built against 0.2.x
 
 The type inference query is a separate interface, added in contract 0.2.1
 (see [Type inference query](type-inference-query.md)).
+
+The comment and settings queries are two more separate interfaces, added
+in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
+host of 0.3.1 still loads a plugin built against 0.3.0, which imports
+nothing of them. A plugin built with SDK 0.3.1 needs a host of 0.3.1.
+
+## Why the plugin's own options are a query
+
+The per-plugin options are not another field of the `file` record: that
+would change the record's shape again and refuse every built plugin, as
+0.3.0 did. They live in the plugin's `[[plugins]]` entry because the entry
+already identifies the plugin (its path and SHA-256), the host reads it
+before any file, and the text-valued map matches the shared `[options]`.
+The result cache keys on them for the plugins a file runs, so a changed
+value re-runs those plugins and never replays a stale verdict.

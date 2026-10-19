@@ -18,7 +18,9 @@ fails fast when the result does not parse.
 * Configuration sections:
   * `plugins`: one entry per plugin, each with a `path` to the WASM file
     and a `sha256` that must match the file byte for byte. A mismatch is a
-    configuration error.
+    configuration error. An entry may also carry `options`, a map of text
+    values that only that plugin receives (see
+    [Plugin contract](plugin-contract.md)).
   * `select` and `ignore`: rule code lists that decide which codes run and
     which findings report. `ignore` beats `select` for a given code.
   * `per-file-ignores`: a pattern (an iterable of codes) - map from file
