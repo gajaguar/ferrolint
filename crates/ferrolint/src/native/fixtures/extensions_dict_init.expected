@@ -1,0 +1,11 @@
+1:C3401:Declare all known key/values when initializing the dictionary: d = {'a': 1, 'b': x + 1}
+4:C3401:Declare all known key/values when initializing the dictionary: e = {1: 2, 3: 4}
+15:C3401:Declare all known key/values when initializing the dictionary: l = {(1, 2): 3}
+17:C3401:Declare all known key/values when initializing the dictionary: m = {**: e, 'a': 'b'}
+19:C3401:Declare all known key/values when initializing the dictionary: n = {'a': 1, 'b': 2}
+25:C3401:Declare all known key/values when initializing the dictionary: p = {'x': 1}
+33:C3401:Declare all known key/values when initializing the dictionary: t = {"it's": 1, 'q"': (1, ), 'z': [1, 2], 1:2: lambda x: x}
+35:C3401:Declare all known key/values when initializing the dictionary: u = {(1, 2): {1, 2}, -1: not a, a if b else c: (yield_ for yield_ in x), ... }
+42:C3401:Declare all known key/values when initializing the dictionary: d = {'key0': 0, 'key1': 1, 'key2': 2, 'key3': 3, 'key4': 4, 'key5': 5}
+53:C3401:Declare all known key/values when initializing the dictionary: e = {'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': 1, ... }
+55:C3401:Declare all known key/values when initializing the dictionary: f = {'a': 1, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb': 2, ... }

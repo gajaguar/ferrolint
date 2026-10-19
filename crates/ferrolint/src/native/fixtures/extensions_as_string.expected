@@ -1,0 +1,77 @@
+1:C3401:Declare all known key/values when initializing the dictionary: d0 = {0: (a + b) * c - d**e**f}
+3:C3401:Declare all known key/values when initializing the dictionary: d1 = {0: (a**b)**c}
+5:C3401:Declare all known key/values when initializing the dictionary: d2 = {0: a - (b - c) + (d + e)}
+7:C3401:Declare all known key/values when initializing the dictionary: d3 = {0: not (a and b) or c and (d or e)}
+9:C3401:Declare all known key/values when initializing the dictionary: d4 = {0: --x + ~y + +z}
+11:C3401:Declare all known key/values when initializing the dictionary: d5 = {0: (x := 1)}
+13:C3401:Declare all known key/values when initializing the dictionary: d6 = {0: a < (b := 2) < c}
+15:C3401:Declare all known key/values when initializing the dictionary: d7 = {0: ((x := 1)) + 2}
+17:C3401:Declare all known key/values when initializing the dictionary: d8 = {0: f((x := 1))}
+19:C3401:Declare all known key/values when initializing the dictionary: d9 = {0: [i for i in range(3) if i if not i]}
+21:C3401:Declare all known key/values when initializing the dictionary: d10 = {0: {i: j for (i, j) in k}}
+23:C3401:Declare all known key/values when initializing the dictionary: d11 = {0: {i for i in k}}
+25:C3401:Declare all known key/values when initializing the dictionary: d12 = {0: (i for i in k)}
+27:C3401:Declare all known key/values when initializing the dictionary: d13 = {0: [i async for i in k]}
+29:C3401:Declare all known key/values when initializing the dictionary: d14 = {0: f(a, *b, c=1, **d)}
+31:C3401:Declare all known key/values when initializing the dictionary: d15 = {0: f(*b, c=1)}
+33:C3401:Declare all known key/values when initializing the dictionary: d16 = {0: a[1:2, ::3]}
+35:C3401:Declare all known key/values when initializing the dictionary: d17 = {0: a[b][c].d.e(f)(g)}
+37:C3401:Declare all known key/values when initializing the dictionary: d18 = {0: (1).real + 1.5.real}
+39:C3401:Declare all known key/values when initializing the dictionary: d19 = {0: "abc'd"}
+41:C3401:Declare all known key/values when initializing the dictionary: d20 = {0: b'x\n\xff'}
+43:C3401:Declare all known key/values when initializing the dictionary: d21 = {0: 'tab\there\\ and é \x07'}
+45:C3401:Declare all known key/values when initializing the dictionary: d22 = {0: 1000 + 16 + 3 + 7 + 1.0 + 2j + 3.5j + 10000000000000000000000}
+47:C3401:Declare all known key/values when initializing the dictionary: d23 = {0: (1, ) + () + (1, 2)}
+49:C3401:Declare all known key/values when initializing the dictionary: d24 = {0: a if b else c if d else e}
+51:C3401:Declare all known key/values when initializing the dictionary: d25 = {0: (a if b else c) if d else e}
+53:C3401:Declare all known key/values when initializing the dictionary: d26 = {0: lambda: 0}
+55:C3401:Declare all known key/values when initializing the dictionary: d27 = {0: lambda a, b=1, *c, d, **e: a}
+57:C3401:Declare all known key/values when initializing the dictionary: d28 = {0: a is not b}
+59:C3401:Declare all known key/values when initializing the dictionary: d29 = {0: x not in y}
+61:C3401:Declare all known key/values when initializing the dictionary: d30 = {0: a == b != c}
+63:C3401:Declare all known key/values when initializing the dictionary: d31 = {0: (a, b) == c}
+65:C3401:Declare all known key/values when initializing the dictionary: d32 = {0: {**a, 'b': 1}}
+67:C3401:Declare all known key/values when initializing the dictionary: d33 = {0: {*a, 1}}
+69:C3401:Declare all known key/values when initializing the dictionary: d34 = {0: a[b, ]}
+71:C3401:Declare all known key/values when initializing the dictionary: d35 = {0: a[b, c]}
+73:C3401:Declare all known key/values when initializing the dictionary: d36 = {0: a @ b // c % d}
+75:C3401:Declare all known key/values when initializing the dictionary: d37 = {0: a << 1 | b >> 2 & c ^ d}
+77:C3401:Declare all known key/values when initializing the dictionary: d38 = {0: a and b or c}
+79:C3401:Declare all known key/values when initializing the dictionary: d39 = {0: (a or b) and c}
+81:C3401:Declare all known key/values when initializing the dictionary: d40 = {0: not not a}
+83:C3401:Declare all known key/values when initializing the dictionary: d41 = {0: (a, b)[0]}
+85:C3401:Declare all known key/values when initializing the dictionary: d42 = {0: None}
+87:C3401:Declare all known key/values when initializing the dictionary: d43 = {0: True}
+89:C3401:Declare all known key/values when initializing the dictionary: d44 = {0: a}
+91:C3401:Declare all known key/values when initializing the dictionary: d45 = {0: await a + 1}
+93:C3401:Declare all known key/values when initializing the dictionary: d46 = {0: await a**2}
+95:C3401:Declare all known key/values when initializing the dictionary: d47 = {0: yield}
+97:C3401:Declare all known key/values when initializing the dictionary: d48 = {0: yield a}
+99:C3401:Declare all known key/values when initializing the dictionary: d49 = {0: yield from a}
+101:C3401:Declare all known key/values when initializing the dictionary: d50 = {0: a.b.c}
+103:C3401:Declare all known key/values when initializing the dictionary: d51 = {0: x[:]}
+105:C3401:Declare all known key/values when initializing the dictionary: d52 = {0: x[1:]}
+107:C3401:Declare all known key/values when initializing the dictionary: d53 = {0: x[:2]}
+109:C3401:Declare all known key/values when initializing the dictionary: d54 = {0: x[:, 1]}
+111:C3401:Declare all known key/values when initializing the dictionary: d55 = {0: -a**b}
+113:C3401:Declare all known key/values when initializing the dictionary: d56 = {0: (-a)**b}
+115:C3401:Declare all known key/values when initializing the dictionary: d57 = {0: a**(-b)}
+117:C3401:Declare all known key/values when initializing the dictionary: d58 = {0: a < b < c}
+119:C3401:Declare all known key/values when initializing the dictionary: d59 = {0: a < (b < c)}
+121:C3401:Declare all known key/values when initializing the dictionary: d60 = {0: a == (not b)}
+123:C3401:Declare all known key/values when initializing the dictionary: d61 = {0: (lambda: 1)()}
+125:C3401:Declare all known key/values when initializing the dictionary: d62 = {0: (a if b else c).d}
+127:C3401:Declare all known key/values when initializing the dictionary: d63 = {0: (a + b).c}
+129:C3401:Declare all known key/values when initializing the dictionary: d64 = {0: [*a, *b]}
+131:C3401:Declare all known key/values when initializing the dictionary: d65 = {0: f(*[1], **{2: 3})}
+133:C3401:Declare all known key/values when initializing the dictionary: d66 = {0: f((x for x in y))}
+135:C3401:Declare all known key/values when initializing the dictionary: d68 = {0: 1e+100}
+137:C3401:Declare all known key/values when initializing the dictionary: d69 = {0: 1e-07}
+139:C3401:Declare all known key/values when initializing the dictionary: d70 = {0: 0.1}
+141:C3401:Declare all known key/values when initializing the dictionary: d71 = {0: 123456789.12345679}
+143:C3401:Declare all known key/values when initializing the dictionary: d72 = {0: 1e+16}
+145:C3401:Declare all known key/values when initializing the dictionary: d73 = {0: 5e-324}
+147:C3401:Declare all known key/values when initializing the dictionary: d74 = {0: -1}
+149:C3401:Declare all known key/values when initializing the dictionary: d75 = {0: ~1}
+151:C3401:Declare all known key/values when initializing the dictionary: d76 = {0: not 1}
+153:C3401:Declare all known key/values when initializing the dictionary: d77 = {0: ...}

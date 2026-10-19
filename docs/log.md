@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch K - `W0149`, `C3401`, `R3501`, `R5601` and
+  `R6106`, the Pylint extension messages that one walk decides, gated on
+  `load-plugins`.
 * **native-rules.md**: `W0614` names the module as written and leaves out a
   name an earlier import or star already bound.
 * **native-rules.md**: `W0614` now sees the names of `match` captures,

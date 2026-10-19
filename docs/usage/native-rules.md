@@ -643,3 +643,47 @@ Not ported: `fatal`, `astroid-error`, `parse-error`, `config-parse-error`,
 `wrong-spelling-*` family: they report a failure of Pylint's own machinery or
 need what ferrolint does not run (astroid, a Django setup, a spelling
 dictionary).
+
+## Batch K: messages of Pylint's bundled extensions
+
+These five rules port checkers of `pylint.extensions`. Like the
+`pylint_django` messages, they report only when the option `load-plugins`
+names the extension (a comma list), because Pylint loads none of them by
+default. A `.pylintrc` project carries the option already; a
+`ferrolint.toml` project must set it:
+
+```toml
+[options]
+load-plugins = "pylint.extensions.while_used, pylint.extensions.confusing_elif"
+```
+
+* `W0149` `while-used` (`pylint.extensions.while_used`): every `while` loop,
+  on its `while` line.
+* `C3401` `dict-init-mutate` (`pylint.extensions.dict_init_mutate`): a
+  statement `d = {...}` that a subscript assignment `d[k] = v` follows at once
+  in the same block. The message suggests the literal with the keys of the
+  assignments that follow in a row, cut after 64 characters. A tuple target,
+  a chained target, an annotated target and a dict comprehension do not match.
+* `R3501` `consider-refactoring-into-while-condition`
+  (`pylint.extensions.consider_refactoring_into_while_condition`): a loop
+  whose condition is a truthy constant and whose first statements are `if`
+  statements that start with `break`, with their `elif` branches. The message
+  gives the inverted conditions to move into the `while`.
+* `R5601` `confusing-consecutive-elif` (`pylint.extensions.confusing_elif`):
+  an `elif` right after an `if` block whose last statement is an `if` with no
+  `else`, reported on the `elif` line.
+* `R6106` `consider-math-not-float` (`pylint.extensions.code_style`):
+  `float('inf')`, `float('-inf')` and `float('nan')` on the builtin, including
+  a misspelling such as `float('infinty')`, which reads as the closest of
+  `inf` and `nan` as Pylint's `difflib` match does. A string with only digits,
+  signs, dots and `e` is a number and stays silent.
+
+Known divergences:
+
+* The message of `C3401`, `R3501` and `R6106` quotes expressions the way
+  astroid prints them. A lambda, an f-string and a complex number with an
+  exponent print as their source text or in Rust's form instead.
+* `R6106` sees the callee `float` and `builtins.float`, including a name
+  imported from `builtins`. Pylint also infers a call through an alias such as
+  `f = float` and `f('inf')`; that one is not reported.
+* The `code_style` extension's other messages are not ported here.

@@ -1,0 +1,28 @@
+1:W0149:Used `while` loop
+2:W0149:Used `while` loop
+9:W0149:Used `while` loop
+11:R3501:Consider using 'while x <= 1' instead of 'while True:' an 'if', and a 'break'
+11:W0149:Used `while` loop
+15:R3501:Consider using 'while (not a) and (b)' instead of 'while 1:' an 'if', and a 'break'
+15:W0149:Used `while` loop
+20:R3501:Consider using 'while not a' instead of 'while True:' an 'if', and a 'break'
+20:W0149:Used `while` loop
+25:R3501:Consider using 'while (not (a and b)) and (c is not None)' instead of 'while True:' an 'if', and a 'break'
+25:W0149:Used `while` loop
+30:R3501:Consider using 'while a' instead of 'while 'x':' an 'if', and a 'break'
+30:W0149:Used `while` loop
+33:W0149:Used `while` loop
+37:W0149:Used `while` loop
+40:W0149:Used `while` loop
+43:W0149:Used `while` loop
+46:R3501:Consider using 'while (not a) and (not c)' instead of 'while True:' an 'if', and a 'break'
+46:W0149:Used `while` loop
+53:R3501:Consider using 'while (a >= b) and (x) and ((lambda: 1) != y) and (f(x) not in z) and (x.y is None) and (not a if b else c)' instead of 'while True:' an 'if', and a 'break'
+53:W0149:Used `while` loop
+66:R3501:Consider using 'while (not a) and (not b)' instead of 'while ...:' an 'if', and a 'break'
+66:W0149:Used `while` loop
+73:R3501:Consider using 'while not a' instead of 'while 1.5:' an 'if', and a 'break'
+73:W0149:Used `while` loop
+76:W0149:Used `while` loop
+79:R3501:Consider using 'while (not a) and (not b) and (not c)' instead of 'while True:' an 'if', and a 'break'
+79:W0149:Used `while` loop
