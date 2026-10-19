@@ -2,6 +2,8 @@
 
 ## 2026-10-18
 
+* **native-rules.md**: Added batch I, the Pylint configuration and pragma
+  messages (`E0011` to `E0015`, `R0022`) and the messages left not ported.
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

@@ -21,3 +21,4 @@ ignorePaths:
   - "**/target/**"
   - "crates/ferrolint/tests/data/**" # vendored OASIS SARIF schema
   - ".claude/skills/**" # vendored third-party skill, not authored here
+  - "crates/ferrolint/src/pylint_names.rs" # generated from Pylint's own message names
