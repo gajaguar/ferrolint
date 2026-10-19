@@ -340,7 +340,7 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
     #[test]
     fn only_a_plugin_that_exists_silences_the_option_check() {
         let entries = ini("[MASTER]\nload-plugins=other\nbogus=1\n", false).unwrap();
-        assert!(issues(&entries, true, |_| true).is_empty());
+        assert_eq!(issues(&entries, true, |_| true), []);
         let issues = issues(&entries, true, |_| false);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].code, "E0015");
