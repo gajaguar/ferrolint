@@ -112,7 +112,15 @@ pub fn not_utf8() -> Diagnostic {
 }
 
 /// The host rules' diagnostics for one parsed file.
-pub fn check(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> Vec<Diagnostic> {
+///
+/// `known` tells whether the rule registry resolves a message name, so a
+/// plugin's rule named in a pragma is not reported as unknown.
+pub fn check(
+    source: &str,
+    parsed: &Parsed<ModModule>,
+    index: &LineIndex,
+    known: &dyn Fn(&str) -> bool,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     if let Some(error) = parsed.errors().first() {
         diagnostics.push(Diagnostic {
@@ -128,6 +136,30 @@ pub fn check(source: &str, parsed: &Parsed<ModModule>, index: &LineIndex) -> Vec
         });
     }
     for comment in suppress::comments(source, parsed.tokens()) {
+        for (key, names) in suppress::pylint_options(comment.text) {
+            let issues = if matches!(
+                key,
+                "disable" | "enable" | "disable-next" | "disable-msg" | "enable-msg"
+            ) {
+                names
+                    .into_iter()
+                    .filter(|name| !known(name))
+                    .filter_map(|name| crate::pylint::message_issue(key, name))
+                    .map(|issue| (issue.code, issue.message))
+                    .collect()
+            } else {
+                vec![("E0011", format!("Unrecognized file option '{key}'"))]
+            };
+            for (code, message) in issues {
+                diagnostics.push(Diagnostic {
+                    code: code.into(),
+                    message,
+                    range: index.range(source, comment.start, comment.end),
+                    severity: native::rule(code, "", "").severity,
+                    fix: None,
+                });
+            }
+        }
         if suppress::noqa(comment.text) == Some(Noqa::Bare) {
             diagnostics.push(Diagnostic {
                 code: BARE_NOQA.into(),

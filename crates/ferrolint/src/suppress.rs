@@ -141,6 +141,23 @@ fn pylint_payload(segment: &str) -> Option<&str> {
         .map(|payload| payload.trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
 }
 
+/// Every `pylint: key=value` option of a comment, `;` separating several, as
+/// `(key, names)`: the names a `disable=`-style value lists. An option
+/// without `=` (`skip-file`) is left out.
+pub fn pylint_options(comment: &str) -> Vec<(&str, Vec<&str>)> {
+    comment
+        .split('#')
+        .skip(1)
+        .filter_map(pylint_payload)
+        .flat_map(|payload| payload.split(';'))
+        .filter_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            let key = key.trim();
+            (!key.is_empty() && key.chars().all(is_code_char)).then(|| (key, disable_codes(value)))
+        })
+        .collect()
+}
+
 /// The codes of a comment's `pylint: <keyword>=` lists. `disable-msg` and
 /// `enable-msg` are the old spellings of `disable` and `enable`.
 fn pylint_codes<'a>(comment: &'a str, keyword: &str) -> Vec<&'a str> {

@@ -522,7 +522,8 @@ impl Linter<'_> {
             entry.unparsable = true;
             return Ok((entry, Vec::new()));
         };
-        entry.host = checks::check(&source, &parsed, &index);
+        let known = |name: &str| setup.registry.resolve(name).is_some();
+        entry.host = checks::check(&source, &parsed, &index, &known);
         if parsed.has_no_syntax_errors() && native::wanted(enabled) {
             let flat = ast::flatten(&source, &index, parsed.syntax());
             let model = Model::build(
