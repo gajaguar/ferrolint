@@ -1006,6 +1006,30 @@ fn ac_25_key_part_change_invalidates() {
 }
 
 #[test]
+fn ac_25_adding_or_removing_a_plugin_never_replays_stale_findings() {
+    let project = output_project();
+    project.write("e.py", "try:\n    pass\nexcept:\n    pass\n");
+    let cold = |project: &Project| project.run(&["--no-cache"]).stdout;
+    let first = project.plugin("ferrolint-plugin-unused-import", "unused_import.wasm");
+    project.write("ferrolint.toml", &first);
+    let one = project.run(&[]).stdout;
+
+    // A second plugin joins: its findings appear and the first's stay.
+    let second = project.plugin("ferrolint-plugin-bare-except", "bare_except.wasm");
+    project.write("ferrolint.toml", format!("{first}\n{second}"));
+    let run = project.run(&["--stats"]);
+    assert_eq!(run.stdout, cold(&project), "{run:?}");
+    assert_ne!(run.stdout, one, "the new plugin reports: {run:?}");
+    assert!(stats(&run)["plugin-runs"] > 0, "{run:?}");
+
+    // It leaves again: the stored findings of the removed plugin stay unused.
+    project.write("ferrolint.toml", &first);
+    let run = project.run(&[]);
+    assert_eq!(run.stdout, one);
+    assert_eq!(run.stdout, cold(&project));
+}
+
+#[test]
 fn plugin_options_reach_the_plugin_and_key_the_cache() {
     let project = Project::new();
     let plugin = project.plugin("ferrolint-test-probe", "probe.wasm");
