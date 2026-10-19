@@ -256,7 +256,7 @@ fn ac_02d_unknown_pylint_names_are_reported() {
         )
         .write(
             "a.py",
-            "x = 1  # pylint: frob=1\ny = 2  # pylint: disable=nope2, FL002, line-too-long\n",
+            "x = 1  # pylint: wrongkey=1\ny = 2  # pylint: disable=nope2, FL002, line-too-long\n",
         );
     let run = project.run(&[]);
     assert_eq!(run.code, 1, "{run:?}");
@@ -265,10 +265,7 @@ fn ac_02d_unknown_pylint_names_are_reported() {
         ".pylintrc:1:1: error E0015 (unrecognized-option) Unrecognized option found: bogus",
         ".pylintrc:1:1: warning W0012 (unknown-option-value) Unknown option value for '--disable', expected a valid pylint message and got 'nope'",
     ] {
-        assert!(
-            lines.iter().any(|l| *l == expected),
-            "{expected}: {lines:?}"
-        );
+        assert!(lines.contains(&expected), "{expected}: {lines:?}");
     }
     assert!(
         lines

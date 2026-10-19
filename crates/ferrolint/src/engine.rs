@@ -172,23 +172,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     for result in per_file {
         findings.extend(result?);
     }
-    if let Some(file) = &config.pylint_file {
-        let path = discover::display_path(cwd, file);
-        for issue in &config.issues {
-            let known = issue
-                .name
-                .as_deref()
-                .is_some_and(|name| registry.resolve(name).is_some());
-            if known || !selection.is_enabled(issue.code) {
-                continue;
-            }
-            findings.push(Finding {
-                path: path.clone(),
-                aliases: registry.aliases(issue.code),
-                diagnostic: checks::config_diagnostic(issue.code, &issue.message),
-            });
-        }
-    }
+    findings.extend(config_findings(cwd, &config, &registry, &selection));
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
     let mut displays = displays;
@@ -200,6 +184,36 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         diff_base: options.diff_base.clone(),
         stats,
     })
+}
+
+/// What Pylint would report about its own configuration file, for the rules
+/// the selection enables and the message names the registry does not know.
+fn config_findings(
+    cwd: &Path,
+    config: &Config,
+    registry: &Registry,
+    selection: &Selection,
+) -> Vec<Finding> {
+    let Some(file) = &config.pylint_file else {
+        return Vec::new();
+    };
+    let path = discover::display_path(cwd, file);
+    config
+        .issues
+        .iter()
+        .filter(|issue| {
+            let known = issue
+                .name
+                .as_deref()
+                .is_some_and(|name| registry.resolve(name).is_some());
+            !known && selection.is_enabled(issue.code)
+        })
+        .map(|issue| Finding {
+            path: path.clone(),
+            aliases: registry.aliases(issue.code),
+            diagnostic: checks::config_diagnostic(issue.code, &issue.message),
+        })
+        .collect()
 }
 
 /// What linting needs from the plugins: the loaded plugins, the rule
