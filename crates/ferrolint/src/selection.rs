@@ -12,6 +12,10 @@ use crate::discover::display_path;
 use crate::error::{Error, Result};
 use crate::pylint::Toggle;
 
+/// Pylint messages that are disabled until a configuration enables them;
+/// only `select` and `enable` turn them on.
+const OFF_BY_DEFAULT: &[&str] = &["R6105"];
+
 pub struct Selection {
     root: PathBuf,
     enabled: BTreeSet<String>,
@@ -29,7 +33,11 @@ impl Selection {
     pub fn new(registry: &Registry, config: &Config) -> Result<Self> {
         let mut enabled: BTreeSet<String> = match &config.select {
             Some(select) => resolve_all(registry, "select", select)?,
-            None => registry.rules().map(|rule| rule.code.clone()).collect(),
+            None => registry
+                .rules()
+                .map(|rule| rule.code.clone())
+                .filter(|code| !OFF_BY_DEFAULT.contains(&code.as_str()))
+                .collect(),
         };
         for code in resolve_all(registry, "ignore", &config.ignore)? {
             enabled.remove(&code);
@@ -173,5 +181,25 @@ mod tests {
         assert_eq!(enabled(&toggles), ["A1"]);
         let toggles = [(Toggle::Enable, "C"), (Toggle::Disable, "C")];
         assert_eq!(enabled(&toggles), ["A1", "A2"]);
+    }
+
+    #[test]
+    fn a_message_off_by_default_needs_enable_or_select() {
+        let registry = Registry::new([rule("R6105", "R6105", "prefer-typing-namedtuple")]).unwrap();
+        let codes = |config: &Config| {
+            let selection = Selection::new(&registry, config).unwrap();
+            selection.for_file(Path::new("x.py")).len()
+        };
+        assert_eq!(codes(&Config::default()), 0);
+        let enable = Config {
+            pylint_disable: vec![(Toggle::Enable, "prefer-typing-namedtuple".to_owned())],
+            ..Config::default()
+        };
+        assert_eq!(codes(&enable), 1);
+        let select = Config {
+            select: Some(vec!["R6105".to_owned()]),
+            ..Config::default()
+        };
+        assert_eq!(codes(&select), 1);
     }
 }

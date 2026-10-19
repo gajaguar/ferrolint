@@ -19,6 +19,7 @@ mod astring;
 mod bad_super;
 mod calls;
 mod classes;
+mod code_style;
 mod conditions;
 mod contextmgr;
 mod django;
@@ -86,6 +87,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &bad_super::BadSuper,
     &calls::Calls,
     &classes::Classes,
+    &code_style::CodeStyle,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &django::Django,

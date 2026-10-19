@@ -1,0 +1,51 @@
+4:R6103:Use 'if (a := 1):' instead
+8:R6103:Use 'if not (b := 2):' instead
+12:R6103:Use 'if (c := 3) == 3:' instead
+25:R6103:Use 'if (f := 6):' instead
+29:R6103:Use 'if (h := 8):' instead
+41:R6103:Use 'if (m := 9):' instead
+76:R6103:Use 'if (s := 13):' instead
+88:R6103:Use 'if (u := 15) == 1:' instead
+94:R6103:Use 'if (v := 16) == 1:' instead
+100:R6103:Use 'if (w := re.match('x', 'y')):' instead
+104:R6103:Use 'if not (x := re.match('x', 'y')):' instead
+108:R6103:Use 'if (y := [1, 2, 3]) is None:' instead
+116:R6103:Use 'if (aa := 1) in (1, 2):' instead
+124:R6103:Use 'if (ac := 'string') == 'string':' instead
+128:R6103:Use 'if (ad := lambda: 1):' instead
+132:R6103:Use 'if not (o_ := 1):' instead
+136:R6103:Use 'if (no := 3)t no:' instead
+140:R6103:Use 'if (an := 1):' instead
+146:R6103:Use 'if (local := value + 1):' instead
+149:R6103:Use 'if (other := {'a': 1}):' instead
+156:R6103:Use 'if (count := len(value)) > 3:' instead
+160:R6103:Use 'if (number := 5):' instead
+164:R6103:Use 'if (flag := value.pop()):' instead
+171:R6103:Use 'if (counter := 0):' instead
+176:R6103:Use 'if (long_name_for_a_value := 'a quite long string that makes the suggestion long enough'):' instead
+179:R6103:Use 'if (shorter := 'a quite long string that makes the suggestion long enough to wrap!!!!!'):' instead
+185:R6103:Use 'if (inner := 1):' instead
+190:R6103:Use 'if (attempt := 1):' instead
+194:R6103:Use 'if (handled := 2):' instead
+198:R6103:Use 'if (done := 3):' instead
+203:R6103:Use 'if (contents := handle.read()):' instead
+209:R6103:Use 'if (case_value := 1):' instead
+217:R6103:Use 'if (lst := list(range(3))) != []:' instead
+221:R6103:Use 'if (dct := {'k': [1, 2, 3], 'q': (1, )}):' instead
+225:R6103:Use 'if (nested := ((1 + 2) * 3)**2):' instead
+229:R6103:Use 'if (neg := -1) < 0:' instead
+233:R6103:Use 'if (boolean := not a):' instead
+237:R6103:Use 'if (cond := 1 if a else 2):' instead
+241:R6103:Use 'if (num := 10000):' instead
+245:R6103:Use 'if (fl := 1.5e+300):' instead
+249:R6103:Use 'if (byt := b'x'):' instead
+253:R6103:Use 'if (s2 := "it's"):' instead
+257:R6103:Use 'if (t2 := (a, b)):' instead
+261:R6103:Use 'if (l2 := [a, b]):' instead
+265:R6103:Use 'if (st := {a}):' instead
+269:R6103:Use 'if (sl := lst[1:2]):' instead
+273:R6103:Use 'if (sw := (x for x in lst)):' instead
+277:R6103:Use 'if (lc := [x for x in lst]):' instead
+281:R6103:Use 'if (aw := a if b else c):' instead
+285:R6103:Use 'if (kw := dict(a=1, **dct)):' instead
+289:R6103:Use 'if (uc := lambda x, *y, z=1, **w: x):' instead

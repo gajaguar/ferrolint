@@ -693,4 +693,48 @@ Known divergences:
 * `R6106` sees the callee `float` and `builtins.float`, including a name
   imported from `builtins`. Pylint also infers a call through an alias such as
   `f = float` and `f('inf')`; that one is not reported.
-* The `code_style` extension's other messages are not ported here.
+* `R6104` `consider-using-augmented-assign`, the `code_style` extension's
+  other message, is not ported; Pylint disables it by default.
+
+## Batch L: the code_style and bad_builtin messages
+
+Like Batch K, these report only when `load-plugins` names the extension's
+module.
+
+* `R6101` `consider-using-namedtuple-or-dataclass`
+  (`pylint.extensions.code_style`): a dict of more than one entry, written as
+  the value of a module-level assignment or of an annotated assignment marked
+  `Final` (`Final`, `typing.Final`, `Final[...]`), whose values are all dicts
+  with string keys and one key in common, or all lists or tuples of one
+  non-zero length that are not all made of dicts. Reported on the dict.
+* `R6102` `consider-using-tuple`: a list literal as the iterable of a `for`
+  statement or of a comprehension clause. An `async for` statement is not
+  reported, as in Pylint.
+* `R6103` `consider-using-assignment-expr`: an `if` whose test is a name, a
+  `not` name or a comparison with one operator on a name, right after a
+  one-line `name = value` or `name: T = value`. The message holds the whole
+  `if` line with the first occurrence of the name replaced, as Pylint does it.
+  Nothing is reported when `py-version` is below 3.8, when the suggestion is
+  longer than `max-line-length-suggestions` (`max-line-length` when it is 0,
+  100 by default) with the column of the `if`, or when a comparison is
+  followed by another `if` testing the same name (a `match` fits better). It
+  reads the `if` that opens a chain, so an `elif` never reports.
+* `R6105` `prefer-typing-namedtuple` (`pylint.extensions.code_style`): a call
+  to `collections.namedtuple`, through `import collections`, an alias or a
+  `from` import. Pylint disables it by default and so does ferrolint: it
+  reports after `enable=prefer-typing-namedtuple` (or `enable=all`) in a
+  Pylint configuration, or with `select`.
+* `W0141` `bad-builtin` (`pylint.extensions.bad_builtin`): a call by name to
+  a function listed in `bad-functions` (`map` and `filter` by default) that
+  neither the function around the call nor the module binds. The message for
+  `map` and `filter` adds the hint to use a list comprehension.
+
+Known divergences:
+
+* `R6101` takes a dict key as a string only when it is a string literal;
+  Pylint also infers a name or an expression to a string, and then compares
+  the keys by their printed text.
+* `R6103` prints an f-string and a lambda in the suggestion as their source
+  text (see the divergences of Batch K).
+* `R6105` sees the callee through the imports of `collections` only; Pylint
+  also infers a call through an alias such as `maker = namedtuple`.
