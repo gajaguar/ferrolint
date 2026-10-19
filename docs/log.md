@@ -7,6 +7,9 @@
   backlog and the optional type inference engine decision are no longer part
   of the bundle.
 
+* **native-rules.md**: Added Batch I - the unsupported-version rules
+  `W2601` to `W2607`, `E1003` bad-super-call and `E0108`
+  duplicate-argument-name, with their divergences.
 * **suppression-comments.md**: Added the pragma spellings Pylint accepts and
   the module-level `too-many-lines` rule.
 * **release-builds.md**: Added the section on installing from source with

@@ -542,3 +542,37 @@ Known divergences:
   asks that the callee infer to that bound method.
 * `R0902` and `W0201` ignore `__slots__`, which keeps astroid from
   recording an attribute outside them.
+
+## Batch I: versions, `super()` and duplicate arguments
+
+* `W2601` to `W2607`, the `using-*-in-unsupported-version` messages: syntax
+  newer than the `py-version` setting. They report only when `py-version`
+  is set, and only below the version that introduced the construct: an
+  f-string below 3.6 (`W2601`), a `typing.final` decorator below 3.8
+  (`W2602`), `except*` or `ExceptionGroup` below 3.11 (`W2603`), a PEP 695
+  type alias or type parameter below 3.12 (`W2604`), a walrus below 3.8
+  (`W2605`), a positional-only parameter below 3.8 (`W2606`) and a
+  starred element in a list, set or generator comprehension below 3.15
+  (`W2607`). The positions follow Pylint: the whole f-string, walrus,
+  `try` or alias, the decorator expression, each type parameter, and the
+  `def` line (or the lambda) for positional-only parameters.
+* `E1003` `bad-super-call`: `super(X, self).m()` in a method where `X` is
+  `type(self)`, `self.__class__`, or a class that is neither the class nor
+  one of its ancestors; the calls of nested functions count, those of
+  nested classes belong to their own methods.
+* `E0108` `duplicate-argument-name`: a function parameter named twice.
+  The parser accepts it, so the rule reports each repeat after the first,
+  in signature order, on the repeated name.
+
+Known divergences:
+
+* The parser always reads the newest grammar, so a construct the
+  `py-version` lacks never makes a file fail to parse. `ParamSpec` reports
+  nothing under `W2604`, as in Pylint.
+* `W2607` covers the starred element of a list, set or generator
+  comprehension; the `{**x for ...}` dict form is not ported, since the
+  syntax tree has no node for it.
+* `E1003` skips a first argument that does not name a class of the file,
+  the project or the active environment (see Batch G), where Pylint
+  reports the name of an argument it cannot infer. A class whose MRO is
+  unknown is skipped too.

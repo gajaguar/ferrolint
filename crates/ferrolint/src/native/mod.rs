@@ -15,11 +15,13 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod bad_super;
 mod calls;
 mod classes;
 mod conditions;
 mod contextmgr;
 mod django;
+mod duplicate_args;
 mod exceptions;
 mod finally;
 mod flow;
@@ -40,6 +42,7 @@ mod statements;
 mod strings;
 mod text;
 mod unassigned;
+mod versions;
 
 /// What a native rule sees of one file that parses.
 pub struct Ctx<'a> {
@@ -76,11 +79,13 @@ pub trait Checker: Sync {
 
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
+    &bad_super::BadSuper,
     &calls::Calls,
     &classes::Classes,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &django::Django,
+    &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
     &finally::Finally,
     &flow::Flow,
@@ -97,6 +102,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &statements::Statements,
     &strings::Strings,
     &text::Text,
+    &versions::Versions,
 ];
 
 /// Every native rule.

@@ -1,0 +1,15 @@
+5:W2601:F-strings are not supported by all versions included in the py-version setting
+6:W2601:F-strings are not supported by all versions included in the py-version setting
+9:W2602:typing.final is not supported by all versions included in the py-version setting
+14:W2602:typing.final is not supported by all versions included in the py-version setting
+19:W2606:Positional-only arguments are not supported by all versions included in the py-version setting
+23:W2606:Positional-only arguments are not supported by all versions included in the py-version setting
+25:W2605:Assignment expression is not supported by all versions included in the py-version setting
+28:W2603:Exception groups are not supported by all versions included in the py-version setting
+35:W2603:Exception groups are not supported by all versions included in the py-version setting
+38:W2603:Exception groups are not supported by all versions included in the py-version setting
+40:W2604:Generic type syntax (PEP 695) is not supported by all versions included in the py-version setting
+43:W2604:Generic type syntax (PEP 695) is not supported by all versions included in the py-version setting
+47:W2604:Generic type syntax (PEP 695) is not supported by all versions included in the py-version setting
+47:W2604:Generic type syntax (PEP 695) is not supported by all versions included in the py-version setting
+51:W2607:Unpacking in comprehensions is not supported by all versions included in the py-version setting

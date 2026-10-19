@@ -1,0 +1,5 @@
+26:E1003:Bad first argument 'type' given to super()
+29:E1003:Bad first argument 'self.__class__' given to super()
+32:E1003:Bad first argument 'Other' given to super()
+36:E1003:Bad first argument 'Other' given to super()
+43:E1003:Bad first argument 'Child' given to super()
