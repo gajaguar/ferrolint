@@ -857,3 +857,41 @@ Known divergences from Pylint, where Pylint infers the callee:
   constructor of an imported base too.
 * A call with a starred argument or a `**` is skipped, where Pylint unpacks a
   literal list, tuple or dict written in the call.
+
+## Batch P: private members, public methods and what an expression stands for
+
+* `W0238` `unused-private-member`: a private function, variable or attribute
+  of a class (a name with two leading underscores and not ending in two) that
+  the class never uses. It follows Pylint's own reading, quirks included: a
+  name used anywhere under the class counts, an attribute counts when read off
+  `self`, `cls` or the class, a variable counts when any attribute is read off
+  something that is not a name, and the class is judged again as part of each
+  class that contains it. A function shows with its parameters as astroid
+  prints them (`Cls.__f(self, a, b: int = 1, *rest, **kw)`).
+* `R0903` `too-few-public-methods`: fewer public methods, counted over the
+  class and its bases, than `min-public-methods` (default 2), plus the special
+  methods the class itself defines other than `__init__`. Exceptions, enums,
+  metaclasses, named tuples, typed dicts, dataclasses and `attrs` classes are
+  exempt, and so is a class with an ancestor that `exclude-too-few-public-methods`
+  matches.
+* `E0239` `inherit-non-class`, `E0243` `invalid-class-object` and `W0143`
+  `comparison-with-callable`: a base that is a function, a lambda, a literal
+  or an instance of a class of the file; `X.__class__ = value` where the value
+  is not a class; and `==`, `!=`, `is` and the like against a function, method
+  or lambda.
+
+Known divergences from Pylint, where Pylint infers a value or a base:
+
+* `R0903` judges a class only when every base is a class of the project, a
+  builtin exception, `object` or `type`. A class with another builtin base
+  (`dict`, `list`), a base that is not found (an import from outside the
+  project, `Generic[...]`, a starred base) is never reported, where Pylint
+  counts the methods of the base.
+* `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
+  class, a module, a call of a class of the file and a name bound once to one
+  of those. A call of a function, a name bound twice, an imported name, a
+  parameter and an attribute of an object have no answer and stay silent.
+* `E0239` prints a base written as an f-string as written; Pylint rewrites its
+  quotes.
+* `W0238` takes `type(self).__x` for the class itself, where Pylint infers the
+  callee.

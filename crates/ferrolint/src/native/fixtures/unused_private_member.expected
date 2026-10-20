@@ -1,0 +1,21 @@
+2:W0238:Unused private member `Plain.__slots_like`
+4:W0238:Unused private member `Plain.__dead`
+8:W0238:Unused private member `Plain.__hidden`
+10:W0238:Unused private member `Plain.__only_cls`
+11:W0238:Unused private member `Plain.__other`
+17:W0238:Unused private member `Plain.__unused(self, a, b: int = 1, *rest, key=None, **kw)`
+27:W0238:Unused private member `Plain.__static()`
+38:W0238:Unused private member `Plain.__recursive(self)`
+47:W0238:Unused private member `Plain.__coro(self, /, x, *, y: str = 's')`
+53:W0238:Unused private member `Outer.method.__inner()`
+62:W0238:Unused private member `Nested.__deep(self)`
+62:W0238:Unused private member `Outer.method.Nested.__deep(self)`
+65:W0238:Unused private member `Nested.__nested_var`
+65:W0238:Unused private member `Outer.__nested_var`
+75:W0238:Unused private member `Attr.__a`
+76:W0238:Unused private member `Attr.__b`
+84:W0238:Unused private member `ByName.__named`
+94:W0238:Unused private member `Handler.__err`
+97:W0238:Unused private member `Handler.__item`
+104:W0238:Unused private member `Metaclass.__registry`
+115:W0238:Unused private member `NewStore.__lost`

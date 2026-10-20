@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch P - `W0238`, `R0903`, `E0239`, `E0243` and
+  `W0143`, private members, public methods and the rules that ask what an
+  expression stands for, without type inference.
 * **native-rules.md**: Added Batch O - `E1120`, `E1121`, `E1123`, `E1124` and `E1125`, the arity of a call, on the
   callees that `W1114` resolves.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`

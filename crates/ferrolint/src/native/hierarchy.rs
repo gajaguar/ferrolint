@@ -17,7 +17,7 @@ use super::classes::{Env, bases};
 use super::project::{ClassRef, Project};
 
 /// Bases that add no method to the MRO, though the project cannot read them.
-const EMPTY_BASES: [&str; 6] = [
+pub(super) const EMPTY_BASES: [&str; 6] = [
     "object",
     "typing.Generic",
     // `typing` imports `Generic` from this C module.
