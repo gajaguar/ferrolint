@@ -1,5 +1,10 @@
 # Directory Update Log
 
+## 2026-10-20
+
+* **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
+  `--diff-base`; **native-rules.md**: the same note among the project rules.
+
 ## 2026-10-19
 
 * **plugins.md**: `singleton-comparison` words `C0121` like Pylint for quoted

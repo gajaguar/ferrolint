@@ -1309,3 +1309,5 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   their spelling and the file's own imports, where Pylint infers them.
 * The cache entry stamps the directories and files the resolution read; a
   `.pth` file edited in place without a size or time change is not noticed.
+* With `--diff-base`, `R0401` and `R0801` compare only the changed files (see
+  [diff mode](diff-mode.md)); a full run finds the rest.
