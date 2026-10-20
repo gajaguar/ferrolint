@@ -69,6 +69,8 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
         let mut parts = vec!["project".to_owned(), format!("{:?}", params.py_version)];
         parts.push(format!("{:?}", params.options));
         parts.push(format!("{cyclic}{duplicates}"));
+        // The roots decide how an absolute import resolves, whatever the names.
+        parts.push(format!("{:?}", roots(params, &opts)));
         for name in ["VIRTUAL_ENV", "PYTHONPATH"] {
             parts.push(std::env::var(name).unwrap_or_default());
         }
