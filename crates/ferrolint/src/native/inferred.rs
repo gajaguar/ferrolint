@@ -1,5 +1,5 @@
-//! `E0239` inherit-non-class, `E0243` invalid-class-object and `W0143`
-//! comparison-with-callable: the rules that ask what an expression stands
+//! `E0239` inherit-non-class, `E0243` invalid-class-object, `W0143`
+//! comparison-with-callable and `W1116` isinstance-second-argument-not-valid-type: the rules that ask what an expression stands
 //! for, answered for the few expressions whose value needs no type
 //! inference: a literal, a function, a class, a module, a call of a class
 //! and a name bound once to one of those.
@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashMap};
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    CmpOp, Expr, ExprAttribute, ExprName, FStringPartRef, HasNodeIndex, StmtClassDef,
+    CmpOp, Expr, ExprAttribute, ExprName, FStringPartRef, HasNodeIndex, Operator, StmtClassDef,
     StmtFunctionDef, UnaryOp,
 };
 use ruff_python_ast::{Stmt, StmtAnnAssign, StmtAssign};
@@ -28,6 +28,7 @@ use crate::wit::BindingKind;
 const INHERIT: &str = "E0239";
 const CLASS_OBJECT: &str = "E0243";
 const CALLABLE: &str = "W0143";
+const ISINSTANCE: &str = "W1116";
 
 /// Builtin classes Python refuses to subclass.
 const FINAL_BUILTINS: [&str; 4] = ["bool", "range", "slice", "memoryview"];
@@ -347,6 +348,51 @@ impl<'a> Infer<'a, '_> {
         }
     }
 
+    /// The expression a name stands for when it is bound once to an
+    /// assignment, followed through other such names.
+    fn target(&self, mut expr: &'a Expr) -> &'a Expr {
+        for _ in 0..DEPTH {
+            let Expr::Name(name) = expr else { break };
+            let Some(binding) = self.env.binding(name) else {
+                break;
+            };
+            let assigned = matches!(
+                binding.kind,
+                BindingKind::Assignment | BindingKind::Annotation
+            ) && self.env.ctx.model.is_sole_binding(binding.id);
+            match binding
+                .node
+                .and_then(|id| self.assigned.get(&id))
+                .filter(|_| assigned)
+            {
+                Some(value) => expr = value,
+                None => break,
+            }
+        }
+        expr
+    }
+
+    /// Whether `expr` is certainly no class, tuple of classes or union of
+    /// classes, the second argument `isinstance` takes (Pylint's
+    /// `_is_invalid_isinstance_type`).
+    fn invalid_type(&self, expr: &'a Expr, scope: Scope<'a>) -> bool {
+        // A union held by a name is inferred only when both sides are classes.
+        if let Expr::BinOp(b) = expr
+            && b.op == Operator::BitOr
+        {
+            return [&*b.left, &*b.right].into_iter().any(|side| {
+                !matches!(side, Expr::NoneLiteral(_)) && self.invalid_type(side, scope)
+            });
+        }
+        match self.target(expr) {
+            Expr::Tuple(t) => t.elts.iter().any(|elt| self.invalid_type(elt, scope)),
+            Expr::BinOp(_) => false,
+            other => self
+                .value(other, scope, DEPTH)
+                .is_some_and(|value| !matches!(value, Value::Class | Value::Param)),
+        }
+    }
+
     /// A module the project or the environment holds.
     fn module(&self, expr: &Expr) -> Option<Value> {
         let qualified = self.hierarchy.project.absolute(&self.env.qualified(expr)?);
@@ -460,11 +506,16 @@ impl Checker for Inferred {
                 "comparison-with-callable",
                 "A function compared with a value, probably without its parentheses.",
             ),
+            rule(
+                ISINSTANCE,
+                "isinstance-second-argument-not-valid-type",
+                "The second argument of `isinstance` is certainly not a class.",
+            ),
         ]
     }
 
     fn check(&self, ctx: &Ctx<'_>, enabled: &BTreeSet<String>, out: &mut Vec<Diagnostic>) {
-        if ![INHERIT, CLASS_OBJECT, CALLABLE]
+        if ![INHERIT, CLASS_OBJECT, CALLABLE, ISINSTANCE]
             .iter()
             .any(|id| enabled.contains(*id))
         {
@@ -658,6 +709,24 @@ impl<'a> Visitor<'a> for Walk<'a, '_, '_> {
         {
             self.comparison(compare);
         }
+        if let Expr::Call(call) = expr
+            && self.on(ISINSTANCE)
+            && let Expr::Name(callee) = &*call.func
+            && self
+                .infer
+                .env
+                .binding(callee)
+                .is_some_and(|b| b.kind == BindingKind::Builtin && b.name.as_str() == "isinstance")
+            && !call.arguments.args.iter().any(Expr::is_starred_expr)
+            && let Some(second) = call.arguments.args.get(1)
+            && self.infer.invalid_type(second, self.scope)
+        {
+            self.out.push(self.ctx().report(
+                ISINSTANCE,
+                call,
+                "Second argument of isinstance is not a type",
+            ));
+        }
         visitor::walk_expr(self, expr);
     }
 }
@@ -678,6 +747,13 @@ mod tests {
         let source = include_str!("fixtures/invalid_class_object.py");
         let expected = include_str!("fixtures/invalid_class_object.expected").trim_end();
         assert_eq!(render(source, &[], &["E0243"]), expected);
+    }
+
+    #[test]
+    fn isinstance_second_argument() {
+        let source = include_str!("fixtures/isinstance_second_argument.py");
+        let expected = include_str!("fixtures/isinstance_second_argument.expected").trim_end();
+        assert_eq!(render(source, &[], &["W1116"]), expected);
     }
 
     #[test]

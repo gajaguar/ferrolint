@@ -1142,3 +1142,19 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   are not judged. A display with a starred element, such as `(*t, 1)`, and a
   dict with `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
+
+## Batch X: project-wide rules and isinstance
+
+* `W1116` `isinstance-second-argument-not-valid-type`: `isinstance(x, y)` where
+  `y` is certainly no class: a literal (number, string, `None`, list, dict,
+  set, lambda), a function, a module the project holds, an instance of a class
+  of the file, a tuple with such an element, or `a | b` with such a side other
+  than `None`. A name bound once to one of those counts too, also inside a
+  tuple.
+
+Known divergences from Pylint, where Pylint infers the second argument:
+
+* `W1116` leaves out every expression that `E0239` cannot classify without
+  types: a call of a function, an attribute of an object, a name bound twice,
+  a parameter, a subscript such as `list[int]`. A union held by a name is
+  never judged (Pylint infers it only when both sides are classes).

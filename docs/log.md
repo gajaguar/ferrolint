@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch X with `W1116` isinstance-second-argument-not-valid-type,
+  for literals, functions and instances that a name bound once stands for.
+
 * **native-rules.md**: Batch V adds `W0632` unbalanced-tuple-unpacking and
   `W0644` unbalanced-dict-unpacking, for tuple, list, set and dict displays
   (also behind a name or a function of the file) and the views of a dict.
