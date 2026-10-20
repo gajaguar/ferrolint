@@ -149,3 +149,70 @@ fn an_edit_to_a_cycle_member_drops_the_cycle() {
         "{after:?}"
     );
 }
+
+const BLOCK: &str = "    total = left + right\n    scaled = total * 3\n    shifted = scaled - left\n    \
+                     doubled = shifted * 2\n    return doubled + right\n";
+
+/// A committed tree with the cycles `pkg.a -> pkg.b -> pkg.a` and
+/// `pkg.c -> pkg.d -> pkg.c`, and the copies `pkg/x.py` = `pkg/y.py` and
+/// `pkg/m.py` = `pkg/n.py`.
+fn committed() -> Project {
+    let project = Project::git();
+    project
+        .write(".gitignore", ".home/\n.ferrolint-cache/\n")
+        .write("ferrolint.toml", SELECT)
+        .write("pkg/__init__.py", "")
+        .write("pkg/a.py", "from pkg import b\n")
+        .write("pkg/b.py", "from pkg import a\n")
+        .write("pkg/c.py", "from pkg import d\n")
+        .write("pkg/d.py", "from pkg import c\n");
+    for (name, function) in [("x", "one"), ("y", "one"), ("m", "two"), ("n", "two")] {
+        project.write(
+            &format!("pkg/{name}.py"),
+            format!("def {function}(left, right):\n{BLOCK}"),
+        );
+    }
+    project.commit("base");
+    project
+}
+
+#[test]
+fn diff_mode_reports_what_involves_a_changed_file() {
+    let project = committed();
+    assert_eq!(findings(&project, &[]).len(), 4, "a full run sees all four");
+    // `pkg/b.py` and `pkg/m.py` change; their partners and the rest do not.
+    project
+        .write("pkg/b.py", "from pkg import a\n\nVALUE = 1\n")
+        .write(
+            "pkg/m.py",
+            format!("def two(left, right):\n{BLOCK}\nVALUE = 1\n"),
+        );
+    let found = findings(&project, &["--diff-base", "HEAD"]);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("R0401:Cyclic import (pkg.a -> pkg.b)"))
+    );
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("R0801") && f.contains("==pkg.m:") && f.contains("==pkg.n:")),
+        "{found:?}"
+    );
+    // The report sits where a full run puts it, on the file checked last.
+    let full = findings(&project, &[]);
+    assert!(found.iter().all(|f| full.contains(f)), "{full:?}");
+    // The warm run replays the same result from the one project entry.
+    assert_eq!(findings(&project, &["--diff-base", "HEAD"]), found);
+}
+
+#[test]
+fn diff_mode_drops_a_cycle_whose_files_did_not_change() {
+    let project = committed();
+    project.write("pkg/z.py", "VALUE = 1\n");
+    assert_eq!(
+        findings(&project, &["--diff-base", "HEAD"]),
+        Vec::<String>::new()
+    );
+}
