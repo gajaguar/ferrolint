@@ -1193,8 +1193,8 @@ messages read `accept-no-raise-doc`, `accept-no-return-doc` and
 `accept-no-yields-doc` (all `yes` by default, so a docstring with no such
 section is accepted). Pylint measures the length of a `raise` or a `yield` as
 one line, so a positive `docstring-min-length` skips `W9006` and `W9013`
-altogether. `For the parameters, see` in a docstring tolerates what is missing. A function
-decorated `overload` is skipped.
+altogether. `For the parameters, see` in a docstring tolerates what is
+missing. A function decorated `overload` is skipped.
 
 * `W9012` `missing-return-type-doc` and `W9014` `missing-yield-type-doc`: the
   type line of a return or yields section is missing, which a return

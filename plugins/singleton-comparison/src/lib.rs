@@ -94,7 +94,9 @@ fn printed(cx: &Context<'_>, node: &Node<'_>) -> String {
                 if let Some(content) = quoted {
                     let start = inner.range.start.offset as usize - base;
                     out.push_str(&text[at..start]);
-                    out.push_str(&format!("'{content}'"));
+                    out.push('\'');
+                    out.push_str(content);
+                    out.push('\'');
                     at = start + literal.len();
                 }
             }

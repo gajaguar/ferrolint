@@ -743,7 +743,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferrolint"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "clap",
  "ferrolint-core",
@@ -769,42 +769,42 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-core"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ferrolint-plugin-bare-except"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-global-statement"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-not-callable"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-pointless-statement"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-redefined-builtin"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
@@ -818,70 +818,70 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-plugin-self-assigning-variable"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-singleton-comparison"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-undefined-variable"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unnecessary-pass"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unused-import"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unused-variable"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-markers"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-probe"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-runaway"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-sandbox"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
