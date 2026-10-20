@@ -16,6 +16,7 @@ use ruff_python_ast::{ExceptHandler, Expr, Stmt, StmtTry};
 use ruff_text_size::Ranged;
 
 /// One `import` or `from ... import` statement.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Import {
     pub range: Range,
     /// `from`: the module as written (empty for `from . import x`) and the dots.

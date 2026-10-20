@@ -561,12 +561,10 @@ impl Project {
             return Attr::Found;
         }
         // A package's submodule is found by `getattr` last.
-        if package || matches!(spec.kind, Kind::Namespace) {
-            if let Some(module) = self.spec(&format!("{name}.{attr}")) {
-                return Attr::Module(module);
-            }
-        }
-        Attr::Missing
+        let submodule = (package || matches!(spec.kind, Kind::Namespace))
+            .then(|| self.spec(&format!("{name}.{attr}")))
+            .flatten();
+        submodule.map_or(Attr::Missing, Attr::Module)
     }
 
     /// Whether `name` is a module of the standard library (as its top-level
@@ -596,7 +594,7 @@ impl Project {
                 found = None;
                 break;
             };
-            places = spec.dirs.clone();
+            places.clone_from(&spec.dirs);
             found = Some(spec);
         }
         found.is_some() || self.spec(name).is_some()
@@ -646,7 +644,7 @@ pub fn relative_name(
         } else {
             cut(level)
         };
-        if level > 0 && (module.matches('.').count() as u32) < level {
+        if level > 0 && u32::try_from(module.matches('.').count()).is_ok_and(|dots| dots < level) {
             return None;
         }
         package

@@ -11,7 +11,7 @@
 //! iteration order); this shows the first file's. The files are taken in name
 //! order, where Pylint takes them in the order of its file walk.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use ferrolint_core::LineIndex;
@@ -21,6 +21,7 @@ use ruff_python_parser::Parsed;
 use ruff_text_size::Ranged;
 
 /// What of the options this rule reads.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Settings {
     pub min: usize,
     comments: bool,
@@ -282,6 +283,12 @@ fn texts(set: &LineSet, from: usize, count: usize) -> Vec<&str> {
         .collect()
 }
 
+/// The first and last line of a run.
+type Span = (u32, u32);
+
+/// A file (by position) and the run of lines in it.
+type Chunk = (usize, u32, u32);
+
 /// What two files have in common (`_find_common`): the count of lines and
 /// the two spans of each run that is long enough.
 fn common(
@@ -290,7 +297,7 @@ fn common(
     a: &Windows,
     b: &Windows,
     min: usize,
-) -> Vec<(usize, (u32, u32), (u32, u32))> {
+) -> Vec<(usize, Span, Span)> {
     let mut hashes: Vec<u64> = a
         .by_hash
         .keys()
@@ -370,19 +377,18 @@ pub fn report(sets: &[LineSet], min: usize) -> Vec<String> {
             owners.entry(*hash).or_default().push(at);
         }
     }
-    let mut pairs: std::collections::BTreeMap<(usize, usize), ()> = Default::default();
+    let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
     for files in owners.values().filter(|files| files.len() > 1) {
         for (n, &i) in files.iter().enumerate() {
             for &j in &files[n + 1..] {
-                pairs.insert((i.min(j), i.max(j)), ());
+                pairs.insert((i.min(j), i.max(j)));
             }
         }
     }
     // Per count of lines, the groups in the order found; a pair that shares
     // a chunk with a group before it is dropped, as Pylint does.
-    type Chunk = (usize, u32, u32);
     let mut by_count: Vec<(usize, Vec<[Chunk; 2]>)> = Vec::new();
-    for &(i, j) in pairs.keys() {
+    for &(i, j) in &pairs {
         for (count, first, second) in common(&sets[i], &sets[j], &windows[i], &windows[j], min) {
             let chunks = [(i, first.0, first.1), (j, second.0, second.1)];
             let at = by_count
@@ -403,7 +409,7 @@ pub fn report(sets: &[LineSet], min: usize) -> Vec<String> {
         .into_iter()
         .flat_map(|(count, groups)| groups.into_iter().map(move |g| (count, g)))
         .collect();
-    sims.sort_by(|a, b| b.0.cmp(&a.0));
+    sims.sort_by_key(|sim| std::cmp::Reverse(sim.0));
     sims.into_iter()
         .map(|(_, chunks)| {
             let mut head: Vec<String> = chunks
@@ -463,7 +469,10 @@ mod tests {
         let settings = Settings::new(&[]);
         let a = "x = 1\ny = 2\nz = 3\nw = 4\nA = 1\n";
         let b = "x = 1\ny = 2\nz = 3\nw = 4\nB = 1\n";
-        assert!(report(&[set("a", a, &settings), set("b", b, &settings)], 4).is_empty());
+        assert_eq!(
+            report(&[set("a", a, &settings), set("b", b, &settings)], 4).len(),
+            0
+        );
         let a = format!("{a}v = 5\n");
         let b = format!("{b}v = 5\n");
         assert_eq!(
@@ -478,7 +487,7 @@ mod tests {
         let off = Settings::new(&[("ignore-imports".into(), "n".into())]);
         let a = "import a1\nimport a2\nimport a3\nimport a4\nimport a5\nimport a6\n";
         let b = "import a1\nimport a2\nimport a3\nimport a4\nimport a5\nimport a6\n";
-        assert!(report(&[set("a", a, &on), set("b", b, &on)], 4).is_empty());
+        assert_eq!(report(&[set("a", a, &on), set("b", b, &on)], 4).len(), 0);
         assert_eq!(report(&[set("a", a, &off), set("b", b, &off)], 4).len(), 1);
     }
 }

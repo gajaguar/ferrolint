@@ -78,6 +78,10 @@ pub struct Options {
     pub started: Instant,
 }
 
+/// What one file gave: its findings, or why it could not be linted.
+type FileResult = Result<Vec<Finding>>;
+
+#[allow(clippy::too_many_lines)]
 pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let config = config::load(cwd, options.config.as_deref())?;
     let changed = match &options.diff_base {
@@ -148,7 +152,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         walker
             .join()
             .unwrap_or_else(|_| Err(Error::io("the file walk panicked")))?;
-        let (names, per_file): (Vec<(PathBuf, String)>, Vec<Result<Vec<Finding>>>) = per_file
+        let (names, per_file): (Vec<(PathBuf, String)>, Vec<FileResult>) = per_file
             .into_iter()
             .map(|(display, path, findings)| ((path, display), findings))
             .unzip();

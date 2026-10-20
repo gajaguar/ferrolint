@@ -40,6 +40,7 @@ pub struct Params<'a> {
 
 /// The findings of the project rules over `files` (path and report name,
 /// in report-name order).
+#[allow(clippy::too_many_lines)]
 pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
     let enabled: Vec<BTreeSet<String>> = files
         .iter()

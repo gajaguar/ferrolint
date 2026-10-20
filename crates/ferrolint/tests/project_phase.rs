@@ -99,7 +99,7 @@ fn the_duplicate_options_reach_the_rule() {
         expected("duplicates.keep")
     );
     project.write("ferrolint.toml", config("min-similarity-lines = \"0\""));
-    assert!(findings(&project, &["--no-cache"]).is_empty());
+    assert_eq!(findings(&project, &["--no-cache"]), Vec::<String>::new());
 }
 
 #[test]

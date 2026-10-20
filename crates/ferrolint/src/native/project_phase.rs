@@ -14,7 +14,7 @@
 //! `VIRTUAL_ENV` the standard library and the installed packages are
 //! unknown, so only relative imports can be judged missing.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -353,7 +353,7 @@ fn cycles(graph: &BTreeMap<String, BTreeSet<String>>, vertices: &[String]) -> Ve
         walk(
             graph,
             &mut Vec::new(),
-            &mut Default::default(),
+            &mut HashSet::new(),
             &mut result,
             vertex,
         );
