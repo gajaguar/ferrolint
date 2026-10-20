@@ -75,6 +75,26 @@ struct Listing {
     entries: HashMap<String, bool>,
     /// The stems of the compiled modules (`m` for `m.cpython-314-darwin.so`).
     compiled: HashSet<String>,
+    /// Each name by its lower case, where the file system ignores case (macOS,
+    /// Windows): astroid tests `isfile`, which opens `ttFont.py` as `TTFont`.
+    folded: HashMap<String, String>,
+}
+
+impl Listing {
+    /// Whether `name` is a directory (`Some(true)`) or a file (`Some(false)`) here.
+    fn entry(&self, name: &str) -> Option<bool> {
+        let found = self.entries.get(name);
+        found
+            .or_else(|| self.entries.get(self.folded.get(&name.to_lowercase())?))
+            .copied()
+    }
+
+    /// Whether a compiled module is called `stem` (by case where the file system ignores it).
+    fn has_compiled(&self, stem: &str) -> bool {
+        self.compiled.contains(stem)
+            || (!self.folded.is_empty()
+                && self.compiled.iter().any(|c| c.eq_ignore_ascii_case(stem)))
+    }
 }
 
 /// A module found on the search path.
@@ -421,6 +441,17 @@ impl Project {
             }
             listing.entries.insert(name, is_dir);
         }
+        let probe = listing.entries.keys().find(|n| n.to_uppercase() != **n);
+        if probe.is_some_and(|n| {
+            let upper = n.to_uppercase();
+            !listing.entries.contains_key(&upper) && dir.join(upper).exists()
+        }) {
+            listing.folded = listing
+                .entries
+                .keys()
+                .map(|n| (n.to_lowercase(), n.clone()))
+                .collect();
+        }
         let listing = Rc::new(listing);
         self.listings
             .borrow_mut()
@@ -484,21 +515,21 @@ impl Project {
         for dir in dirs {
             let listing = self.listing(dir);
             let package = dir.join(part);
-            if listing.entries.get(part) == Some(&true) {
-                if self.listing(&package).entries.get("__init__.py") == Some(&false) {
+            if listing.entry(part) == Some(true) {
+                if self.listing(&package).entry("__init__.py") == Some(false) {
                     return Some(Spec::source(package.join("__init__.py"), true));
                 }
-                if !listing.compiled.contains(part)
-                    && listing.entries.get(&format!("{part}.py")) != Some(&false)
+                if !listing.has_compiled(part)
+                    && listing.entry(&format!("{part}.py")) != Some(false)
                 {
                     namespaces.push(package);
                     continue;
                 }
             }
-            if listing.compiled.contains(part) {
+            if listing.has_compiled(part) {
                 return Some(Spec::of(Kind::Extension));
             }
-            if listing.entries.get(&format!("{part}.py")) == Some(&false) {
+            if listing.entry(&format!("{part}.py")) == Some(false) {
                 return Some(Spec::source(dir.join(format!("{part}.py")), false));
             }
         }
@@ -597,7 +628,14 @@ impl Project {
             places.clone_from(&spec.dirs);
             found = Some(spec);
         }
-        found.is_some() || self.spec(name).is_some()
+        found.is_some() || self.on_disk(name)
+    }
+
+    /// Whether the module `name` is a file or directory of the search path:
+    /// not one that astroid makes up (`six.moves`), which `file_from_modpath` cannot find.
+    pub fn on_disk(&self, name: &str) -> bool {
+        self.spec(name)
+            .is_some_and(|spec| !matches!(spec.kind, Kind::Made))
     }
 
     /// The directories listed and the files read so far, for a cache to stamp.

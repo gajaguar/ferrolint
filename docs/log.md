@@ -2,6 +2,10 @@
 
 ## 2026-10-20
 
+* **native-rules.md**: `R0401` finds a submodule or compiled module by any case
+  on a file system that ignores it, as astroid does, and takes `six.moves` for
+  `six`; the known divergences list the `.pyi` stubs and the hash order of
+  Pylint's cycle search.
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
