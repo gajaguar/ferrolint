@@ -19,3 +19,8 @@ plugin rule.
 
 A file with a syntax error still gets its comment checks, but no plugin
 runs on it.
+
+Known divergence from CPython: the Ruff parser, pinned at tag 0.17.1 and
+still the same on its main branch, rejects a `raise` followed by `;` and
+another statement (`raise;x = 1`), which CPython accepts, so `FL003` fires
+on such a file. Lifting the pin fixes it once Ruff does.

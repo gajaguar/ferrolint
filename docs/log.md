@@ -2,6 +2,8 @@
 
 ## 2026-10-20
 
+* **host-rules.md**: `FL003` fires on `raise;x = 1`, which CPython accepts and
+  the pinned Ruff parser rejects.
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
