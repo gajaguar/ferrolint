@@ -1,0 +1,54 @@
+28:W4903:Using deprecated argument x of method int()
+29:W4903:Using deprecated argument x of method bool()
+30:W4903:Using deprecated argument x of method float()
+33:W4903:Using deprecated argument loop of method sleep()
+34:W4903:Using deprecated argument loop of method sleep()
+35:W4903:Using deprecated argument loop of method gather()
+36:W4903:Using deprecated argument loop of method wait_for()
+37:W4903:Using deprecated argument codeset of method translation()
+38:W4903:Using deprecated argument codeset of method translation()
+40:W4903:Using deprecated argument codeset of method install()
+41:W4903:Using deprecated argument onerror of method rmtree()
+42:W4903:Using deprecated argument onerror of method rmtree()
+44:W4903:Using deprecated argument onerror of method rmtree()
+46:W4903:Using deprecated argument choices of method BooleanOptionalAction()
+46:W4903:Using deprecated argument metavar of method BooleanOptionalAction()
+46:W4903:Using deprecated argument type of method BooleanOptionalAction()
+47:W4903:Using deprecated argument type of method BooleanOptionalAction()
+48:W4903:Using deprecated argument metavar of method BooleanOptionalAction()
+48:W4903:Using deprecated argument type of method BooleanOptionalAction()
+49:W4903:Using deprecated argument isdst of method localtime()
+50:W4903:Using deprecated argument isdst of method localtime()
+52:W4903:Using deprecated argument check_home of method is_python_build()
+53:W4903:Using deprecated argument check_home of method is_python_build()
+55:W4903:Using deprecated argument show_caches of method get_instructions()
+56:W4903:Using deprecated argument show_caches of method get_instructions()
+58:W4903:Using deprecated argument x of method RLock()
+59:W4903:Using deprecated argument x of method RLock()
+61:W4903:Using deprecated argument func of method finalize()
+62:W4903:Using deprecated argument obj of method finalize()
+64:W4903:Using deprecated argument debug_override of method cache_from_source()
+65:W4903:Using deprecated argument debug_override of method cache_from_source()
+88:W4905:Using deprecated decorator abc.abstractproperty()
+93:W4905:Using deprecated decorator abc.abstractproperty()
+98:W4905:Using deprecated decorator abc.abstractclassmethod()
+103:W4905:Using deprecated decorator abc.abstractstaticmethod()
+108:W4905:Using deprecated decorator typing.no_type_check_decorator()
+113:W4905:Using deprecated decorator typing.no_type_check_decorator()
+118:W4905:Using deprecated decorator abc.abstractproperty()
+137:W4905:Using deprecated decorator abc.abstractproperty()
+141:W4905:Using deprecated decorator abc.abstractstaticmethod()
+146:W4905:Using deprecated decorator typing.no_type_check_decorator()
+151:W4905:Using deprecated decorator abc.abstractproperty()
+167:W4906:Using deprecated attribute 'sys.last_type'
+168:W4906:Using deprecated attribute 'sys.last_value'
+169:W4906:Using deprecated attribute 'sys.last_traceback'
+170:W4906:Using deprecated attribute 'sys.last_type'
+173:W4906:Using deprecated attribute 'calendar.January'
+174:W4906:Using deprecated attribute 'calendar.February'
+176:W4906:Using deprecated attribute 'dis.HAVE_ARGUMENT'
+177:W4906:Using deprecated attribute 'typing.AnyStr'
+183:W4906:Using deprecated attribute 'sys.last_type'
+184:W4906:Using deprecated attribute 'calendar.January'
+184:W4906:Using deprecated attribute 'sys.last_type'
+195:W4906:Using deprecated attribute 'sys.last_type'

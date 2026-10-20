@@ -15,7 +15,6 @@ mod infer;
 mod native;
 mod pragma;
 mod pylint;
-#[allow(dead_code)] // the argument, decorator and attribute tables wait for the next batch
 mod pylint_deprecated;
 mod pylint_names;
 mod report;

@@ -862,7 +862,8 @@ Known divergences:
 * Pylint reports only a deprecated name that astroid infers on its
   interpreter, so `time.clock` or `asyncio.coroutine`, removed from Python
   3.14, give nothing there. The dump keeps the spellings that Python 3.14.8
-  infers (`asyncio.sleep` for `asyncio.tasks.sleep`) and drops the others, so
+  infers (`asyncio.sleep` for `asyncio.tasks.sleep`, plus the names a public
+  module re-exports) and drops the others, so
   those names stay silent here too, whatever the `py-version`; the version
   only filters the entries by their date.
 * A callee that is a local variable, an instance or a call result is not
@@ -872,3 +873,24 @@ Known divergences:
   silent for the same reason.
 * `__import__` is checked for a string literal only; Pylint infers a name to
   its value.
+
+## Batch P: deprecated arguments, decorators and attributes
+
+The same tables and version target as Batch O (`make pylint-deprecated`).
+
+* `W4903` `deprecated-argument`: a call of a function in the table that
+  passes a deprecated argument by keyword (`asyncio.sleep(1, loop=None)`) or
+  by position (`shutil.rmtree(p, False, handler)`). A call that `W4902`
+  already reports is not checked again, as in Pylint.
+* `W4905` `deprecated-decorator`: the first decorator of a function or class
+  when it, or the function it calls, is in the table
+  (`@abc.abstractproperty`, `@abc.abstractproperty()`). Later decorators are
+  not looked at, as in Pylint.
+* `W4906` `deprecated-attribute`: a read of an attribute in the table
+  (`sys.last_type`, `calendar.January`). A store or a `del` is not a read.
+
+Known divergences:
+
+* The owner of a call or an attribute is followed through imports only. A
+  name bound to a module, an instance or a call result
+  (`alias = sys; alias.last_type`) is not, where Pylint infers it.

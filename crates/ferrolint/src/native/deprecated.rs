@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprCall, Stmt};
+use ruff_python_ast::{Decorator, Expr, ExprCall, ExprContext, Identifier, Stmt};
 use ruff_text_size::Ranged;
 
 use super::classes::{Env, py_repr};
@@ -23,7 +23,11 @@ use crate::wit::BindingKind;
 
 const MODULE: &str = "W4901";
 const METHOD: &str = "W4902";
+const ARGUMENT: &str = "W4903";
 const CLASS: &str = "W4904";
+const DECORATOR: &str = "W4905";
+const ATTRIBUTE: &str = "W4906";
+const ALL: [&str; 6] = [MODULE, METHOD, ARGUMENT, CLASS, DECORATOR, ATTRIBUTE];
 
 pub struct Deprecated;
 
@@ -41,18 +45,30 @@ impl Checker for Deprecated {
                 "A deprecated function or method is called.",
             ),
             rule(
+                ARGUMENT,
+                "deprecated-argument",
+                "A deprecated argument is passed to a function.",
+            ),
+            rule(
                 CLASS,
                 "deprecated-class",
                 "A deprecated class is used or imported.",
+            ),
+            rule(
+                DECORATOR,
+                "deprecated-decorator",
+                "A deprecated decorator is applied.",
+            ),
+            rule(
+                ATTRIBUTE,
+                "deprecated-attribute",
+                "A deprecated attribute is read.",
             ),
         ]
     }
 
     fn check(&self, ctx: &Ctx<'_>, enabled: &BTreeSet<String>, out: &mut Vec<Diagnostic>) {
-        if ![MODULE, METHOD, CLASS]
-            .iter()
-            .any(|id| enabled.contains(*id))
-        {
+        if !ALL.iter().any(|id| enabled.contains(*id)) {
             return;
         }
         let mut walk = Walk {
@@ -72,8 +88,11 @@ impl Checker for Deprecated {
 struct Tables {
     modules: BTreeSet<String>,
     methods: HashSet<&'static str>,
+    arguments: HashMap<&'static str, table::Arguments>,
     /// Per module, the deprecated classes of the newest version that lists it.
-    classes: HashMap<&'static str, &'static [&'static str]>,
+    classes: HashMap<&'static str, table::Names>,
+    decorators: HashSet<&'static str>,
+    attributes: HashSet<&'static str>,
 }
 
 impl Tables {
@@ -90,7 +109,10 @@ impl Tables {
             .map(str::to_owned)
             .collect();
         let mut methods = HashSet::new();
+        let mut arguments = HashMap::new();
         let mut classes = HashMap::new();
+        let mut decorators = HashSet::new();
+        let mut attributes = HashSet::new();
         for (since, names) in table::MODULES {
             if *since <= target {
                 modules.extend(names.iter().map(|name| (*name).to_owned()));
@@ -101,15 +123,33 @@ impl Tables {
                 methods.extend(names.iter().copied());
             }
         }
+        for (since, entries) in table::ARGUMENTS {
+            if *since <= target {
+                arguments.extend(entries.iter().copied());
+            }
+        }
         for (since, entries) in table::CLASSES {
             if *since <= target {
                 classes.extend(entries.iter().copied());
             }
         }
+        for (since, names) in table::DECORATORS {
+            if *since <= target {
+                decorators.extend(names.iter().copied());
+            }
+        }
+        for (since, names) in table::ATTRIBUTES {
+            if *since <= target {
+                attributes.extend(names.iter().copied());
+            }
+        }
         Self {
             modules,
             methods,
+            arguments,
             classes,
+            decorators,
+            attributes,
         }
     }
 }
@@ -203,21 +243,84 @@ impl Walk<'_, '_> {
         {
             self.module(call, module.value.to_str());
         }
-        if !self.enabled.contains(METHOD) {
+        if !self.enabled.contains(METHOD) && !self.enabled.contains(ARGUMENT) {
             return;
         }
+        // Pylint tests each name the callee infers to, with the bare name
         let qualified = self.env.qualified(&call.func);
-        let callees = qualified
+        let mut callees: Vec<[&str; 2]> = qualified
             .as_deref()
-            .map(|spelling| aliases(spelling).collect::<Vec<_>>())
-            .unwrap_or_default();
-        if callees
+            .into_iter()
+            .flat_map(aliases)
+            .map(|qname| [qname, name])
+            .collect();
+        if self.is_defined(&call.func) {
+            callees.push([name, name]);
+        }
+        let keywords: HashSet<&str> = call
+            .arguments
+            .keywords
             .iter()
-            .any(|qname| self.tables.methods.contains(qname))
-            || self.tables.methods.contains(name) && self.is_defined(&call.func)
+            .filter_map(|keyword| keyword.arg.as_ref().map(Identifier::as_str))
+            .collect();
+        for callee in callees {
+            if callee
+                .iter()
+                .any(|qname| self.tables.methods.contains(qname))
+            {
+                if self.enabled.contains(METHOD) {
+                    let message = format!("Using deprecated method {name}()");
+                    self.out.push(self.ctx.report(METHOD, call, message));
+                }
+                continue;
+            }
+            if !self.enabled.contains(ARGUMENT) {
+                continue;
+            }
+            let distinct = if callee[0] == callee[1] { 1 } else { 2 };
+            for qname in &callee[..distinct] {
+                let listed = self
+                    .tables
+                    .arguments
+                    .get(qname)
+                    .copied()
+                    .unwrap_or_default();
+                for (position, argument) in listed {
+                    let positional =
+                        position.is_some_and(|at| (at as usize) < call.arguments.args.len());
+                    if keywords.contains(argument) || positional {
+                        let message =
+                            format!("Using deprecated argument {argument} of method {name}()");
+                        self.out.push(self.ctx.report(ARGUMENT, call, message));
+                    }
+                }
+            }
+        }
+    }
+
+    /// The one qualified name `expr` is known by, as `safe_infer` finds it.
+    fn inferred(&self, expr: &Expr) -> Option<&'static str> {
+        let qualified = self.env.qualified(expr)?;
+        let mut names = aliases(&qualified);
+        let first = names.next()?;
+        names.all(|other| other == first).then_some(first)
+    }
+
+    fn decorator(&mut self, decorators: &[Decorator]) {
+        let Some(first) = decorators.first() else {
+            return;
+        };
+        let target = match &first.expression {
+            Expr::Call(call) => &*call.func,
+            other => other,
+        };
+        if self.enabled.contains(DECORATOR)
+            && let Some(qname) = self.inferred(target)
+            && self.tables.decorators.contains(qname)
         {
-            let message = format!("Using deprecated method {name}()");
-            self.out.push(self.ctx.report(METHOD, call, message));
+            let message = format!("Using deprecated decorator {qname}()");
+            self.out
+                .push(self.ctx.report(DECORATOR, &first.expression, message));
         }
     }
 
@@ -265,6 +368,8 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
                     self.class(stmt, &module, &names);
                 }
             }
+            Stmt::FunctionDef(func) => self.decorator(&func.decorator_list),
+            Stmt::ClassDef(class) => self.decorator(&class.decorator_list),
             Stmt::If(branch) => {
                 // astroid nests an `elif` in the `else` of the `if` before it,
                 // so an `else` body answers to the test above it
@@ -283,8 +388,20 @@ impl<'a> Visitor<'a> for Walk<'_, '_> {
     }
 
     fn visit_expr(&mut self, expr: &'a Expr) {
-        if let Expr::Call(call) = expr {
-            self.call(call);
+        match expr {
+            Expr::Call(call) => self.call(call),
+            Expr::Attribute(attribute)
+                if attribute.ctx == ExprContext::Load && self.enabled.contains(ATTRIBUTE) =>
+            {
+                if let Some(owner) = self.inferred(&attribute.value) {
+                    let qname = format!("{owner}.{}", attribute.attr);
+                    if self.tables.attributes.contains(qname.as_str()) {
+                        let message = format!("Using deprecated attribute {}", py_repr(&qname));
+                        self.out.push(self.ctx.report(ATTRIBUTE, expr, message));
+                    }
+                }
+            }
+            _ => {}
         }
         visitor::walk_expr(self, expr);
     }
@@ -335,6 +452,13 @@ mod tests {
     fn modules_methods_and_classes_match_pylint() {
         let source = include_str!("fixtures/deprecated_part1.py");
         let expected = include_str!("fixtures/deprecated_part1.expected").trim_end();
+        assert_eq!(render(source, Some((3, 14)), &[]), expected);
+    }
+
+    #[test]
+    fn arguments_decorators_and_attributes_match_pylint() {
+        let source = include_str!("fixtures/deprecated_part2.py");
+        let expected = include_str!("fixtures/deprecated_part2.expected").trim_end();
         assert_eq!(render(source, Some((3, 14)), &[]), expected);
     }
 
