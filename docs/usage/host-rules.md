@@ -19,3 +19,10 @@ plugin rule.
 
 A file with a syntax error still gets its comment checks, but no plugin
 runs on it.
+
+`FL003` follows the Ruff parser, which accepts a few things CPython rejects, so
+Pylint's `E0001` can have no counterpart. One is iterable unpacking in a
+comprehension (`[*x for x in y]`): the repository's own
+`crates/ferrolint/src/native/fixtures/versions.py` contains it on purpose, to
+exercise the version checks, and is the only file where the two linters differ
+on this repository.
