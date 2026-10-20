@@ -1,0 +1,19 @@
+4:W9005:"Both" has constructor parameters documented in class and __init__
+35:W9015:"b" missing in parameter documentation
+35:W9016:"b" missing in parameter type documentation
+43:W9015:"b" missing in parameter documentation
+43:W9016:"b" missing in parameter type documentation
+54:W9015:"a" missing in parameter documentation
+54:W9016:"a" missing in parameter type documentation
+54:W9017:"z" differing in parameter documentation
+54:W9018:"z" differing in parameter type documentation
+65:W9015:"b" missing in parameter documentation
+65:W9016:"b" missing in parameter type documentation
+76:W9005:"GoogleBoth" has constructor parameters documented in class and __init__
+97:W9015:"b" missing in parameter documentation
+97:W9016:"a, b" missing in parameter type documentation
+106:W9005:"Inner" has constructor parameters documented in class and __init__
+106:W9015:"b" missing in parameter documentation
+106:W9016:"a, b" missing in parameter type documentation
+112:W9015:"b" missing in parameter documentation
+112:W9016:"a, b" missing in parameter type documentation

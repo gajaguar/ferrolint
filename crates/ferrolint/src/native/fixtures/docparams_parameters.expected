@@ -1,0 +1,44 @@
+15:W9015:"b, c" missing in parameter documentation
+15:W9016:"b, c" missing in parameter type documentation
+31:W9015:"b" missing in parameter documentation
+31:W9016:"b" missing in parameter type documentation
+31:W9017:"z" differing in parameter documentation
+31:W9018:"y" differing in parameter type documentation
+81:W9015:"**kwargs" missing in parameter documentation
+81:W9016:"a" missing in parameter type documentation
+81:W9017:"b" differing in parameter documentation
+89:W9016:"c" missing in parameter type documentation
+98:W9015:"b" missing in parameter documentation
+113:W9016:"b" missing in parameter type documentation
+121:W9016:"b" missing in parameter type documentation
+137:W9016:"a, b" missing in parameter type documentation
+154:W9015:"c" missing in parameter documentation
+154:W9016:"b, c" missing in parameter type documentation
+163:W9015:"a" missing in parameter documentation
+172:W9017:"z" differing in parameter documentation
+172:W9018:"z" differing in parameter type documentation
+201:W9015:"**kwargs, *args" missing in parameter documentation
+209:W9015:"**kwargs" missing in parameter documentation
+209:W9017:"key" differing in parameter documentation
+209:W9018:"key" differing in parameter type documentation
+249:W9015:"c" missing in parameter documentation
+249:W9016:"b, c" missing in parameter type documentation
+261:W9017:"z" differing in parameter documentation
+261:W9018:"z" differing in parameter type documentation
+273:W9016:"c" missing in parameter type documentation
+285:W9015:"b" missing in parameter documentation
+285:W9016:"b" missing in parameter type documentation
+309:W9015:"b" missing in parameter documentation
+309:W9016:"b" missing in parameter type documentation
+325:W9015:"b" missing in parameter documentation
+325:W9016:"b" missing in parameter type documentation
+333:W9016:"a" missing in parameter type documentation
+333:W9017:"z" differing in parameter documentation
+341:W9015:"b" missing in parameter documentation
+382:W9015:"b" missing in parameter documentation
+382:W9016:"b" missing in parameter type documentation
+397:W9015:"c" missing in parameter documentation
+397:W9016:"c" missing in parameter type documentation
+407:W9015:"b" missing in parameter documentation
+407:W9016:"b" missing in parameter type documentation
+426:W9017:"z" differing in parameter documentation

@@ -1142,3 +1142,41 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   are not judged. A display with a starred element, such as `(*t, 1)`, and a
   dict with `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
+
+## Batch W: docparams, parameters
+
+The parameter messages of `pylint.extensions.docparams` (they are not the
+`W9xxx` rules of the gajaguar plugin). They report only when `load-plugins`
+names that module. A docstring is read in the Sphinx, Epytext, Google or
+NumPy style, whichever has the most matching sections (ties go to the first of
+that list, and no match to `default-docstring-type`), with Pylint's own
+patterns.
+
+* `W9015` `missing-param-doc` and `W9016` `missing-type-doc`: a parameter that
+  the parameter section has no description (or no type, and no annotation) for.
+  `self`, `cls`, the names that match `ignored-argument-names` and, for the
+  type, `*args` and `**kwargs` are not asked for; `*args` may be documented
+  without its asterisks.
+* `W9017` `differing-param-doc` and `W9018` `differing-type-doc`: a documented
+  name that the signature does not have.
+* `W9005` `multiple-constructor-doc`: parameters documented in the class
+  docstring and in the one of `__init__` (or `__new__`). The constructor's
+  parameters are also judged against the class docstring, and the class
+  docstring may stand for the constructor's.
+
+They read `accept-no-param-doc` (a docstring with no parameter section at all
+is accepted when it is `yes`, the default), `default-docstring-type`,
+`no-docstring-rgx` (default `^_`, so `__init__` is skipped unless the option
+changes), `docstring-min-length` and `ignored-argument-names`. `For the
+parameters, see` in a docstring tolerates what is missing. A function
+decorated `overload` is skipped. A function whose parameters all lack both
+description and type is `W9021` in Pylint, not these two; it reports nothing
+until that message is ported.
+
+Known divergences from Pylint:
+
+* A type comment (`# type: (int) -> str`) is not read, so a parameter typed
+  only by one counts as untyped.
+* A method is a constructor's owner when the nearest class around it is the
+  class; Pylint resolves the same frame, with astroid's inference of
+  decorators left out here (`overload` is taken by its last name).
