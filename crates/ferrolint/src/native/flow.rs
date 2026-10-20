@@ -560,6 +560,24 @@ pub(super) fn builtin_exception(name: &str) -> Option<&'static str> {
     EXCEPTIONS.iter().find(|(n, _)| *n == name).map(|(n, _)| *n)
 }
 
+/// The builtin exception `name` and every builtin class it derives from.
+pub(super) fn builtin_ancestors(name: &str) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = builtin_exception(name).into_iter().collect();
+    let mut at = 0;
+    while let Some(next) = out.get(at).copied() {
+        at += 1;
+        for (_, parents) in EXCEPTIONS.iter().filter(|(n, _)| *n == next) {
+            for parent in *parents {
+                let parent = canonical(parent);
+                if !out.contains(&parent) {
+                    out.push(parent);
+                }
+            }
+        }
+    }
+    out
+}
+
 impl<'a> Visitor<'a> for Walk<'a, '_> {
     fn visit_body(&mut self, body: &'a [Stmt]) {
         if self.on(UNREACHABLE) {

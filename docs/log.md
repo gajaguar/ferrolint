@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch W adds the return, raise and yield messages of
+  `pylint.extensions.docparams`: `W9006`, `W9008`, `W9010`, `W9011` and
+  `W9013`.
+
 * **native-rules.md**: Added Batch W - the parameter messages of
   `pylint.extensions.docparams` (`W9005`, `W9015` to `W9018`), over a
   docstring parser for the Sphinx, Epytext, Google and NumPy styles.
