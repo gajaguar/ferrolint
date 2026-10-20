@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch O - `W0222`, `W0233`, `W0236`, `W0246` and
+  `R0901`, the override and ancestor-count messages that read the MRO of
+  Batch G; removed the stale line that listed `W0237` and `E0203` as not
+  ported.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.

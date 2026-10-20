@@ -325,8 +325,6 @@ Not ported:
   is still here, to tell `W0601` from it. Pylint skips `W0603` for a
   statement that gets `W0601` or `W0602`; the `global-statement` plugin
   reports it anyway.
-* `W0237` `arguments-renamed` and `E0203` `access-member-before-definition`
-  need the class hierarchy across files.
 * `E0601` `used-before-assignment` shares the filter of `E0606` but gets its
   other cases from `try` blocks, which are not run (see below).
 
@@ -828,3 +826,52 @@ Known divergences:
   ported: they need to know which pragma silenced each finding, and `I0021`
   would call a pragma useless when it names a message ferrolint does not
   implement.
+
+## Batch O: overrides and ancestors
+
+The ancestors are those of Batch G (see its divergences for what is read).
+
+* `W0222` `signature-differs`: a method that takes fewer default values than
+  the method it overrides, with the same parameters otherwise; the filters of
+  `W0221` apply (private names, setters, `@overload` stubs, constructors).
+* `W0233` `non-parent-init-called`: in `__init__`, `Name.__init__(self)` where
+  `Name` is a class that is not a direct base (builtins such as `object` and
+  `Exception` included), and `self.__init__()`; a `Name.__init__` that is a
+  direct base is counted once, as `W0231` counts it. `super().__init__` ends
+  the check.
+* `W0236` `invalid-overridden-method`: a method overridden as a property, or a
+  property as a method, `classmethod` or `staticmethod`, and a method
+  overridden as `async` or the reverse. `property`, `functools.cached_property`,
+  `abc.abstractproperty`, a subclass of `property` and `@x.setter` count as
+  properties.
+* `W0246` `useless-parent-delegation`: a method whose only statement (after
+  the docstring) calls the same method of `super()` with its own parameters,
+  and that adds no decorator, default, annotation or `*args` the parent lacks.
+  `__new__`, `__init_subclass__`, `__class_getitem__` and an `__hash__` next to
+  an `__eq__` are left out. `super(Class, self)` and `super(self.__class__,
+  self)` count.
+* `R0901` `too-many-ancestors`: more ancestors than `max-parents` (default 7),
+  the classes in Pylint's list of standard classes and in `ignored-parents`
+  (and what they inherit) not counted. The builtin exceptions, `ABC`,
+  `Generic`, `Protocol` and the builtin types count as Pylint counts them, and
+  so does the `NoneType` astroid adds to a class that derives from `Enum` or
+  `Flag`.
+
+Known divergences:
+
+* A method of a builtin parent is not judged by `W0222`, `W0236` and `W0246`
+  (Pylint reads its signature from the interpreter, `dict.__iter__` for
+  instance); only a class with no base but the project's own and `object`,
+  `ABC`, `Generic` or `Protocol` is compared with `object`, for `__init__`,
+  `__repr__`, `__str__`, `__dir__`, `__sizeof__`, `__reduce__` and
+  `__getstate__` written with `self` alone.
+* `W0236` takes a decorator that is a function returning a property for an
+  ordinary method.
+* `W0246` compares default values as written: `1`, `1.0` and `True` differ here
+  and are equal in Python.
+* `W0233` needs every base to be known, and skips a call whose target it
+  cannot resolve.
+* `R0901` leaves out a base it cannot read, as Pylint does for one it cannot
+  infer, so a count can fall short; a module name bound by an import and again
+  by an assignment (`try: import x` / `except ImportError: x = None`) is such a
+  base.

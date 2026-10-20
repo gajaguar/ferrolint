@@ -497,7 +497,18 @@ impl ClassRef {
                         name: name.id.to_string(),
                     }));
                 }
-                let qualified = self.module.qualify(base)?;
+                let Some(qualified) = self.module.qualify(base) else {
+                    // A name that `from module import *` binds.
+                    let Expr::Name(name) = base else {
+                        return None;
+                    };
+                    return self
+                        .module
+                        .stars
+                        .iter()
+                        .find_map(|star| project.class(&format!("{star}.{}", name.id)))
+                        .map(Ok);
+                };
                 Some(project.class(&qualified).ok_or(qualified))
             })
             .collect()
@@ -645,6 +656,27 @@ mod tests {
         let project = Project::new(&root.path().join("app/views.py"), "app.views");
         let class = project.class("api.base.Base").unwrap();
         assert_eq!(class.qname(), "api.base.Base");
+    }
+
+    #[test]
+    fn a_base_bound_by_a_star_import_is_found() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write("app/base.py", "class Base:\n    pass\n");
+        write(
+            "app/child.py",
+            "from .base import *\n\nclass Child(Base):\n    pass\n",
+        );
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let bases = project.class("app.child.Child").unwrap().bases(&project);
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].as_ref().unwrap().qname(), "app.base.Base");
     }
 
     #[test]
