@@ -36,12 +36,53 @@ pub struct Params<'a> {
     pub options: &'a [(String, String)],
     pub py_version: Option<(u32, u32)>,
     pub cache: Option<&'a Cache>,
+    /// In diff mode, whether a file changed: the phase runs over every file
+    /// and only the findings that concern a changed one are kept.
+    pub changed: Option<&'a (dyn Fn(&Path) -> bool + Sync)>,
 }
 
 /// The findings of the project rules over `files` (path and report name,
-/// in report-name order).
-#[allow(clippy::too_many_lines)]
+/// in report-name order), the whole tree even in diff mode, then reduced to
+/// the changed files: a finding reported at one, or a cycle or a duplicate
+/// with one among its members (it stays reported where a full run puts it).
 pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
+    let (mut out, units) = all(params, files);
+    if let Some(changed) = params.changed {
+        let displays: BTreeSet<&str> = files
+            .iter()
+            .filter(|(path, _)| changed(path))
+            .map(|(_, display)| display.as_str())
+            .collect();
+        let modules: BTreeSet<&str> = units
+            .iter()
+            .filter(|unit| displays.contains(unit.display.as_str()))
+            .map(|unit| unit.module.as_str())
+            .collect();
+        out.retain(|(display, diagnostic)| match diagnostic.code.as_str() {
+            CYCLIC => diagnostic
+                .message
+                .trim_start_matches("Cyclic import (")
+                .trim_end_matches(')')
+                .split(" -> ")
+                .any(|name| modules.contains(name)),
+            // The `==module:[start:end]` lines name the files.
+            DUPLICATE => diagnostic
+                .message
+                .lines()
+                .filter_map(|line| line.strip_prefix("==")?.rsplit_once(":["))
+                .any(|(name, _)| modules.contains(name)),
+            _ => displays.contains(display.as_str()),
+        });
+    }
+    out.into_iter()
+        .map(|(display, diagnostic)| finding(params.registry, display, diagnostic))
+        .collect()
+}
+
+type Raw = Vec<(String, ferrolint_core::Diagnostic)>;
+
+#[allow(clippy::too_many_lines)]
+fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let enabled: Vec<BTreeSet<String>> = files
         .iter()
         .map(|(path, _)| params.selection.for_file(path))
@@ -53,7 +94,7 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
     let opts = Opts::new(params.options);
     let duplicates = params.selection.is_enabled(DUPLICATE) && opts.duplicates.min > 0;
     if !imports && !cyclic && !duplicates {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let units = units(params, files, &opts, &enabled);
     let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
@@ -97,14 +138,10 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
             .iter()
             .all(|(path, stamp)| stamp_of(Path::new(path)) == *stamp)
     {
-        return entry
-            .findings
-            .into_iter()
-            .map(|(display, diagnostic)| finding(params.registry, display, diagnostic))
-            .collect();
+        return (entry.findings, units);
     }
 
-    let mut out: Vec<(String, ferrolint_core::Diagnostic)> = Vec::new();
+    let mut out: Raw = Vec::new();
     let mut touched = Vec::new();
     if imports || cyclic {
         let prepared = project_phase::prepare_all(&units);
@@ -161,9 +198,7 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
             },
         );
     }
-    out.into_iter()
-        .map(|(display, diagnostic)| finding(params.registry, display, diagnostic))
-        .collect()
+    (out, units)
 }
 
 fn finding(registry: &Registry, path: String, diagnostic: ferrolint_core::Diagnostic) -> Finding {

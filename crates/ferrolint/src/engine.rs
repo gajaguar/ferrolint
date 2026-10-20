@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
@@ -88,6 +88,13 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         Some(reference) => Some(diff::changed_files(cwd, reference)?),
         None => None,
     };
+    let is_changed = |file: &Path| {
+        changed.as_ref().is_none_or(|changed| {
+            changed.contains(file) || changed.contains(&resolved_parent(file))
+        })
+    };
+    // Diff mode: the project phase still covers the whole tree.
+    let tree = Mutex::new(Vec::new());
     let plugins = read_plugins(&config)?;
     let cache = options.cache.then(|| Cache::new(cwd));
     let workers = if options.threads == 0 {
@@ -123,13 +130,16 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         });
         // The walk feeds the workers as it goes.
         let (sender, receiver) = mpsc::channel();
+        let (diff, tree) = (changed.is_some(), &tree);
         let walker = scope.spawn(move || {
             discover::stream(cwd, &options.paths, &excludes, |file| {
-                let keep = changed.as_ref().is_none_or(|changed| {
-                    changed.contains(&file) || changed.contains(&resolved_parent(&file))
-                });
-                if keep {
-                    let _ = sender.send(file);
+                if !diff || is_changed(&file) {
+                    let _ = sender.send(file.clone());
+                }
+                if diff {
+                    tree.lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .push(file);
                 }
             })
         });
@@ -183,6 +193,21 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         findings.extend(result?);
     }
     findings.extend(config_findings(cwd, &config, &registry, &selection));
+    let names = if changed.is_some() {
+        let mut all: Vec<(PathBuf, String)> = tree
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner)
+            .into_iter()
+            .map(|path| {
+                let display = discover::display_path(cwd, &path);
+                (path, display)
+            })
+            .collect();
+        all.sort_by(|a, b| a.1.cmp(&b.1));
+        all
+    } else {
+        names
+    };
     findings.extend(project_run::run(
         &project_run::Params {
             cwd,
@@ -192,6 +217,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
             options: &rule_options,
             py_version,
             cache: cache.as_ref(),
+            changed: changed.is_some().then_some(&is_changed),
         },
         &names,
     ));

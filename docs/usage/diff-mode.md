@@ -23,8 +23,17 @@ working tree, plus untracked files git does not ignore.
   JSON summary.
 * Findings, suppressions and exit codes work as in a full run over the
   selected files.
-* `R0401` and `R0801` compare the linted files with each other, so in diff
-  mode they see only the changed files: a cycle or a duplicate whose other
-  end did not change is not reported. Run them on the whole tree, without
-  `--diff-base`, to find those. `E0401`, `E0402` and `E0611` look the module
-  up on disk and do not depend on it.
+* The per-file rules run on the changed files only. The project rules
+  (`E0401`, `E0402`, `E0611`, `R0401`, `R0801`) run over the whole tree
+  the targets select, as in a full run, so a cycle or a duplicate that
+  reaches an unchanged file is found. Their findings are then kept for the
+  changed files: an import finding stays if the file it sits on changed; a
+  cycle or a duplicate stays if any file of it changed, and is reported
+  where a full run reports it, on the file checked last, which may be an
+  unchanged one. A cycle or a duplicate among unchanged files only is
+  dropped.
+* The project phase keeps its single cache entry, keyed on the whole tree
+  (see [result cache](result-cache.md)), so a diff run and a full run share
+  it and an unchanged tree does not run the phase again. A cold run parses
+  every file once for the phase, which a diff run without these rules
+  enabled does not.

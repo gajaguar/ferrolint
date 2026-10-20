@@ -2,6 +2,11 @@
 
 ## 2026-10-20
 
+* **diff-mode.md**: `--diff-base` runs the project rules over the whole tree and
+  keeps the findings that concern a changed file (a cycle or a duplicate with
+  any changed member); **result-cache.md** says the project entry is keyed on the
+  whole tree there, and **native-rules.md** drops its known divergence.
+
 * **pylint-compare.md**: `STRIP=1` removes the `# pylint:` pragma comments
   only, not the same text in a string; `make pylint-compare-test` checks it.
 

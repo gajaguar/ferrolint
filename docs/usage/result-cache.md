@@ -43,3 +43,6 @@ A run keeps its results in `.ferrolint-cache/` in the working directory;
   modification time); a run replays the entry only while every stamp still
   holds, so installing a package or adding a module on the search path reruns
   the phase. A run that enables none of these rules does not run the phase.
+  Under `--diff-base` the key still covers every file of the targets, not the
+  changed ones, so a diff run and a full run share the entry; the reduction
+  to the changed files happens after it is read.
