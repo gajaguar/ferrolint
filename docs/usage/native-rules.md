@@ -680,6 +680,16 @@ default. A `.pylintrc` project carries the option already; a
 load-plugins = "pylint.extensions.while_used, pylint.extensions.confusing_elif"
 ```
 
+A plugin rule may take the msg-id or symbol of such a native rule (a plugin
+that ports another `W9xxx` set does). While `load-plugins` leaves the
+extension out, the native rule is not in the rule table and the plugin rule
+answers to that msg-id in `select`, `ignore`, `per-file-ignores`, the
+`disable` option and `# pylint:` pragmas, as in Pylint, where the two never
+coexist. When `load-plugins` names the extension too, the run stops at
+configuration load and says which extension holds the msg-id. This holds for
+every rule of Batches K, M and W, `W0714` and `W3201` (the summary of each
+says which module it needs).
+
 * `W0149` `while-used` (`pylint.extensions.while_used`): every `while` loop,
   on its `while` line.
 * `C3401` `dict-init-mutate` (`pylint.extensions.dict_init_mutate`): a
@@ -1152,9 +1162,10 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
 
 ## Batch W: docparams
 
-The messages of `pylint.extensions.docparams` (they are not the
-`W9xxx` rules of the gajaguar plugin). They report only when `load-plugins`
-names that module. A docstring is read in the Sphinx, Epytext, Google or
+The messages of `pylint.extensions.docparams`. They report only when
+`load-plugins` names that module, and only then do their msg-ids (`W9005`,
+`W9006`, `W9008`, `W9010` to `W9021`) answer to them: otherwise a plugin rule
+declaring one of them as an alias owns it (see Batch K). A docstring is read in the Sphinx, Epytext, Google or
 NumPy style, whichever has the most matching sections (ties go to the first of
 that list, and no match to `default-docstring-type`), with Pylint's own
 patterns.

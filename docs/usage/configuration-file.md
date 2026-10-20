@@ -57,6 +57,11 @@ max-args = "3"
 * When two plugins declare the same Pylint msg-id or symbol, the run stops
   until `pylint-aliases` names the rule that owns it; the other rule keeps
   its code and its remaining aliases.
+* A plugin alias that equals another rule's code stops the run and
+  `pylint-aliases` cannot settle it. The exception is a native rule of an
+  opt-in Pylint extension (`W9006` of `pylint.extensions.docparams`) while
+  `load-plugins` leaves that extension out: the native rule steps aside and
+  the plugin rule owns the msg-id. See Batch K in `native-rules.md`.
 
 ## Pylint configuration
 

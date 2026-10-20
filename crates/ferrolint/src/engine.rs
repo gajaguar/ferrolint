@@ -2,14 +2,16 @@
 //! them in parallel (or replay them from the cache) and gather the findings
 //! into one deterministic order.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
-use ferrolint_core::{Diagnostic, Finding, LineIndex, Registry, Severity, sort_findings};
+use ferrolint_core::{
+    Diagnostic, Finding, LineIndex, Registry, RegistryError, RuleInfo, Severity, sort_findings,
+};
 use rayon::prelude::*;
 use ruff_python_ast::{ModModule, PySourceType, PythonVersion};
 use ruff_python_parser::{ParseOptions, Parsed};
@@ -283,16 +285,12 @@ impl Setup {
         config: &Config,
     ) -> Result<Self> {
         let host = Host::load(plugins, cache, workers)?;
-        let rules = checks::host_rules()
-            .into_iter()
-            .chain(native::rules())
-            .chain(
-                host.plugins
-                    .iter()
-                    .flat_map(|plugin| plugin.rules.iter().cloned()),
-            );
-        let registry = Registry::with_owners(rules, &config.pylint_aliases)
-            .map_err(|err| Error::config(err.to_string()))?;
+        let plugin_rules: Vec<_> = host
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.rules.iter().cloned())
+            .collect();
+        let registry = registry_for(plugin_rules, config)?;
         let selection = Selection::new(&registry, config)?;
         Ok(Self {
             host,
@@ -302,6 +300,38 @@ impl Setup {
             options: config.options.clone().into_iter().collect(),
         })
     }
+}
+
+/// The rule table: the host's rules, the native ones the configuration
+/// reaches and the plugins'.
+fn registry_for(plugin_rules: Vec<RuleInfo>, config: &Config) -> Result<Registry> {
+    let load_plugins = config.options.get("load-plugins").map(String::as_str);
+    let taken: HashSet<String> = plugin_rules
+        .iter()
+        .flat_map(|rule| std::iter::once(rule.code.clone()).chain(rule.aliases()))
+        .collect();
+    let native = native::rules_for(load_plugins, &taken);
+    let rules = checks::host_rules()
+        .into_iter()
+        .chain(native.iter().cloned())
+        .chain(plugin_rules);
+    Registry::with_owners(rules, &config.pylint_aliases).map_err(|err| {
+        // Only a loaded extension keeps its rules in a clash.
+        let module = match &err {
+            RegistryError::AliasIsCode { alias, .. } => native
+                .iter()
+                .find(|rule| rule.code == *alias)
+                .and_then(native::extensions::needed),
+            _ => None,
+        };
+        Error::config(match module {
+            Some(module) => format!(
+                "{err}; that native rule belongs to `pylint.extensions.{module}`, which load-plugins loads: \
+                 drop the extension or give the plugin rule another msg-id"
+            ),
+            None => err.to_string(),
+        })
+    })
 }
 
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
@@ -849,7 +879,72 @@ fn aborted(plugin: &LoadedPlugin, reason: &str) -> Diagnostic {
 
 #[cfg(test)]
 mod tests {
-    use super::module_name;
+    use std::path::Path;
+
+    use ferrolint_core::{RuleInfo, Severity};
+
+    use super::{Config, module_name, registry_for};
+    use crate::selection::Selection;
+
+    /// A plugin rule that takes a docparams msg-id, as `pylint-gajaguar` does.
+    fn gaj006() -> RuleInfo {
+        RuleInfo {
+            code: "GAJ006".into(),
+            name: "gaj006".into(),
+            summary: String::new(),
+            severity: Severity::Warning,
+            pylint_id: Some("W9006".into()),
+            pylint_symbol: None,
+            plugin: Some("gaj".into()),
+        }
+    }
+
+    fn with_load_plugins(value: &str) -> Config {
+        let mut config = Config::default();
+        config
+            .options
+            .insert("load-plugins".into(), value.to_owned());
+        config
+    }
+
+    #[test]
+    fn a_plugin_owns_a_docparams_msg_id_while_the_extension_is_not_loaded() {
+        let config = Config {
+            select: Some(vec!["W9006".into()]),
+            ..with_load_plugins("pylint_django")
+        };
+        let registry = registry_for(vec![gaj006()], &config).unwrap();
+        assert_eq!(registry.resolve("W9006"), Some("GAJ006"));
+        assert!(registry.get("W9006").is_none());
+        assert!(registry.get("W9005").is_some(), "an unclaimed rule stays");
+        let selection = Selection::new(&registry, &config).unwrap();
+        let on: Vec<_> = selection.for_file(Path::new("x.py")).into_iter().collect();
+        assert_eq!(on, ["GAJ006"]);
+    }
+
+    #[test]
+    fn the_native_rule_answers_to_its_msg_id_without_a_clash() {
+        for config in [
+            Config::default(),
+            with_load_plugins("pylint.extensions.docparams"),
+        ] {
+            let registry = registry_for(Vec::new(), &config).unwrap();
+            assert_eq!(registry.resolve("W9006"), Some("W9006"));
+        }
+    }
+
+    #[test]
+    fn a_clash_with_a_loaded_extension_says_so() {
+        let config = with_load_plugins("pylint_django, pylint.extensions.docparams");
+        let message = registry_for(vec![gaj006()], &config)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("GAJ006 declares W9006 as an alias")
+                && message.contains("`pylint.extensions.docparams`, which load-plugins loads"),
+            "{message}"
+        );
+    }
 
     #[test]
     fn module_names_follow_the_packages() {

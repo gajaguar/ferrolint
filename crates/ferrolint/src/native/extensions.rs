@@ -23,10 +23,21 @@ const MATH_NOT_FLOAT: &str = "R6106";
 
 /// Whether the configuration loads `pylint.extensions.<module>`.
 pub(super) fn loaded(ctx: &Ctx<'_>, module: &str) -> bool {
-    ctx.option("load-plugins").is_some_and(|list| {
+    listed(ctx.option("load-plugins"), module)
+}
+
+/// Whether a `load-plugins` value names `pylint.extensions.<module>`.
+pub(super) fn listed(load_plugins: Option<&str>, module: &str) -> bool {
+    load_plugins.is_some_and(|list| {
         list.split(',')
             .any(|name| name.trim().strip_prefix("pylint.extensions.") == Some(module))
     })
+}
+
+/// The `pylint.extensions` module a rule's summary says it needs.
+pub fn needed(rule: &RuleInfo) -> Option<&str> {
+    let (_, rest) = rule.summary.split_once("needs `pylint.extensions.")?;
+    rest.split('`').next()
 }
 
 pub struct Extensions;

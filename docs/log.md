@@ -2,6 +2,11 @@
 
 ## 2026-10-20
 
+* **native-rules.md**, **configuration-file.md**: a plugin alias equal to the
+  msg-id of a native rule of an opt-in Pylint extension (`W9006` of docparams)
+  is valid while `load-plugins` leaves the extension out and the plugin owns
+  the msg-id; with the extension loaded the run stops and names it.
+
 * **diff-mode.md**: `--diff-base` runs the project rules over the whole tree and
   keeps the findings that concern a changed file (a cycle or a duplicate with
   any changed member); **result-cache.md** says the project entry is keyed on the
