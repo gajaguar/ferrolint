@@ -19,6 +19,7 @@ mod astring;
 mod bad_super;
 mod booleaness;
 mod calls;
+mod class_members;
 mod classes;
 mod code_style;
 mod conditions;
@@ -33,6 +34,7 @@ mod flow;
 mod formats;
 mod hierarchy;
 mod imports;
+mod inferred;
 mod instance_attrs;
 mod logging;
 mod matchpat;
@@ -102,6 +104,8 @@ const CHECKERS: &[&dyn Checker] = &[
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
+    &class_members::ClassMembers,
+    &inferred::Inferred,
     &instance_attrs::InstanceAttrs,
     &logging::Logging,
     &matchpat::MatchPatterns,

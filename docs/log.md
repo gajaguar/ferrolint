@@ -18,6 +18,12 @@
   `make pylint-deprecated`.
 * **native-rules.md**: Added Batch Q - `W4903`, `W4905` and `W4906`, the
   deprecated arguments, decorators and attributes of the same tables.
+
+* **native-rules.md**: Added Batch S - `W0238`, `R0903`, `E0239`, `E0243` and
+  `W0143`, private members, public methods and the rules that ask what an
+  expression stands for, without type inference.
+* **native-rules.md**: Added Batch R - `E1120`, `E1121`, `E1123`, `E1124` and `E1125`, the arity of a call, on the
+  callees that `W1114` resolves.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.
