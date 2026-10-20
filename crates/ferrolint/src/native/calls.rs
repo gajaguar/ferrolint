@@ -1,19 +1,26 @@
 //! Rules about one call or assignment: `E3701` invalid-field-call, `W1115`
 //! non-str-assignment-to-dunder-name, `W1506` bad-thread-instantiation,
 //! `W1503` redundant-unittest-assert, `W0715` raising-format-tuple, `W1114`
-//! arguments-out-of-order and `W1117` kwarg-superseded-by-positional-arg.
+//! arguments-out-of-order and `W1117` kwarg-superseded-by-positional-arg; and
+//! the arity of the same callees: `E1120` no-value-for-parameter, `E1121`
+//! too-many-function-args, `E1123` unexpected-keyword-arg, `E1124`
+//! redundant-keyword-arg and `E1125` missing-kwoa.
 //!
 //! shortcut: Pylint infers what a call calls. Here a callee is a name bound
 //! once to an undecorated function of this file, `self.method` of the
 //! enclosing class, or a class of this file with an `__init__` (`W1114` and
-//! `W1117`); a `self` is a `TestCase` when a base is named `...TestCase`
+//! `W1117`, and the arity rules, which also drop a class whose bases are not
+//! all known); a `self` is a `TestCase` when a base is named `...TestCase`
 //! (`W1503`). Upgrade with a call inference.
 
 use std::collections::{BTreeSet, HashSet};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprCall, Stmt, StmtAssign, StmtClassDef, StmtFunctionDef, StmtRaise};
+use ruff_python_ast::{
+    Expr, ExprCall, ParameterWithDefault, Stmt, StmtAssign, StmtClassDef, StmtFunctionDef,
+    StmtRaise,
+};
 
 use super::classes::{Env, Local, const_repr, is_static, locals, py_repr};
 use super::{Checker, Ctx, rule};
@@ -26,6 +33,12 @@ const UNITTEST: &str = "W1503";
 const FORMAT_TUPLE: &str = "W0715";
 const OUT_OF_ORDER: &str = "W1114";
 const SUPERSEDED: &str = "W1117";
+const MISSING: &str = "E1120";
+const TOO_MANY: &str = "E1121";
+const UNEXPECTED: &str = "E1123";
+const REDUNDANT: &str = "E1124";
+const MISSING_KWOA: &str = "E1125";
+const ARITY: [&str; 5] = [MISSING, TOO_MANY, UNEXPECTED, REDUNDANT, MISSING_KWOA];
 
 pub struct Calls;
 
@@ -67,6 +80,31 @@ impl Checker for Calls {
                 "kwarg-superseded-by-positional-arg",
                 "A keyword argument named like a positional-only parameter of a function with `**kwargs`.",
             ),
+            rule(
+                MISSING,
+                "no-value-for-parameter",
+                "A call that leaves a parameter without a value.",
+            ),
+            rule(
+                TOO_MANY,
+                "too-many-function-args",
+                "A call with more positional arguments than the function takes.",
+            ),
+            rule(
+                UNEXPECTED,
+                "unexpected-keyword-arg",
+                "A call with a keyword that is no parameter of the function.",
+            ),
+            rule(
+                REDUNDANT,
+                "redundant-keyword-arg",
+                "A call that gives a parameter a value by position and by keyword.",
+            ),
+            rule(
+                MISSING_KWOA,
+                "missing-kwoa",
+                "A call that leaves a keyword-only parameter without a value.",
+            ),
         ]
     }
 
@@ -79,8 +117,10 @@ impl Checker for Calls {
             FORMAT_TUPLE,
             OUT_OF_ORDER,
             SUPERSEDED,
-        ];
-        if !ours.iter().any(|id| enabled.contains(*id)) {
+        ]
+        .into_iter()
+        .chain(ARITY);
+        if !ours.into_iter().any(|id| enabled.contains(id)) {
             return;
         }
         let env = Env::new(ctx);
@@ -185,7 +225,7 @@ impl<'a> Walk<'a, '_> {
         if self.on(UNITTEST) {
             self.unittest(call);
         }
-        if self.on(OUT_OF_ORDER) || self.on(SUPERSEDED) {
+        if self.on(OUT_OF_ORDER) || self.on(SUPERSEDED) || ARITY.iter().any(|id| self.on(id)) {
             self.arguments(call);
         }
     }
@@ -231,13 +271,16 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    /// The function a call calls, and whether it is a method (`self`
-    /// leads its parameters).
-    fn callee(&self, call: &ExprCall) -> Option<(&'a StmtFunctionDef, bool)> {
+    /// The function a call calls, with how Pylint names the call.
+    fn callee(&self, call: &ExprCall) -> Option<Callee<'a>> {
         match &*call.func {
             Expr::Name(name) => {
                 if let Some(func) = self.env.func_of(name) {
-                    return func.decorator_list.is_empty().then_some((func, false));
+                    return func.decorator_list.is_empty().then_some(Callee {
+                        func,
+                        kind: "function",
+                        class: None,
+                    });
                 }
                 let class = self.env.class_of(&call.func)?;
                 let plain = class.decorator_list.is_empty()
@@ -246,7 +289,11 @@ impl<'a> Walk<'a, '_> {
                         .as_ref()
                         .is_none_or(|a| a.keywords.is_empty());
                 let init = own_method(class, "__init__")?;
-                (plain && own_method(class, "__new__").is_none()).then_some((init, true))
+                (plain && own_method(class, "__new__").is_none()).then_some(Callee {
+                    func: init,
+                    kind: "constructor",
+                    class: Some(class),
+                })
             }
             Expr::Attribute(attribute) => {
                 let Expr::Name(receiver) = &*attribute.value else {
@@ -258,17 +305,67 @@ impl<'a> Walk<'a, '_> {
                         .binding(receiver)
                         .is_some_and(|b| b.kind == BindingKind::Parameter);
                 let (class, _) = self.classes.last()?;
-                is_self
-                    .then(|| own_method(class, attribute.attr.as_str()).map(|func| (func, true)))?
+                let func = own_method(class, attribute.attr.as_str()).filter(|_| is_self)?;
+                Some(Callee {
+                    func,
+                    kind: if is_static(func) {
+                        "staticmethod"
+                    } else {
+                        "method"
+                    },
+                    class: None,
+                })
             }
             _ => None,
         }
     }
 
+    /// Whether the arity rules can trust `callee`: Pylint reads the
+    /// constructor off the whole class, and a method off the instance.
+    fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
+        let name = callee.func.name.as_str();
+        match (&*call.func, callee.class) {
+            (_, Some(class)) => self.constructible(class, 0),
+            // A function of a class body is no name inside its methods.
+            (Expr::Name(_), None) => !self.classes.iter().any(|(class, _)| {
+                super::classes::methods(&class.body)
+                    .into_iter()
+                    .any(|m| std::ptr::eq(m, callee.func))
+            }),
+            // Pylint does not judge `self.__init__`, and an attribute
+            // assigned to `self.name` hides the method.
+            _ => {
+                name != "__init__"
+                    && self.classes.last().is_some_and(|(class, _)| {
+                        let mut stores = Stores(name, false);
+                        stores.visit_body(&class.body);
+                        !stores.1
+                    })
+            }
+        }
+    }
+
+    /// Whether the constructor of `class` is its `__init__`: no `__new__`
+    /// and no base but a builtin class or such a class of the file.
+    fn constructible(&self, class: &StmtClassDef, depth: u8) -> bool {
+        depth < 16
+            && !locals(&class.body).iter().any(|(n, _)| n == "__new__")
+            && super::classes::bases(class).iter().all(|base| {
+                self.env.class_of(base).map_or_else(
+                    || {
+                        matches!(base, Expr::Name(n)
+                            if self.env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin))
+                    },
+                    |class| self.constructible(class, depth + 1),
+                )
+            })
+    }
+
     fn arguments(&mut self, call: &ExprCall) {
-        let Some((func, in_class)) = self.callee(call) else {
+        let Some(callee) = self.callee(call) else {
             return;
         };
+        let (func, in_class) = (callee.func, callee.kind != "function");
         let args = &call.arguments;
         if args.args.iter().any(|a| matches!(a, Expr::Starred(_)))
             || args.keywords.iter().any(|k| k.arg.is_none())
@@ -284,6 +381,9 @@ impl<'a> Walk<'a, '_> {
             .collect();
         if params.iter().collect::<HashSet<_>>().len() != params.len() {
             return;
+        }
+        if ARITY.iter().any(|id| self.on(id)) && self.settled(call, &callee) {
+            self.arity(call, &callee);
         }
         if self.on(OUT_OF_ORDER) {
             if in_class && params.first() == Some(&"self") {
@@ -334,6 +434,85 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// Pylint's match of the arguments of a call against the parameters.
+    fn arity(&mut self, call: &ExprCall, callee: &Callee<'_>) {
+        let (p, args) = (&callee.func.parameters, &call.arguments);
+        // The bound `self` of a method or constructor is an argument too.
+        let positional =
+            args.args.len() + usize::from(matches!(callee.kind, "method" | "constructor"));
+        let params: Vec<_> = p.posonlyargs.iter().chain(&p.args).collect();
+        let mut given = vec![false; params.len()];
+        let mut kw_given = vec![false; p.kwonlyargs.len()];
+        let at = format!("in {} call", callee.kind);
+        let ctx = self.env.ctx;
+        let on = |id: &str| self.enabled.contains(id);
+        let mut found = Vec::new();
+        let mut say = |id: &'static str, text: String| {
+            if on(id) {
+                found.push(ctx.report(id, call, text));
+            }
+        };
+        if positional > params.len() && p.vararg.is_none() {
+            say(
+                TOO_MANY,
+                format!("Too many positional arguments for {} call", callee.kind),
+            );
+        }
+        given.iter_mut().take(positional).for_each(|g| *g = true);
+        for keyword in args.keywords.iter().filter_map(|k| k.arg.as_ref()) {
+            let name = keyword.as_str();
+            let shown = py_repr(name);
+            if p.kwarg.is_some() && p.posonlyargs.iter().any(|a| named(a) == name) {
+                continue; // W1117's case
+            }
+            let slot = if let Some(i) = params.iter().position(|a| named(a) == name) {
+                &mut given[i]
+            } else if let Some(i) = p.kwonlyargs.iter().position(|a| named(a) == name) {
+                &mut kw_given[i]
+            } else {
+                if p.kwarg.is_none() {
+                    say(
+                        UNEXPECTED,
+                        format!("Unexpected keyword argument {shown} {at}"),
+                    );
+                }
+                continue;
+            };
+            if *slot {
+                say(
+                    REDUNDANT,
+                    format!("Argument {shown} passed by position and keyword {at}"),
+                );
+            }
+            *slot = true;
+        }
+        for a in params
+            .iter()
+            .zip(&given)
+            .filter_map(|(a, g)| (a.default.is_none() && !g).then_some(a))
+        {
+            say(
+                MISSING,
+                format!("No value for argument {} {at}", py_repr(named(a))),
+            );
+        }
+        for a in p
+            .kwonlyargs
+            .iter()
+            .zip(&kw_given)
+            .filter_map(|(a, g)| (a.default.is_none() && !g).then_some(a))
+        {
+            say(
+                MISSING_KWOA,
+                format!(
+                    "Missing mandatory keyword argument {} {at}",
+                    py_repr(named(a))
+                ),
+            );
+        }
+        self.out.extend(found);
+    }
+
     fn dunder_name(&mut self, assign: &StmtAssign) {
         let Some(Expr::Attribute(target)) = assign.targets.first() else {
             return;
@@ -373,6 +552,33 @@ impl<'a> Walk<'a, '_> {
                 ));
             }
         }
+    }
+}
+
+fn named(a: &ParameterWithDefault) -> &str {
+    a.parameter.name.as_str()
+}
+
+/// A function a call calls: `kind` is how Pylint names the call, and
+/// `class` the class a constructor call builds.
+struct Callee<'a> {
+    func: &'a StmtFunctionDef,
+    kind: &'static str,
+    class: Option<&'a StmtClassDef>,
+}
+
+/// Whether a class body assigns an attribute called `.0`.
+struct Stores<'n>(&'n str, bool);
+
+impl Visitor<'_> for Stores<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Attribute(a) = expr
+            && a.attr.as_str() == self.0
+            && a.ctx.is_store()
+        {
+            self.1 = true;
+        }
+        visitor::walk_expr(self, expr);
     }
 }
 
@@ -469,5 +675,13 @@ mod tests {
         let source = include_str!("fixtures/call_arguments.py");
         let expected = include_str!("fixtures/call_arguments.expected").trim_end();
         assert_eq!(render(source, &[], &["W1114", "W1117"]), expected);
+    }
+
+    #[test]
+    fn call_arity() {
+        let source = include_str!("fixtures/call_arity.py");
+        let expected = include_str!("fixtures/call_arity.expected").trim_end();
+        let ids = ["E1120", "E1121", "E1123", "E1124", "E1125"];
+        assert_eq!(render(source, &[], &ids), expected);
     }
 }

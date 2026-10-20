@@ -828,3 +828,32 @@ Known divergences:
   ported: they need to know which pragma silenced each finding, and `I0021`
   would call a pragma useless when it names a message ferrolint does not
   implement.
+
+## Batch O: the arity of a call
+
+* `E1120` `no-value-for-parameter`, `E1121` `too-many-function-args`, `E1123`
+  `unexpected-keyword-arg`, `E1124` `redundant-keyword-arg` and `E1125`
+  `missing-kwoa`: Pylint's match of the arguments of a call with the
+  parameters of the function, with its messages (`... in function call`,
+  `... in method call`, `... in constructor call`, `... in staticmethod call`).
+  Like Pylint it counts the `self` of a method and of a constructor as an
+  argument, lets a parameter before `/` be named by keyword, and leaves a
+  keyword to `**kwargs` when the function has one (`W1117` reports the
+  positional-only ones).
+
+Not ported: a call whose callee needs types or a decorator model.
+
+Known divergences from Pylint, where Pylint infers the callee:
+
+* The callee is the one `W1114` resolves (see Batch B): a name bound once to
+  an undecorated function of the file, `self.method` of the enclosing class
+  (undecorated or `staticmethod`) or a class of the file with one `__init__`.
+  An imported function, a decorated one, a class method, an alias of a method
+  (`g = f`), a method that `self.name = ...` replaces, a function or an
+  `__init__` defined twice and `self.__init__` (which Pylint does not judge)
+  are not followed.
+* A class is followed only when it has no `__new__`, metaclass or decorator and
+  every base is a builtin class or such a class of the file. Pylint reads the
+  constructor of an imported base too.
+* A call with a starred argument or a `**` is skipped, where Pylint unpacks a
+  literal list, tuple or dict written in the call.

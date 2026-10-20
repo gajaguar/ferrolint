@@ -2,6 +2,8 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch O - `E1120`, `E1121`, `E1123`, `E1124` and `E1125`, the arity of a call, on the
+  callees that `W1114` resolves.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.
