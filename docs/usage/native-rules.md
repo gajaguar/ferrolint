@@ -558,12 +558,17 @@ Known divergences:
 * Pylint infers what `x` in `x.name = value` stands for. Here it is the
   first parameter of a method of the class (or of a function or lambda
   nested in it that does not rebind it), or a name bound once in its
-  scope to a call of a class of the file, `x = Model()`, of `cls` in a
-  classmethod of the class, or of a name bound once to such a class or to
-  a call of a function of the file that returns one. An instance reached
-  any other way (`self.root.x = 1`, `cls.manager.model = ...`,
-  `x = self.__class__()`, a name bound twice) gives the class nothing, so
-  its `W0201` is missed.
+  scope to that parameter (`me = self`), to a call of a class of the file
+  (`x = Model()`, also annotated), of `cls` in a classmethod, of
+  `self.__class__`, of `C.__new__(...)` (a class without a `__new__` of its
+  own) or of `object.__new__(C)`, or to a name bound once to such a class
+  or to a call of a function of the file that returns one. An instance
+  reached any other way gives the class nothing, so its `W0201` is missed
+  and its `R0902` count is short: through an attribute or a property
+  (`self.root.x = 1`, `self.fixup.worker = w`, `cls.manager.model = ...`),
+  through a parameter or another module, through `type(self)`, from a name
+  bound twice (Pylint follows the binding in force at that line) or from a
+  class whose own `__new__` makes the instance.
 * The ancestors are those of Batch G: a class whose MRO is unknown is not
   checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
   ancestor tests of `W0201`. A builtin base such as `dict` or
@@ -577,7 +582,9 @@ Known divergences:
 * `__slots__` keeps astroid from recording an attribute outside them, for
   `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
   ancestor of the file or project give plain slots (a string, list, tuple,
-  set or dict of strings) and one of them names a slot. A builtin base
+  set or dict of strings, written in the body or under `if` and `try`,
+  where the assignments add up) and one of them names a slot. Slots built
+  in a loop are not read. A builtin base
   other than `object` is not in the MRO here, where Pylint finds it without
   slots and records every attribute.
 

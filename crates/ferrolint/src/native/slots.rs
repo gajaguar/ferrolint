@@ -14,7 +14,7 @@ use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, Stmt, StmtClassDef};
 use ruff_text_size::Ranged;
 
-use super::classes::{Env, Local, bases, const_repr, locals, py_repr};
+use super::classes::{Env, Local, bases, blocks, const_repr, locals, py_repr};
 use super::hierarchy::{Class, Hierarchy};
 use super::{Checker, Ctx, rule};
 
@@ -98,6 +98,35 @@ pub(super) fn slots_value(class: &StmtClassDef) -> Option<&Expr> {
     (all == direct.len())
         .then(|| direct.last().copied())
         .flatten()
+}
+
+/// Every value assigned to `__slots__` in the class body, also under `if` and
+/// `try`, when every binding of the name is such an assignment: astroid infers
+/// each of them and joins the slots. Loops are not followed.
+pub(super) fn slots_values(class: &StmtClassDef) -> Option<Vec<&Expr>> {
+    fn collect<'a>(body: &'a [Stmt], out: &mut Vec<&'a Expr>) {
+        for stmt in body {
+            match stmt {
+                Stmt::Assign(a) if matches!(&a.targets[..], [Expr::Name(n)] if n.id.as_str() == "__slots__") =>
+                {
+                    out.push(&a.value);
+                }
+                Stmt::AnnAssign(a) if matches!(&*a.target, Expr::Name(n) if n.id.as_str() == "__slots__") =>
+                {
+                    out.extend(a.value.as_deref());
+                }
+                Stmt::For(_) | Stmt::While(_) => {}
+                _ => blocks(stmt).into_iter().for_each(|b| collect(b, out)),
+            }
+        }
+    }
+    let all = locals(&class.body)
+        .into_iter()
+        .filter(|(name, _)| name == "__slots__")
+        .count();
+    let mut found = Vec::new();
+    collect(&class.body, &mut found);
+    (all == found.len() && all > 0).then_some(found)
 }
 
 /// The items of a slots display (a dict's keys), when it is plain.

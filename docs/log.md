@@ -18,6 +18,11 @@
   on a file system that ignores it, as astroid does, and takes `six.moves` for
   `six`; the known divergences list the `.pyi` stubs and the hash order of
   Pylint's cycle search.
+
+* **native-rules.md**: `R0902` and `W0201` count `me = self`, `object.__new__(C)`,
+  `C.__new__(...)` and `self.__class__()` instances, and read `__slots__`
+  set under `if` and `try`; the remaining divergences are listed.
+
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 

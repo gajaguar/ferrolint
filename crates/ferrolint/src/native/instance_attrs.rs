@@ -5,9 +5,10 @@
 //! Pylint's instance attributes are the `x.name` targets whose `x` infers to
 //! an instance of the class, minus those a `__slots__` leaves out. shortcut:
 //! here `x` is the first parameter of a method of the class (or of a function
-//! or lambda nested in it that does not rebind it), or a name bound once to a
-//! call of the class or of `cls` in one of its classmethods; upgrade with a
-//! value inference. The ancestors come from [`super::hierarchy`]: a class
+//! or lambda nested in it that does not rebind it), a name bound once to
+//! that parameter, or a name bound once to a call of a class of the file, of
+//! `cls`, or of `__new__` on it or on `object` (`object.__new__(self.__class__)`);
+//! upgrade with a value inference. The ancestors come from [`super::hierarchy`]: a class
 //! without an MRO is not checked by the rules that look at its ancestors.
 
 use std::collections::{BTreeSet, HashMap};
@@ -21,7 +22,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::classes::{Env, Local, bases, is_classmethod, is_static, locals, methods, py_repr};
 use super::hierarchy::{Class, Hierarchy};
 use super::misc::csv;
-use super::slots::{names, slots_value};
+use super::slots::{names, slots_values};
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -247,8 +248,9 @@ struct Clients<'a, 'e> {
     values: HashMap<u32, &'a Expr>,
     frames: Vec<(usize, Option<&'a StmtFunctionDef>)>,
     classes: Vec<&'a StmtClassDef>,
-    /// The first parameter of each classmethod being walked, with its class.
-    cls: Vec<(&'a str, &'a StmtClassDef)>,
+    /// The first parameter of each method being walked, with its class and
+    /// whether it is a classmethod (the parameter is the class, not an instance).
+    cls: Vec<(&'a str, &'a StmtClassDef, bool)>,
     store: Use,
     out: HashMap<usize, Vec<Site<'a>>>,
 }
@@ -258,13 +260,23 @@ struct Values<'a>(HashMap<u32, &'a Expr>);
 
 impl<'a> Visitor<'a> for Values<'a> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        if let Stmt::Assign(assign) = stmt
-            && let [Expr::Name(name)] = &assign.targets[..]
+        let bound = match stmt {
+            Stmt::Assign(a) => match &a.targets[..] {
+                [Expr::Name(name)] => Some((name, &*a.value)),
+                _ => None,
+            },
+            Stmt::AnnAssign(a) => match (&*a.target, a.value.as_deref()) {
+                (Expr::Name(name), Some(value)) => Some((name, value)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((name, value)) = bound
             && let Some(id) = ruff_python_ast::HasNodeIndex::node_index(name)
                 .load()
                 .as_u32()
         {
-            self.0.insert(id, &assign.value);
+            self.0.insert(id, value);
         }
         visitor::walk_stmt(self, stmt);
     }
@@ -284,10 +296,21 @@ impl<'a> Clients<'a, '_> {
         if depth > 8 {
             return None;
         }
-        if let Expr::Name(name) = expr
-            && let Some((_, class)) = self.cls.iter().rev().find(|(p, _)| *p == name.id.as_str())
-        {
-            return Some(class);
+        match expr {
+            Expr::Name(name) => {
+                if let Some((_, class, true)) = self.param(&name.id) {
+                    return Some(class);
+                }
+            }
+            // `self.__class__`
+            Expr::Attribute(a) if a.attr.as_str() == "__class__" => {
+                if let Expr::Name(name) = &*a.value
+                    && let Some((_, class, false)) = self.param(&name.id)
+                {
+                    return Some(class);
+                }
+            }
+            _ => {}
         }
         if let Some(class) = self.env.class_of(expr) {
             return Some(class);
@@ -319,9 +342,32 @@ impl<'a> Clients<'a, '_> {
             return None;
         }
         match expr {
-            Expr::Call(call) => self.class(&call.func, depth + 1),
+            Expr::Call(call) => {
+                // `object.__new__(C)` makes an instance of `C`, and so does
+                // `C.__new__(...)` unless `C` has a `__new__` of its own.
+                if let Expr::Attribute(f) = &*call.func
+                    && f.attr.as_str() == "__new__"
+                {
+                    if self.env.qualified(&f.value).is_some_and(|q| q == "object") {
+                        return self.class(call.arguments.args.first()?, depth + 1);
+                    }
+                    let class = self.class(&f.value, depth + 1)?;
+                    return (!self.env.defines(class, "__new__", 0)).then_some(class);
+                }
+                self.class(&call.func, depth + 1)
+            }
+            // An alias of the method's own `self`.
+            Expr::Name(name) if depth > 0 => match self.param(&name.id) {
+                Some((_, class, false)) => Some(class),
+                _ => self.instance(self.bound(expr)?, depth + 1),
+            },
             _ => self.instance(self.bound(expr)?, depth + 1),
         }
+    }
+
+    /// The first parameter of the innermost method named `name`.
+    fn param(&self, name: &str) -> Option<(&'a str, &'a StmtClassDef, bool)> {
+        self.cls.iter().rev().find(|(p, ..)| *p == name).copied()
     }
 }
 
@@ -352,10 +398,12 @@ impl<'a> Visitor<'a> for Clients<'a, '_> {
                 .classes
                 .last()
                 .filter(|c| {
-                    is_classmethod(func) && methods(&c.body).iter().any(|m| std::ptr::eq(*m, func))
+                    !is_static(func) && methods(&c.body).iter().any(|m| std::ptr::eq(*m, func))
                 })
                 .zip(p.posonlyargs.first().or(p.args.first()))
-                .map(|(class, first)| (first.parameter.name.as_str(), *class));
+                .map(|(class, first)| {
+                    (first.parameter.name.as_str(), *class, is_classmethod(func))
+                });
             self.cls.extend(cls);
             self.frames
                 .push((std::ptr::from_ref(func).addr(), Some(func)));
@@ -683,12 +731,13 @@ impl<'a> Walk<'a, '_> {
     fn slots(&self, class: &Class<'a>) -> Option<BTreeSet<String>> {
         let mut out = BTreeSet::new();
         for found in self.hierarchy.mro(class)? {
-            let value = slots_value(found.def()?)?;
-            let items = match value {
-                Expr::StringLiteral(s) => vec![s.value.to_str()],
-                _ => names(value)?,
-            };
-            out.extend(items.into_iter().map(str::to_owned));
+            for value in slots_values(found.def()?)? {
+                let items = match value {
+                    Expr::StringLiteral(s) => vec![s.value.to_str()],
+                    _ => names(value)?,
+                };
+                out.extend(items.into_iter().map(str::to_owned));
+            }
         }
         (!out.is_empty()).then_some(out)
     }
@@ -1057,6 +1106,20 @@ mod tests {
     fn instance_attribute_slots() {
         let source = include_str!("fixtures/instance_attribute_slots.py");
         let expected = include_str!("fixtures/instance_attribute_slots.expected").trim_end();
+        assert_eq!(
+            render(
+                source,
+                &[("max-attributes", "1")],
+                &["W0201", "E0202", "E0203", "R0902"]
+            ),
+            expected
+        );
+    }
+
+    #[test]
+    fn instance_attribute_external() {
+        let source = include_str!("fixtures/instance_attribute_external.py");
+        let expected = include_str!("fixtures/instance_attribute_external.expected").trim_end();
         assert_eq!(
             render(
                 source,
