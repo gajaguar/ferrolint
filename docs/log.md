@@ -22,8 +22,8 @@
 * **native-rules.md**: Added Batch S - `W0238`, `R0903`, `E0239`, `E0243` and
   `W0143`, private members, public methods and the rules that ask what an
   expression stands for, without type inference.
-* **native-rules.md**: Added Batch R - `E1120`, `E1121`, `E1123`, `E1124` and `E1125`, the arity of a call, on the
-  callees that `W1114` resolves.
+* **native-rules.md**: Added Batch R - `E1120`, `E1121`, `E1123`, `E1124`
+  and `E1125`, the arity of a call, on the callees that `W1114` resolves.
 
 * **native-rules.md**: Added Batch U - `E0110`, `E0240`, `E0244`, `W0239` and
   `W0240`, on abstract instantiation, inconsistent MROs, enumerations that
