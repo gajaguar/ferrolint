@@ -2,6 +2,12 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch X adds `E0401` import-error, `E0402`
+  relative-beyond-top-level, `E0611` no-name-in-module and `R0401`
+  cyclic-import, run as a project phase after the per-file pass.
+* **result-cache.md**: The project rules keep their result in one stamped
+  entry instead of the per-file ones.
+
 * **native-rules.md**: Added Batch X with `W1116` isinstance-second-argument-not-valid-type,
   for literals, functions and instances that a name bound once stands for.
 

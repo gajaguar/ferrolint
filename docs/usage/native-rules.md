@@ -1151,6 +1151,26 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   of the file, a tuple with such an element, or `a | b` with such a side other
   than `None`. A name bound once to one of those counts too, also inside a
   tuple.
+* `E0401` `import-error`, `E0402` `relative-beyond-top-level` and `E0611`
+  `no-name-in-module`: an import that no module answers, a relative import
+  that climbs above the top package, and a name that the module imported does
+  not bind. The modules are found the way astroid finds them: the
+  directory above each linted package, `PYTHONPATH`, the standard library and
+  the `site-packages` of `VIRTUAL_ENV`, with packages ahead of compiled modules
+  ahead of `.py` files ahead of namespace directories. `ignored-modules`,
+  `analyse-fallback-blocks`, `source-roots`, `extension-pkg-allow-list` and
+  `unsafe-load-any-extension` apply. An import under `if TYPE_CHECKING:`, under
+  a `sys.version_info` or `six.PY2/PY3` test, in a `try` that catches
+  `ImportError`, in `with suppress(ImportError)` or beside a fallback import is
+  not reported, as in Pylint.
+* `R0401` `cyclic-import`: the cycles of the imports among the linted modules
+  (and the packages they import from), each reported once as
+  `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
+  `# pylint: disable=cyclic-import` leaves the graph.
+
+These four rules need the whole run, not one file. They run after the
+per-file pass and keep their result in one cache entry: see
+[Result cache](result-cache.md).
 
 Known divergences from Pylint, where Pylint infers the second argument:
 
@@ -1158,3 +1178,21 @@ Known divergences from Pylint, where Pylint infers the second argument:
   types: a call of a function, an attribute of an object, a name bound twice,
   a parameter, a subscript such as `list[int]`. A union held by a name is
   never judged (Pylint infers it only when both sides are classes).
+
+Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`):
+
+* Without `VIRTUAL_ENV` the standard library and the installed packages are
+  unknown, so an absolute import is never reported as missing and a name is
+  never judged missing in them; relative imports and the project's own modules
+  still are. Set `VIRTUAL_ENV` to the environment Pylint runs in to match it.
+* `R0401` is reported once per cycle at line 1 of the file that sorts last
+  among the linted ones; Pylint attaches it to the file it checked last, in
+  filesystem order. The cycles and their text agree.
+* Pylint reads astroid's brain plugins, which add names to some modules
+  (`hashlib`, `six`, `numpy` and others); those modules accept any name here.
+  A name that a module imports from another is not followed to what it infers
+  to.
+* `TYPE_CHECKING`, `ImportError`, `typing` and `suppress` are recognised by
+  their spelling and the file's own imports, where Pylint infers them.
+* The cache entry stamps the directories and files the resolution read; a
+  `.pth` file edited in place without a size or time change is not noticed.

@@ -1,0 +1,3 @@
+pkg/h.py:1:R0401:Cyclic import (pkg.a -> pkg.b)
+pkg/h.py:1:R0401:Cyclic import (pkg.g -> pkg.h)
+pkg/h.py:2:E0611:No name 'X' in module 'pkg.g'

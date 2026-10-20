@@ -1,0 +1,16 @@
+ns/m.py:3:E0611:No name 'n' in module ''
+ns/m.py:3:E0611:No name 'nope' in module ''
+ns/m.py:4:E0611:No name 'Y' in module 'ns.n'
+ns/m.py:5:E0401:Unable to import 'inner'
+ns/m.py:6:E0611:No name 'nope2' in module 'ns'
+pkg/a.py:10:E0401:Unable to import 'pkg.sub.nothing'
+pkg/a.py:10:E0611:No name 'nothing' in module 'pkg.sub'
+pkg/a.py:11:E0402:Attempted relative import beyond top-level package
+pkg/a.py:12:E0402:Attempted relative import beyond top-level package
+pkg/a.py:3:E0611:No name 'nope' in module 'pkg'
+pkg/a.py:5:E0611:No name 'nope' in module 'pkg'
+pkg/a.py:6:E0611:No name 'nope2' in module 'pkg.b'
+pkg/a.py:7:E0611:No name 'nope3' in module 'pkg.sub'
+pkg/a.py:8:E0611:No name 'absent' in module 'pkg.sub.deep'
+pkg/a.py:9:E0401:Unable to import 'pkg.missing'
+pkg/guards.py:17:E0401:Unable to import 'pkg.gone'
