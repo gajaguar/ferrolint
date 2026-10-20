@@ -41,3 +41,8 @@ comprehension (`[*x for x in y]`): the repository's own
 `crates/ferrolint/src/native/fixtures/versions.py` contains it on purpose, to
 exercise the version checks, and is the only file where the two linters differ
 on this repository.
+
+Known divergence from CPython: the Ruff parser, pinned at tag 0.17.1 and
+still the same on its main branch, rejects a `raise` followed by `;` and
+another statement (`raise;x = 1`), which CPython accepts, so `FL003` fires
+on such a file. Lifting the pin fixes it once Ruff does.
