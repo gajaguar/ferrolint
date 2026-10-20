@@ -1090,3 +1090,20 @@ Known divergences:
   An enum the standard library builds without an `Enum` base in its source
   (`http.HTTPStatus`, made by `@_simple_enum`, and `signal.Signals`, made by
   `_convert_`) is not seen.
+
+## Batch V: overlapping exceptions, unpacking and the result of a call
+
+* `W0714` `overlapping-except`: two classes of one `except` tuple (or list)
+  that are the same class (`ValueError and ValueError are the same`,
+  `IOError and OSError`) or where one is an ancestor of the other, one message
+  per pair. It belongs to `pylint.extensions.overlapping_exceptions`, so it
+  reports only when `load-plugins` names that module. The hierarchy is the
+  builtin exceptions and the classes of the file; `builtins.X`, `os.error`,
+  `select.error` and `socket.error` are `OSError`, and `socket.timeout` is
+  `TimeoutError`. `bad-except-order` (`E0701`) reads the same names now.
+
+Known divergences from Pylint, where Pylint infers a class:
+
+* `W0714` leaves out a class held by a variable (`Alias = ValueError`), a
+  class the file defines twice and one imported from another module; a local
+  class counts the builtin and local bases it can read as its ancestors.

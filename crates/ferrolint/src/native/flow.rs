@@ -1,8 +1,9 @@
 //! Control flow of functions and `try`: `W0101` unreachable, `R1710`
 //! inconsistent-return-statements, `R1711` useless-return, `R0911`
 //! too-many-return-statements, `R0913` too-many-arguments, `R0914`
-//! too-many-locals, `W1113` keyword-arg-before-vararg and `E0701`
-//! bad-except-order.
+//! too-many-locals, `W1113` keyword-arg-before-vararg, `E0701`
+//! bad-except-order and `W0714` overlapping-except (which needs
+//! `pylint.extensions.overlapping_exceptions` in `load-plugins`).
 //!
 //! shortcut: Pylint infers what a call calls and what a raised or caught
 //! name stands for. Here a terminating call is `exit`, `quit`, `sys.exit`,
@@ -16,12 +17,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    ElifElseClause, ExceptHandler, Expr, ExprCall, HasNodeIndex, Number, Parameters, Pattern, Stmt,
-    StmtClassDef, StmtFunctionDef, StmtRaise, StmtTry,
+    self as ast, ElifElseClause, ExceptHandler, Expr, ExprCall, HasNodeIndex, Number, Parameters,
+    Pattern, Stmt, StmtClassDef, StmtFunctionDef, StmtRaise, StmtTry,
 };
 use ruff_text_size::Ranged;
 
 use super::classes::{Env, bases, is_classmethod, is_static};
+use super::extensions::loaded;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -33,6 +35,7 @@ const ARGUMENTS: &str = "R0913";
 const LOCALS: &str = "R0914";
 const VARARG: &str = "W1113";
 const EXCEPT_ORDER: &str = "E0701";
+const OVERLAPPING: &str = "W0714";
 
 pub struct Flow;
 
@@ -79,6 +82,11 @@ impl Checker for Flow {
                 "bad-except-order",
                 "An `except` clause after one for an ancestor class, or after a bare `except`.",
             ),
+            rule(
+                OVERLAPPING,
+                "overlapping-except",
+                "Exceptions of one `except` tuple that are the same class or one the ancestor of another; needs `pylint.extensions.overlapping_exceptions`.",
+            ),
         ]
     }
 
@@ -92,6 +100,7 @@ impl Checker for Flow {
             LOCALS,
             VARARG,
             EXCEPT_ORDER,
+            OVERLAPPING,
         ];
         if !ours.iter().any(|id| enabled.contains(*id)) {
             return;
@@ -359,6 +368,46 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// W0714: the classes of one `except` tuple that repeat or inherit one another.
+    fn overlapping(&mut self, node: &StmtTry) {
+        let ctx = self.env.ctx;
+        let text = |expr: &Expr| ctx.source[expr.range()].to_owned();
+        for handler in &node.handlers {
+            let ExceptHandler::ExceptHandler(h) = handler;
+            let Some(type_) = &h.type_ else { continue };
+            let (Expr::Tuple(ast::ExprTuple { elts, .. }) | Expr::List(ast::ExprList { elts, .. })) =
+                &**type_
+            else {
+                continue;
+            };
+            let mut handled: Vec<(&Expr, Class<'a>)> = Vec::new();
+            for part in elts {
+                let Some(class) = self.class_of(part) else {
+                    continue;
+                };
+                let ancestors = self.ancestors(class);
+                for &(before, previous) in &handled {
+                    let previous_ancestors = self.ancestors(previous);
+                    let message = if class == previous {
+                        format!("{} and {} are the same", text(before), text(part))
+                    } else if previous_ancestors.contains(&class) {
+                        format!("{} is an ancestor class of {}", text(part), text(before))
+                    } else if ancestors.contains(&previous) {
+                        format!("{} is an ancestor class of {}", text(before), text(part))
+                    } else {
+                        continue;
+                    };
+                    self.out.push(ctx.report(
+                        OVERLAPPING,
+                        &**type_,
+                        format!("Overlapping exceptions ({message})"),
+                    ));
+                }
+                handled.push((part, class));
+            }
+        }
+    }
+
     /// The exception class `expr` names: a builtin or a class of this file.
     fn class_of(&self, expr: &Expr) -> Option<Class<'a>> {
         if let Some(class) = self.env.class_of(expr) {
@@ -502,10 +551,11 @@ fn canonical(name: &str) -> &'static str {
 }
 
 pub(super) fn builtin_exception(name: &str) -> Option<&'static str> {
-    let name = if matches!(name, "IOError" | "EnvironmentError") {
-        "OSError"
-    } else {
-        name
+    // the names of the standard library that are the builtin class itself
+    let name = match name.strip_prefix("builtins.").unwrap_or(name) {
+        "IOError" | "EnvironmentError" | "os.error" | "select.error" | "socket.error" => "OSError",
+        "socket.timeout" => "TimeoutError",
+        other => other,
     };
     EXCEPTIONS.iter().find(|(n, _)| *n == name).map(|(n, _)| *n)
 }
@@ -546,6 +596,12 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
             Stmt::Try(node) => {
                 if self.on(EXCEPT_ORDER) {
                     self.handlers(node);
+                }
+                if self.on(OVERLAPPING)
+                    && !node.is_star
+                    && loaded(self.env.ctx, "overlapping_exceptions")
+                {
+                    self.overlapping(node);
                 }
                 visitor::walk_stmt(self, stmt);
             }
@@ -1097,6 +1153,24 @@ fn rx_match(pattern: &str, text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::rx_match;
+
+    #[test]
+    fn overlapping_except() {
+        use crate::native::classes::render;
+        let source = include_str!("fixtures/overlapping_except.py");
+        let expected = include_str!("fixtures/overlapping_except.expected").trim_end();
+        let loaded = [("load-plugins", "pylint.extensions.overlapping_exceptions")];
+        assert_eq!(render(source, &loaded, &["W0714"]), expected);
+        assert_eq!(render(source, &[], &["W0714"]), "");
+    }
+
+    #[test]
+    fn except_order_follows_the_standard_library_names_of_a_builtin() {
+        use crate::native::classes::render;
+        let source = include_str!("fixtures/bad_except_order_aliases.py");
+        let expected = include_str!("fixtures/bad_except_order_aliases.expected").trim_end();
+        assert_eq!(render(source, &[], &["E0701"]), expected);
+    }
 
     #[test]
     fn name_patterns() {

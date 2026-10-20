@@ -2,6 +2,11 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch V - `W0714` overlapping-except, on the
+  builtin exception tree and the classes of the file; it needs
+  `pylint.extensions.overlapping_exceptions`. `E0701` follows `builtins.X`,
+  `socket.error` and the other names of a builtin exception.
+
 * **native-rules.md**: `W0614` skips a module whose compiled `.so` sits next to
   its `.py` (astroid loads the compiled one and finds it empty), as Pylint does.
 
