@@ -1,0 +1,48 @@
+4:W4901:Deprecated module 'imp'
+5:W4901:Deprecated module 'distutils.core'
+6:W4901:Deprecated module 'telnetlib'
+7:W4901:Deprecated module 'xml.etree.cElementTree'
+10:W4901:Deprecated module 'typing.io'
+11:W4901:Deprecated module 'typing.re'
+12:W4901:Deprecated module 'distutils'
+13:W4901:Deprecated module 'distutils.command'
+14:W4901:Deprecated module 'asyncore'
+16:W4901:Deprecated module 'distutils'
+18:W4901:Deprecated module 'tkinter.tix'
+22:W4901:Deprecated module 'imp'
+26:W4901:Deprecated module 'telnetlib'
+30:W4901:Deprecated module 'cgi'
+31:W4901:Deprecated module 'cgitb'
+46:W4902:Using deprecated method warn()
+47:W4902:Using deprecated method warn()
+48:W4902:Using deprecated method warn()
+49:W4902:Using deprecated method currentThread()
+50:W4902:Using deprecated method activeCount()
+51:W4902:Using deprecated method current()
+52:W4902:Using deprecated method open()
+53:W4902:Using deprecated method java_ver()
+54:W4902:Using deprecated method _clear_type_cache()
+55:W4902:Using deprecated method expand_makefile_vars()
+56:W4902:Using deprecated method getcallargs()
+76:W4902:Using deprecated method assert_()
+95:W4904:Using deprecated class SafeConfigParser of module configparser
+97:W4904:Using deprecated class Mapping of module collections
+97:W4904:Using deprecated class MutableMapping of module collections
+98:W4904:Using deprecated class ByteString of module collections.abc
+99:W4904:Using deprecated class Num of module ast
+99:W4904:Using deprecated class Str of module ast
+100:W4904:Using deprecated class AbstractEventLoopPolicy of module asyncio
+101:W4904:Using deprecated class FileType of module argparse
+102:W4904:Using deprecated class SafeConfigParser of module configparser
+104:W4904:Using deprecated class MacOSX of module webbrowser
+106:W4901:Deprecated module 'smtpd'
+106:W4904:Using deprecated class MailmanProxy of module smtpd
+108:W4904:Using deprecated class ImpImporter of module pkgutil
+110:W4904:Using deprecated class Iterable of module collections
+125:W4904:Using deprecated class Reversible of module collections
+128:W4904:Using deprecated class Awaitable of module collections
+130:W4904:Using deprecated class Mapping of module collections
+132:W4904:Using deprecated class Num of module ast
+134:W4904:Using deprecated class AbstractEventLoopPolicy of module asyncio
+135:W4904:Using deprecated class FileType of module argparse
+136:W4904:Using deprecated class SafeConfigParser of module configparser

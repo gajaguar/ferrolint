@@ -23,6 +23,7 @@ mod classes;
 mod code_style;
 mod conditions;
 mod contextmgr;
+mod deprecated;
 mod django;
 mod duplicate_args;
 mod exceptions;
@@ -92,6 +93,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &code_style::CodeStyle,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
+    &deprecated::Deprecated,
     &django::Django,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
