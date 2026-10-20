@@ -172,6 +172,13 @@ impl<'a> Visitor<'a> for Assigned<'a, '_> {
     }
 }
 
+/// The value each single name target of `body` is assigned, by node id.
+pub(super) fn assigned_values(body: &[Stmt]) -> HashMap<u32, &Expr> {
+    let mut assigned = HashMap::new();
+    Assigned(&mut assigned).visit_body(body);
+    assigned
+}
+
 impl<'a> Assigned<'a, '_> {
     fn add(&mut self, target: &Expr, value: &'a Expr) {
         if let Expr::Name(name) = target

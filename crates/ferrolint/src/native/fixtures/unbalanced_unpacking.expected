@@ -1,0 +1,61 @@
+37:W0632:Possible unbalanced tuple unpacking with sequence '(1, 2, 3)': left side has 2 labels, right side has 3 values
+38:W0632:Possible unbalanced tuple unpacking with sequence '(1, 2, 3)': left side has 2 labels, right side has 3 values
+40:W0632:Possible unbalanced tuple unpacking with sequence defined at line 39: left side has 2 labels, right side has 3 values
+41:W0632:Possible unbalanced tuple unpacking with sequence defined at line 39: left side has 2 labels, right side has 3 values
+42:W0632:Possible unbalanced tuple unpacking with sequence '[1, 2, 3]': left side has 2 labels, right side has 3 values
+43:W0632:Possible unbalanced tuple unpacking with sequence '{1, 2, 3}': left side has 2 labels, right side has 3 values
+44:W0632:Possible unbalanced tuple unpacking with sequence defined at line 5: left side has 2 labels, right side has 3 values
+46:W0632:Possible unbalanced tuple unpacking with sequence defined at line 16: left side has 2 labels, right side has 3 values
+48:W0632:Possible unbalanced tuple unpacking with sequence defined at line 24: left side has 2 labels, right side has 3 values
+49:W0644:Possible unbalanced dict unpacking with dct(): left side has 2 labels, right side has 3 values
+50:W0632:Possible unbalanced tuple unpacking with sequence defined at line 33: left side has 2 labels, right side has 3 values
+52:W0644:Possible unbalanced dict unpacking with {'x': 1, 'y': 2, 'z': 3}: left side has 2 labels, right side has 3 values
+54:W0644:Possible unbalanced dict unpacking with d: left side has 2 labels, right side has 3 values
+55:W0644:Possible unbalanced dict unpacking with d.items(): left side has 2 labels, right side has 3 values
+56:W0644:Possible unbalanced dict unpacking with d.keys(): left side has 2 labels, right side has 3 values
+57:W0644:Possible unbalanced dict unpacking with d.values(): left side has 2 labels, right side has 3 values
+58:W0632:Possible unbalanced tuple unpacking with sequence '(1, (2, 3), 4)': left side has 2 labels, right side has 3 values
+60:W0632:Possible unbalanced tuple unpacking with sequence defined at line 39: left side has 2 labels, right side has 3 values
+65:W0632:Possible unbalanced tuple unpacking with sequence defined at line 63: left side has 2 labels, right side has 3 values
+74:W0632:Possible unbalanced tuple unpacking with sequence defined at line 71: left side has 2 labels, right side has 3 values
+75:W0632:Possible unbalanced tuple unpacking with sequence defined at line 39: left side has 2 labels, right side has 3 values
+83:W0632:Possible unbalanced tuple unpacking with sequence defined at line 80: left side has 2 labels, right side has 3 values
+96:W0632:Possible unbalanced tuple unpacking with sequence defined at line 95: left side has 2 labels, right side has 3 values
+99:W0632:Possible unbalanced tuple unpacking with sequence defined at line 98: left side has 2 labels, right side has 1 value
+114:W0644:Possible unbalanced dict unpacking with d.items(): left side has 3 labels, right side has 2 values
+116:W0644:Possible unbalanced dict unpacking with d.keys(): left side has 2 labels, right side has 1 value
+118:W0644:Possible unbalanced dict unpacking with d.values(): left side has 2 labels, right side has 1 value
+124:W0644:Possible unbalanced dict unpacking with {1: 2}.keys(): left side has 2 labels, right side has 1 value
+128:W0644:Possible unbalanced dict unpacking with {'x': (1, 2, 3)}.values(): left side has 2 labels, right side has 3 values
+132:W0644:Possible unbalanced dict unpacking with {'x': 'abc'}.values(): left side has 2 labels, right side has 3 values
+134:W0644:Possible unbalanced dict unpacking with {1: 2}.items(): left side has 3 labels, right side has 2 values
+138:W0644:Possible unbalanced dict unpacking with {'a': 1}.items(): left side has 3 labels, right side has 2 values
+195:W0632:Possible unbalanced tuple unpacking with sequence defined at line 192: left side has 2 labels, right side has 3 values
+200:W0632:Possible unbalanced tuple unpacking with sequence '(x, y, 1)': left side has 2 labels, right side has 3 values
+203:W0632:Possible unbalanced tuple unpacking with sequence defined at line 155: left side has 2 labels, right side has 3 values
+206:W0632:Possible unbalanced tuple unpacking with sequence defined at line 172: left side has 2 labels, right side has 3 values
+207:W0632:Possible unbalanced tuple unpacking with sequence defined at line 178: left side has 2 labels, right side has 3 values
+208:W0632:Possible unbalanced tuple unpacking with sequence defined at line 184: left side has 2 labels, right side has 3 values
+209:W0632:Possible unbalanced tuple unpacking with sequence '((1, 2), 3, 4)': left side has 2 labels, right side has 3 values
+210:W0632:Possible unbalanced tuple unpacking with sequence '(x.y, 3, 4)': left side has 2 labels, right side has 3 values
+211:W0632:Possible unbalanced tuple unpacking with sequence '(x, 3, 4)': left side has 2 labels, right side has 3 values
+213:W0632:Possible unbalanced tuple unpacking with sequence '(1, 's', 3.5, True, None, -1)': left side has 2 labels, right side has 6 values
+214:W0632:Possible unbalanced tuple unpacking with sequence '(1, 2, 3)': left side has 2 labels, right side has 3 values
+217:W0632:Possible unbalanced tuple unpacking with sequence '(lambda: 1, 2, 3)': left side has 2 labels, right side has 3 values
+218:W0632:Possible unbalanced tuple unpacking with sequence '({1: 2}, 'a b', x)': left side has 2 labels, right side has 3 values
+219:W0632:Possible unbalanced tuple unpacking with sequence '(x + 1, [x], {x}, {x: 1}, not x)': left side has 2 labels, right side has 5 values
+227:W0644:Possible unbalanced dict unpacking with d: left side has 2 labels, right side has 3 values
+229:W0644:Possible unbalanced dict unpacking with e: left side has 2 labels, right side has 3 values
+230:W0644:Possible unbalanced dict unpacking with d.items(): left side has 3 labels, right side has 2 values
+236:W0644:Possible unbalanced dict unpacking with e.items(): left side has 3 labels, right side has 2 values
+238:W0644:Possible unbalanced dict unpacking with e.keys(): left side has 2 labels, right side has 1 value
+240:W0644:Possible unbalanced dict unpacking with e.values(): left side has 2 labels, right side has 1 value
+244:W0644:Possible unbalanced dict unpacking with {'a': 1}.values(): left side has 2 labels, right side has 1 value
+246:W0644:Possible unbalanced dict unpacking with {'a': 1}.values(): left side has 2 labels, right side has 1 value
+248:W0644:Possible unbalanced dict unpacking with {'a': 1}.values(): left side has 3 labels, right side has 1 value
+250:W0644:Possible unbalanced dict unpacking with {'a': (1, 2), 'b': (1, 2, 3)}.values(): left side has 2 labels, right side has 3 values
+254:W0644:Possible unbalanced dict unpacking with {'a': [1, 2], 'b': b'abc'}.values(): left side has 2 labels, right side has 3 values
+258:W0644:Possible unbalanced dict unpacking with {'a': d[0:3]}.values(): left side has 2 labels, right side has 3 values
+260:W0644:Possible unbalanced dict unpacking with {'a': d[0:6:2]}.values(): left side has 2 labels, right side has 3 values
+264:W0644:Possible unbalanced dict unpacking with {'a': d[0:5:0]}.values(): left side has 2 labels, right side has 1 value
+268:W0644:Possible unbalanced dict unpacking with {'ab': 1, 'abc': 2}.keys(): left side has 2 labels, right side has 3 values

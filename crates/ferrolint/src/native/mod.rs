@@ -53,6 +53,7 @@ mod statements;
 mod strings;
 mod text;
 mod unassigned;
+mod unpacking;
 mod versions;
 mod wildcard;
 
@@ -123,6 +124,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &statements::Statements,
     &strings::Strings,
     &text::Text,
+    &unpacking::Unpacking,
     &versions::Versions,
     &wildcard::Wildcard,
 ];

@@ -73,39 +73,11 @@ struct Walk<'a, 'e> {
 
 impl<'a> Walk<'a, '_> {
     fn is_abstract(&self, owner: &Class<'a>, func: &StmtFunctionDef) -> bool {
-        func.decorator_list.iter().any(|decorator| {
-            self.hierarchy
-                .qualify(owner, &decorator.expression)
-                .is_some_and(|name| name == "abc.abstractmethod" || name == "abc.abstractproperty")
-        }) || raises_not_implemented(func)
+        method_is_abstract(&self.hierarchy, owner, func)
     }
 
-    /// Pylint's `class_is_abstract`: a protocol, an `ABCMeta` or `ABC`
-    /// class, or one with an abstract method of its own.
     fn is_abstract_class(&self, class: &'a StmtClassDef) -> bool {
-        let own = Class::Local(class);
-        let named = |expr: &Expr, names: &[&str]| {
-            let expr = match expr {
-                Expr::Subscript(s) => &*s.value,
-                other => other,
-            };
-            self.env
-                .qualified(expr)
-                .is_some_and(|name| names.contains(&name.as_str()))
-        };
-        let protocols = ["typing.Protocol", "typing_extensions.Protocol"];
-        bases(class)
-            .iter()
-            .any(|base| named(base, &protocols) || named(base, &["abc.ABC", "_py_abc.ABC"]))
-            || class.arguments.as_ref().is_some_and(|arguments| {
-                arguments.keywords.iter().any(|keyword| {
-                    keyword.arg.as_ref().is_some_and(|arg| arg == "metaclass")
-                        && named(&keyword.value, &["abc.ABCMeta", "_py_abc.ABCMeta"])
-                })
-            })
-            || methods(&class.body)
-                .iter()
-                .any(|method| self.is_abstract(&own, method))
+        class_is_abstract(self.env, &self.hierarchy, class)
     }
 
     /// Pylint's `unimplemented_abstract_methods`: by name, the key and the
@@ -272,6 +244,51 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
         }
         visitor::walk_expr(self, expr);
     }
+}
+
+/// Whether a method is decorated `abc.abstractmethod` or `abc.abstractproperty`
+/// as written in `owner`, or raises `NotImplementedError`.
+pub(super) fn method_is_abstract<'a>(
+    hierarchy: &Hierarchy<'a, '_>,
+    owner: &Class<'a>,
+    func: &StmtFunctionDef,
+) -> bool {
+    func.decorator_list.iter().any(|decorator| {
+        hierarchy
+            .qualify(owner, &decorator.expression)
+            .is_some_and(|name| name == "abc.abstractmethod" || name == "abc.abstractproperty")
+    }) || raises_not_implemented(func)
+}
+
+/// Pylint's `class_is_abstract`: a protocol, an `ABCMeta` or `ABC` class, or
+/// one with an abstract method of its own.
+pub(super) fn class_is_abstract<'a>(
+    env: &Env<'a>,
+    hierarchy: &Hierarchy<'a, '_>,
+    class: &'a StmtClassDef,
+) -> bool {
+    let own = Class::Local(class);
+    let named = |expr: &Expr, names: &[&str]| {
+        let expr = match expr {
+            Expr::Subscript(s) => &*s.value,
+            other => other,
+        };
+        env.qualified(expr)
+            .is_some_and(|name| names.contains(&name.as_str()))
+    };
+    let protocols = ["typing.Protocol", "typing_extensions.Protocol"];
+    bases(class)
+        .iter()
+        .any(|base| named(base, &protocols) || named(base, &["abc.ABC", "_py_abc.ABC"]))
+        || class.arguments.as_ref().is_some_and(|arguments| {
+            arguments.keywords.iter().any(|keyword| {
+                keyword.arg.as_ref().is_some_and(|arg| arg == "metaclass")
+                    && named(&keyword.value, &["abc.ABCMeta", "_py_abc.ABCMeta"])
+            })
+        })
+        || methods(&class.body)
+            .iter()
+            .any(|method| method_is_abstract(hierarchy, &own, method))
 }
 
 /// Whether the first statement after the docstring raises

@@ -1110,6 +1110,19 @@ Known divergences:
   suggests `sorted(...)` or `reversed(...)` after `sort` and `reverse`, or what
   `known-side-effects-only-functions` pairs. Only an `Assign` counts: an
   annotated assignment and `x += f()` do not.
+* `W0632` `unbalanced-tuple-unpacking` and `W0644` `unbalanced-dict-unpacking`:
+  `a, b = value` whose number of names differs from the items of `value`, and
+  `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
+  from the items of every key or value. `value` is a tuple, list, set or dict
+  display, a name bound once to one, a call of a function of the file whose
+  only `return` returns one, or the view of such a dict. The tuple rule words
+  the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
+  as `defined at line N` otherwise. A starred name on the left, an abstract
+  enclosing class, a starred element in the display and a dict with `**other`
+  are left out, as in Pylint. A loop over the dict itself is not judged:
+  Pylint leaves it to `dict-iter-missing-items` (`E1141`).
+
+Not ported: `E0633` `unpacking-non-sequence` needs the type of a value.
 
 Known divergences from Pylint, where Pylint infers a class or a callee:
 
@@ -1122,3 +1135,10 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   a method that only a base class defines, a name that the function binds
   again further down and a builtin method such as `lst.sort()` are not
   followed, where Pylint infers the callee.
+* `W0632` and `W0644` follow no more than the displays above. A name bound twice
+  (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
+  a conditional expression, a slice or a sum, an attribute such as `self.v`,
+  a property, a classmethod, a lambda and a method called as `Class.method()`
+  are not judged. A display with a starred element, such as `(*t, 1)`, and a
+  dict with `**other` are left out, where Pylint expands them, and an
+  f-string inside the display is written with double quotes in the message.
