@@ -2,6 +2,10 @@
 
 ## 2026-10-20
 
+* **native-rules.md**: `R0902` and `W0201` count `me = self`, `object.__new__(C)`,
+  `C.__new__(...)` and `self.__class__()` instances, and read `__slots__`
+  set under `if` and `try`; the remaining divergences are listed.
+
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
