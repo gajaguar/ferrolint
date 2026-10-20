@@ -11,7 +11,8 @@
 # the configuration's py-version, like "3.14". PYLINT is the Pylint
 # command (default: pylint), run on CODE with its own .pylintrc. STRIP=1
 # lints a copy of the tracked files (plus its .pylintrc and
-# pyproject.toml) with every "# pylint:" pragma removed, line numbers intact,
+# pyproject.toml) with every "# pylint:" pragma comment removed (a string
+# keeps its text), line numbers intact,
 # so a rule is compared where the pragmas no longer hide its findings;
 # PYLINT_OUT then holds that copy's baseline and must not be the normal one.
 # ONLY is an extended regex on the msg-id: only matching findings are compared.
@@ -32,6 +33,7 @@ fail() {
 [ -n "${CODE:-}" ] || fail "set CODE to the directory to validate"
 [ -d "$CODE" ] || fail "CODE is not a directory: $CODE"
 : "${PYLINT:=pylint}"
+: "${PYTHON:=python3}"
 
 bin=""
 if [ -n "${BIN:-}" ]; then
@@ -92,8 +94,8 @@ if [ -n "${STRIP:-}" ]; then
 			done
 		} | cpio -pdm0 "$copy" 2>/dev/null
 	)
-	# Whole-line pragmas become empty lines, trailing ones are cut: line numbers hold.
-	find "$copy" -name '*.py' -exec perl -pi -e 's/^\s*#\s*pylint:.*$//; s/\s*#\s*pylint:.*$//' {} +
+	# Only real comments lose their pragma (a string keeps its text); line numbers hold.
+	find "$copy" -name '*.py' -exec "$PYTHON" -I "$root/tools/pylint-strip.py" {} +
 	CODE="$copy"
 fi
 cd "$CODE"

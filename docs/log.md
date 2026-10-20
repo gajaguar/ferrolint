@@ -2,6 +2,9 @@
 
 ## 2026-10-20
 
+* **pylint-compare.md**: `STRIP=1` removes the `# pylint:` pragma comments
+  only, not the same text in a string; `make pylint-compare-test` checks it.
+
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
