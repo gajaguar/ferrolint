@@ -36,8 +36,11 @@ make pylint-compare CODE=/path/to/code PYLINT=/path/to/pylint \
 * `PY_VERSION`: the `py-version` of the temporary configuration, like
   `3.14`.
 * `STRIP`: set to `1` to lint a copy of the tracked files in `CODE` (and its
-  `.pylintrc` and `pyproject.toml`), from which every `# pylint:` pragma is
-  removed from the `*.py` files (line numbers stay the same; `# noqa` stays). Pragmas
+  `.pylintrc` and `pyproject.toml`), from which every `# pylint:` pragma
+  comment is
+  removed from the `*.py` files (line numbers stay the same; `# noqa` stays). The
+  comments are found with `python3` (`tools/pylint-strip.py`), so the same text
+  inside a string stays. `make pylint-compare-test` checks this on a fixture. Pragmas
   hide nearly every finding, so this is how a rule is compared where
   it fires. `PYLINT_OUT` then holds the copy's baseline: use a file other than
   the normal one. With `BIN` too, ferrolint runs with no temporary

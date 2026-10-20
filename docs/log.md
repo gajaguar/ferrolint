@@ -2,6 +2,27 @@
 
 ## 2026-10-20
 
+* **pylint-compare.md**: `STRIP=1` removes the `# pylint:` pragma comments
+  only, not the same text in a string; `make pylint-compare-test` checks it.
+
+* **host-rules.md**: `FL003` words its message as Pylint's `E0001` does,
+  `Parsing failed: '<error> (<module>, line N)'`, with the divergences noted.
+
+* **host-rules.md**: `FL003` follows the Ruff parser, so a CPython-only syntax error
+  such as `[*x for x in y]` has no `E0001` counterpart.
+
+* **host-rules.md**: `FL003` fires on `raise;x = 1`, which CPython accepts and
+  the pinned Ruff parser rejects.
+
+* **native-rules.md**: `R0401` finds a submodule or compiled module by any case
+  on a file system that ignores it, as astroid does, and takes `six.moves` for
+  `six`; the known divergences list the `.pyi` stubs and the hash order of
+  Pylint's cycle search.
+
+* **native-rules.md**: `R0902` and `W0201` count `me = self`, `object.__new__(C)`,
+  `C.__new__(...)` and `self.__class__()` instances, and read `__slots__`
+  set under `if` and `try`; the remaining divergences are listed.
+
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 

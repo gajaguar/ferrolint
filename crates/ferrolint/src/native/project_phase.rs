@@ -609,7 +609,7 @@ impl File<'_> {
         for at in 0..parts.len() {
             let name = parts[..=at].join(".");
             let exists = if dirs.is_empty() {
-                self.project.spec(&name).is_some()
+                self.project.on_disk(&name)
             } else {
                 self.project.exists_from(&dirs, &name)
             };
@@ -929,5 +929,49 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["pkg.a -> pkg.b"]
         );
+    }
+
+    fn cycles_of(root: &Path) -> Vec<String> {
+        run(root, &[])
+            .into_iter()
+            .filter(|f| f.2 == "R0401")
+            .map(|f| f.3)
+            .collect()
+    }
+
+    #[test]
+    fn an_import_from_six_moves_is_an_edge_to_six() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("six.py", "import pkg.a\n"),
+                ("pkg/__init__.py", ""),
+                ("pkg/a.py", "from six.moves import range\n"),
+            ],
+        );
+        assert_eq!(cycles_of(dir.path()), ["pkg.a -> six"]);
+    }
+
+    #[test]
+    fn a_file_system_that_ignores_case_finds_a_module_by_any_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("pkg/__init__.py", "from pkg import user\n"),
+                ("pkg/user.py", "from pkg import TTFont\n"),
+                ("pkg/ttFont.py", ""),
+            ],
+        );
+        // astroid opens `TTFont.py` as `ttFont.py` there, so the edge goes to
+        // `pkg.TTFont`, which is no module of the graph; elsewhere it is `pkg`.
+        let ignores_case = dir.path().join("PKG").exists();
+        let expected: &[&str] = if ignores_case {
+            &[]
+        } else {
+            &["pkg -> pkg.user"]
+        };
+        assert_eq!(cycles_of(dir.path()), expected);
     }
 }

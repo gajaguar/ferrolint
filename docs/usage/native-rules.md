@@ -558,12 +558,17 @@ Known divergences:
 * Pylint infers what `x` in `x.name = value` stands for. Here it is the
   first parameter of a method of the class (or of a function or lambda
   nested in it that does not rebind it), or a name bound once in its
-  scope to a call of a class of the file, `x = Model()`, of `cls` in a
-  classmethod of the class, or of a name bound once to such a class or to
-  a call of a function of the file that returns one. An instance reached
-  any other way (`self.root.x = 1`, `cls.manager.model = ...`,
-  `x = self.__class__()`, a name bound twice) gives the class nothing, so
-  its `W0201` is missed.
+  scope to that parameter (`me = self`), to a call of a class of the file
+  (`x = Model()`, also annotated), of `cls` in a classmethod, of
+  `self.__class__`, of `C.__new__(...)` (a class without a `__new__` of its
+  own) or of `object.__new__(C)`, or to a name bound once to such a class
+  or to a call of a function of the file that returns one. An instance
+  reached any other way gives the class nothing, so its `W0201` is missed
+  and its `R0902` count is short: through an attribute or a property
+  (`self.root.x = 1`, `self.fixup.worker = w`, `cls.manager.model = ...`),
+  through a parameter or another module, through `type(self)`, from a name
+  bound twice (Pylint follows the binding in force at that line) or from a
+  class whose own `__new__` makes the instance.
 * The ancestors are those of Batch G: a class whose MRO is unknown is not
   checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
   ancestor tests of `W0201`. A builtin base such as `dict` or
@@ -577,7 +582,9 @@ Known divergences:
 * `__slots__` keeps astroid from recording an attribute outside them, for
   `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
   ancestor of the file or project give plain slots (a string, list, tuple,
-  set or dict of strings) and one of them names a slot. A builtin base
+  set or dict of strings, written in the body or under `if` and `try`,
+  where the assignments add up) and one of them names a slot. Slots built
+  in a loop are not read. A builtin base
   other than `object` is not in the MRO here, where Pylint finds it without
   slots and records every attribute.
 
@@ -1258,7 +1265,10 @@ Known divergences from Pylint:
 * `R0401` `cyclic-import`: the cycles of the imports among the linted modules
   (and the packages they import from), each reported once as
   `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
-  `# pylint: disable=cyclic-import` leaves the graph.
+  `# pylint: disable=cyclic-import` leaves the graph. The graph is Pylint's:
+  an import in a function or a `try` counts, `from p import name` stands for
+  `p.name` when that is a module and for `p` when it is not, and an edge that
+  is also imported under `TYPE_CHECKING` or with the disable is dropped.
 
 * `R0801` `duplicate-code`: lines that two or more linted files share, found
   as `symilar` finds them: the stripped lines of every file, a window of
@@ -1300,7 +1310,25 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   the same lines in another order matches too. The `R0401` cycles are found
   by a search whose order depends on the order of the files, so a project
   with many overlapping cycles may list other cycles (over the same modules)
-  than Pylint.
+  than Pylint. On the same graph (equal edge for edge to Pylint's on the
+  corpora measured, but for the points below) the search with the neighbors
+  of a module in random order finds
+  from 123 to 136 cycles where this finds 129, so a count that differs by a
+  few percent is Pylint's own run-to-run spread (its sets iterate in the
+  order of a hash seeded for each run), not a missing edge.
+* A file system that ignores case (macOS, Windows) opens `TTFont.py` as
+  `ttFont.py`, and astroid tests `isfile`: a submodule or compiled module is
+  found by any spelling there, as in Pylint, so `from pkg import TTFont` is an
+  edge to `pkg.TTFont`, which is no module of the graph. On a file system that
+  tells the cases apart it is an edge to `pkg`, as Pylint finds it there.
+* Pylint lints `.pyi` files and knows a linted module by its name. A stub is
+  not linted here, so `import pkg.stub` or `from pkg.stub import x` is an edge
+  to nothing (Pylint: to `pkg`), and the imports of the stub are not edges.
+  Neither changes a cycle unless the package is part of one. An `import
+  __main__` is not an edge either (Pylint has the module of the run).
+* A file with `raise;` or `except E:raise;stmt` (a `raise` ended by a `;`) is a
+  syntax error to the parser of ruff 0.17.1, so it has no imports in the
+  graph; Python and Pylint accept it.
 * Pylint reads astroid's brain plugins, which add names to some modules
   (`hashlib`, `six`, `numpy` and others); those modules accept any name here.
   A name that a module imports from another is not followed to what it infers

@@ -75,6 +75,21 @@ fn cycles_match_pylint() {
     );
 }
 
+/// Pylint puts every cycle on the file it checked last, which depends on the
+/// file system, so only the cycles are compared. Each strongly connected part
+/// of the tree is a single cycle: with more, Pylint's own result depends on
+/// the hash order of its sets.
+#[test]
+fn cycle_edges_match_pylint() {
+    let found: Vec<String> = findings(&project("cycles_edges"), &["--no-cache"])
+        .iter()
+        .map(|line| line.splitn(3, ':').nth(2).unwrap())
+        .filter(|finding| finding.starts_with("R0401:"))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(found, expected("cycles_edges"));
+}
+
 #[test]
 fn duplicates_match_pylint() {
     let project = project("duplicates");
