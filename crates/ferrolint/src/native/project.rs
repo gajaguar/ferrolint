@@ -465,9 +465,18 @@ impl Project {
             })
             .and_then(|parent| self.search(&parent.dirs, last, name));
         // The module astroid makes up when a `six.moves` import fails.
-        found.or_else(|| {
-            (name == "six.moves" || name.starts_with("six.moves.")).then(|| Spec::of(Kind::Made))
-        })
+        found
+            .or_else(|| {
+                // Python 3.14 has no `collections/abc.py`: importlib finds
+                // the frozen `_collections_abc` under that name.
+                (name == "collections.abc")
+                    .then(|| self.find("_collections_abc"))
+                    .flatten()
+            })
+            .or_else(|| {
+                (name == "six.moves" || name.starts_with("six.moves."))
+                    .then(|| Spec::of(Kind::Made))
+            })
     }
 
     fn search(&self, dirs: &[PathBuf], part: &str, name: &str) -> Option<Spec> {

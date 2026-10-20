@@ -433,14 +433,18 @@ impl File<'_> {
                         && !self.forgiven(import, module)
                         && (self.opts.analyse_fallback || !import.fallback)
                     {
-                        let shown = relative_name(
-                            &self.unit.module,
-                            &self.unit.path,
-                            self.unit.is_package,
-                            module,
-                            *level,
-                        )
-                        .unwrap_or_else(|| module.clone());
+                        let shown = if *level == 0 {
+                            module.clone()
+                        } else {
+                            relative_name(
+                                &self.unit.module,
+                                &self.unit.path,
+                                self.unit.is_package,
+                                module,
+                                *level,
+                            )
+                            .unwrap_or_else(|| module.clone())
+                        };
                         out.push(report(IMPORT_ERROR, format!("Unable to import '{shown}'")));
                     }
                 }
@@ -838,3 +842,28 @@ mod tests {
         );
     }
 }
+    #[test]
+    fn an_absolute_import_inside_a_package_is_shown_as_written() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("stdlib/_collections_abc.py", "class Mapping: ...\n"),
+                ("stdlib/collections/__init__.py", ""),
+                ("pkg/__init__.py", ""),
+                (
+                    "pkg/a.py",
+                    "import collections.abc\nfrom collections.abc import Mapping\nfrom nothing.sub import x\n",
+                ),
+            ],
+        );
+        let found = run(dir.path(), &[]);
+        assert_eq!(
+            found
+                .iter()
+                .map(|f| (f.1, f.3.as_str()))
+                .collect::<Vec<_>>(),
+            [(3, "Unable to import 'nothing.sub'")]
+        );
+    }
+
