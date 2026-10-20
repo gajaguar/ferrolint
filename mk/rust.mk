@@ -18,7 +18,7 @@ PYLINT_W0611 = $(PYLINT) --disable=all --enable=unused-import,unused-variable --
 LANG_INSTALL_TARGETS += install-rust
 LANG_CHECK_TARGETS   += clippy fmt-check deny
 LANG_FIX_TARGETS     += fmt
-LANG_TEST_TARGETS    += cargo-test
+LANG_TEST_TARGETS    += cargo-test pylint-compare-test
 
 ##@ Rust
 
@@ -71,10 +71,13 @@ sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixtur
 	done
 
 pylint-compare: ## Compare ferrolint's findings with Pylint's on CODE, reusing PYLINT_OUT when it exists — accepts CODE, BIN (a bundled binary), PYLINT, PYLINT_OUT, IGNORE, SELECT, PY_VERSION, MSG (also compare the message), STRIP (lint a copy without "# pylint:" pragmas), ONLY (a msg-id regex)
-	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" SELECT="$(SELECT)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" tools/pylint-compare.sh
+	BIN="$(BIN)" CODE="$(CODE)" PYLINT="$(PYLINT)" PYLINT_OUT="$(PYLINT_OUT)" IGNORE="$(IGNORE)" SELECT="$(SELECT)" PY_VERSION="$(PY_VERSION)" STRIP="$(STRIP)" ONLY="$(ONLY)" MSG="$(MSG)" PYTHON="$(PYTHON)" tools/pylint-compare.sh
+
+pylint-compare-test: ## Self-check the STRIP=1 copy: a "# pylint:" inside a string survives, a real pragma goes, line numbers hold
+	PYTHON="$(PYTHON)" tools/pylint-compare-test.sh
 
 pylint-deprecated: ## Dump Pylint's deprecation tables into src/pylint_deprecated.rs, with the aliases astroid infers on PYTHON (a Python with Pylint installed)
 	$(PYTHON) tools/pylint-deprecated.py > crates/ferrolint/src/pylint_deprecated.rs
 
 # `plugins` is also a directory, so without this make calls the target up to date.
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare pylint-deprecated
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
