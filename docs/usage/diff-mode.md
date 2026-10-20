@@ -23,3 +23,8 @@ working tree, plus untracked files git does not ignore.
   JSON summary.
 * Findings, suppressions and exit codes work as in a full run over the
   selected files.
+* `R0401` and `R0801` compare the linted files with each other, so in diff
+  mode they see only the changed files: a cycle or a duplicate whose other
+  end did not change is not reported. Run them on the whole tree, without
+  `--diff-base`, to find those. `E0401`, `E0402` and `E0611` look the module
+  up on disk and do not depend on it.
