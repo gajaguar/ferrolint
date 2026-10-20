@@ -511,6 +511,14 @@ impl Linter<'_> {
                 diagnostics.extend(reported.iter().cloned());
             }
         }
+        // Pylint stops at a pragma that ends the file (I0013): only the messages
+        // about the pragmas themselves, and a syntax error, survive it.
+        if diagnostics.iter().any(|d| d.code == "I0013") {
+            diagnostics.retain(|d| {
+                d.code == checks::SYNTAX_ERROR
+                    || checks::PRAGMA_MESSAGES.iter().any(|(id, _)| *id == d.code)
+            });
+        }
         let suppressions = Suppressions::resolve(&entry.suppressions, &setup.registry);
         diagnostics.retain(|diagnostic| !suppressions.suppresses(diagnostic));
         diagnostics.extend(aborts);

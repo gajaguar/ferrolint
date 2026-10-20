@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+* **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
+  comment now ends the file: only the pragma messages and a syntax error
+  remain, plugin findings included. **native-rules.md**: Batch N follows.
+
 * **native-rules.md**: `R1727` and the other messages of the condition rules
   quote the code as astroid prints it, not as written.
 * **pylint-compare.md**: Documented `MSG=1`, which compares the message as
