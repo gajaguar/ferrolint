@@ -8,6 +8,8 @@
 * **host-rules.md**: `FL003` words its message as Pylint's `E0001` does,
   `Parsing failed: '<error> (<module>, line N)'`, with the divergences noted.
 
+* **host-rules.md**: `FL003` follows the Ruff parser, so a CPython-only syntax error
+  such as `[*x for x in y]` has no `E0001` counterpart.
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
