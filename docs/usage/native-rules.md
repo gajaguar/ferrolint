@@ -292,7 +292,9 @@ Imports:
   classes are (the directories above the file, and the standard library
   and packages of `VIRTUAL_ENV`), so a module that is not found is skipped
   (a module is also matched by the case it is spelled in, even where the
-  file system ignores it); the result depends on another file, so it is as
+  file system ignores it); a `m.py` with a compiled
+  `m.*.so` or `m.pyd` beside it is skipped, as astroid takes the compiled file
+  and finds it empty; the result depends on another file, so it is as
   stale as the cache is (see the project module's shortcut note). A C or
   builtin module of the standard library (`math`, `itertools`, `time`) has
   no file, so its public names, sorted as Python's `dir` lists them, come

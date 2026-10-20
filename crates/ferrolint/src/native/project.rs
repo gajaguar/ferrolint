@@ -8,7 +8,9 @@
 //! so the standard library and the installed packages stay unknown but for
 //! [`Project::with_packages`] (a base from them ends the chain), and a C
 //! module never is, except that `from m import *` knows its public names
-//! from a table of one Python version (`make c-module-names`); a name is
+//! from a table of one Python version (`make c-module-names`), and a `m.py`
+//! with a compiled `m.*.so` beside it is not read, as astroid takes the
+//! compiled one and finds it empty; a name is
 //! followed through `import`, `from` and `from m import *` statements of the
 //! top level only; and a result that depends on another module is cached
 //! with the file, so it is stale until the file changes or the cache is
@@ -159,6 +161,10 @@ impl Project {
 
     fn read(&self, name: &str) -> Option<Module> {
         let (file, is_package) = self.locate(name)?;
+        // astroid prefers the compiled `m.*.so` to `m.py` and cannot read it
+        if !is_package && has_extension(&file) {
+            return None;
+        }
         let source = std::fs::read_to_string(file).ok()?;
         let parsed = ruff_python_parser::parse_module(&source).ok()?;
         let package = if is_package {
@@ -547,6 +553,28 @@ fn exact_case(path: &Path) -> bool {
     })
 }
 
+/// Whether a compiled module (`m.cpython-314-darwin.so`, `m.pyd`) sits next
+/// to the source file `m.py`.
+fn has_extension(file: &Path) -> bool {
+    let (Some(dir), Some(stem)) = (file.parent(), file.file_stem().and_then(|s| s.to_str())) else {
+        return false;
+    };
+    std::fs::read_dir(dir).is_ok_and(|mut entries| {
+        entries.any(|entry| {
+            entry.is_ok_and(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.strip_prefix(stem).is_some_and(|rest| {
+                    rest.starts_with('.')
+                        && Path::new(rest).extension().is_some_and(|e| {
+                            e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd")
+                        })
+                })
+            })
+        })
+    })
+}
+
 /// The standard library of the interpreter that made the environment
 /// `env`, read from its `pyvenv.cfg`.
 fn stdlib(env: &Path) -> Option<PathBuf> {
@@ -668,6 +696,26 @@ mod tests {
             ["os", "a", "f", "K", "c", "z"]
         );
         assert!(project.public_names("app.missing").is_none());
+    }
+
+    #[test]
+    fn a_compiled_module_beside_the_source_hides_it() {
+        let root = tempfile::tempdir().unwrap();
+        for file in [
+            "app/m.py",
+            "app/m.cpython-314-darwin.so",
+            "app/n.py",
+            "app/o.py",
+        ] {
+            let path = root.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "a = 1\n").unwrap();
+        }
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        assert!(project.has_module("app.m") && project.public_names("app.m").is_none());
+        assert!(project.public_names("app.n").is_some());
+        // `o.py` is not `m.py`'s sibling by prefix alone
+        assert!(project.public_names("app.o").is_some());
     }
 
     #[test]

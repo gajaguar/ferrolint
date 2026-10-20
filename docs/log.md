@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `W0614` skips a module whose compiled `.so` sits next to
+  its `.py` (astroid loads the compiled one and finds it empty), as Pylint does.
+
 * **native-rules.md**: `W0614` no longer counts a read of a name that a
   function, class or comprehension binds itself as a use of the wildcard's name.
 
