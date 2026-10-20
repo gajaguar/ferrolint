@@ -314,3 +314,55 @@ def no_docstring_at_all():
 def empty_docstring():
     """"""
     return 1
+
+
+def annotated_return() -> int:
+    """Return.
+
+    :returns: a number
+    """
+    return 1
+
+
+def annotated_yield() -> int:
+    """Generate.
+
+    :returns: numbers
+    """
+    yield 1
+
+
+def commented_return():
+    # type: () -> int
+    """Return.
+
+    :returns: a number
+    """
+    return 1
+
+
+def commented_yield():
+    # type: () -> int
+    """Generate.
+
+    Yields:
+        numbers
+    """
+    yield 1
+
+
+def google_yield_without_type():
+    """Generate.
+
+    Yields:
+        numbers
+    """
+    yield 1
+
+
+def rtype_without_description():
+    """Return.
+
+    :rtype: int
+    """
+    return 1

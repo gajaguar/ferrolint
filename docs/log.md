@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch W completes `pylint.extensions.docparams` with
+  `W9012`, `W9014`, `W9019`, `W9020` and `W9021`.
+
 * **native-rules.md**: Batch W adds the return, raise and yield messages of
   `pylint.extensions.docparams`: `W9006`, `W9008`, `W9010`, `W9011` and
   `W9013`.

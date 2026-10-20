@@ -1,5 +1,5 @@
 //! The messages of `pylint.extensions.docparams` (`W9005`, `W9006`, `W9008`,
-//! `W9010`, `W9011`, `W9013` and `W9015` to `W9018` here): a function's
+//! `W9010` to `W9021` here): a function's
 //! parameters, exceptions, return and yields against the Sphinx, Epytext,
 //! Google or `NumPy` docstring that documents them. They report only when
 //! `load-plugins` names `pylint.extensions.docparams`, and follow the
@@ -42,22 +42,32 @@ const MISSING_RAISES: &str = "W9006";
 const REDUNDANT_RETURNS: &str = "W9008";
 const REDUNDANT_YIELDS: &str = "W9010";
 const MISSING_RETURN: &str = "W9011";
+const MISSING_RETURN_TYPE: &str = "W9012";
 const MISSING_YIELD: &str = "W9013";
+const MISSING_YIELD_TYPE: &str = "W9014";
 const MISSING_PARAM: &str = "W9015";
 const MISSING_TYPE: &str = "W9016";
 const DIFFERING_PARAM: &str = "W9017";
 const DIFFERING_TYPE: &str = "W9018";
-const ALL: [&str; 10] = [
+const USELESS_PARAM: &str = "W9019";
+const USELESS_TYPE: &str = "W9020";
+const MISSING_ANY: &str = "W9021";
+const ALL: [&str; 15] = [
     MULTIPLE_CONSTRUCTOR,
     MISSING_RAISES,
     REDUNDANT_RETURNS,
     REDUNDANT_YIELDS,
     MISSING_RETURN,
+    MISSING_RETURN_TYPE,
     MISSING_YIELD,
+    MISSING_YIELD_TYPE,
     MISSING_PARAM,
     MISSING_TYPE,
     DIFFERING_PARAM,
     DIFFERING_TYPE,
+    USELESS_PARAM,
+    USELESS_TYPE,
+    MISSING_ANY,
 ];
 
 const CONSTRUCTORS: [&str; 2] = ["__init__", "__new__"];
@@ -97,9 +107,19 @@ impl Checker for DocParams {
                 &format!("A function that returns a value without documenting it{needs}"),
             ),
             rule(
+                MISSING_RETURN_TYPE,
+                "missing-return-type-doc",
+                &format!("A function that returns a value without documenting its type{needs}"),
+            ),
+            rule(
                 MISSING_YIELD,
                 "missing-yield-doc",
                 &format!("A generator that yields without documenting it{needs}"),
+            ),
+            rule(
+                MISSING_YIELD_TYPE,
+                "missing-yield-type-doc",
+                &format!("A generator that yields without documenting the type{needs}"),
             ),
             rule(
                 MISSING_PARAM,
@@ -121,6 +141,25 @@ impl Checker for DocParams {
                 "differing-type-doc",
                 &format!(
                     "A documented parameter type for a name the signature does not have{needs}"
+                ),
+            ),
+            rule(
+                USELESS_PARAM,
+                "useless-param-doc",
+                &format!("A documented parameter that `ignored-argument-names` ignores{needs}"),
+            ),
+            rule(
+                USELESS_TYPE,
+                "useless-type-doc",
+                &format!(
+                    "A documented type of a parameter that `ignored-argument-names` ignores{needs}"
+                ),
+            ),
+            rule(
+                MISSING_ANY,
+                "missing-any-param-doc",
+                &format!(
+                    "A function whose parameters have neither a description nor a type{needs}"
                 ),
             ),
         ]
@@ -577,6 +616,8 @@ impl<'a> Walk<'a, '_> {
         if with_doc.is_empty() && with_type.is_empty() && accept {
             tolerate_missing = true;
         }
+        // Only the types the docstring documents are useless, not the annotated ones.
+        self.useless(&with_type, USELESS_TYPE, &signature, warning);
         with_type.extend(args_with_annotation(
             parameters,
             &commented(self.ctx.source, func),
@@ -598,11 +639,18 @@ impl<'a> Walk<'a, '_> {
                 .filter(|n| !with_ignored(&signature.not_needed_type).contains(*n))
                 .cloned()
                 .collect();
-            // Nothing documented at all is `missing-any-param-doc`, not these.
             let nothing = missing_doc == signature.names
                 && signature.names == missing_type
                 && !signature.names.is_empty();
-            if !nothing {
+            if nothing {
+                if self.on(MISSING_ANY) {
+                    self.out.push(self.ctx.report(
+                        MISSING_ANY,
+                        warning,
+                        format!("Missing any documentation in \"{}\"", warning.as_str()),
+                    ));
+                }
+            } else {
                 self.missing(
                     &with_doc,
                     MISSING_PARAM,
@@ -627,6 +675,32 @@ impl<'a> Walk<'a, '_> {
             &signature,
             warning,
         );
+        self.useless(&with_doc, USELESS_PARAM, &signature, warning);
+    }
+
+    /// `_compare_ignored_args`.
+    fn useless(
+        &mut self,
+        found: &BTreeSet<String>,
+        id: &str,
+        signature: &Signature,
+        warning: &Identifier,
+    ) {
+        if !self.on(id) {
+            return;
+        }
+        let useless: BTreeSet<_> = signature.ignored.intersection(found).cloned().collect();
+        if !useless.is_empty() {
+            let what = if id == USELESS_PARAM { "" } else { " type" };
+            self.out.push(self.ctx.report(
+                id,
+                warning,
+                format!(
+                    "\"{}\" useless ignored parameter{what} documentation",
+                    join(&useless)
+                ),
+            ));
+        }
     }
 
     /// `_compare_missing_args`.
@@ -831,7 +905,7 @@ impl<'a> Walk<'a, '_> {
     }
 
     fn return_(&mut self, node: &StmtReturn) {
-        if !self.on(MISSING_RETURN)
+        if !(self.on(MISSING_RETURN) || self.on(MISSING_RETURN_TYPE))
             || node.value.as_deref().is_none_or(Expr::is_none_literal_expr)
             || self.options.accept_no_return_doc
         {
@@ -844,11 +918,25 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         let doc = self.doc_of(func);
-        if !(doc.has_returns() || doc.has_property_returns() && self.is_property(func)) {
+        let property = self.is_property(func);
+        if self.on(MISSING_RETURN) && !(doc.has_returns() || doc.has_property_returns() && property)
+        {
             self.out.push(self.ctx.report(
                 MISSING_RETURN,
                 &func.name,
                 "Missing return documentation",
+            ));
+        }
+        // An annotation or a type comment gives the type.
+        if self.on(MISSING_RETURN_TYPE)
+            && func.returns.is_none()
+            && type_comment(self.ctx.source, func).is_none()
+            && !(doc.has_rtype() || doc.has_property_type() && property)
+        {
+            self.out.push(self.ctx.report(
+                MISSING_RETURN_TYPE,
+                &func.name,
+                "Missing return type documentation",
             ));
         }
     }
@@ -856,7 +944,7 @@ impl<'a> Walk<'a, '_> {
     fn yield_(&mut self) {
         // Pylint measures a yield's own one line against the minimum, which
         // any positive minimum skips.
-        if !self.on(MISSING_YIELD)
+        if !(self.on(MISSING_YIELD) || self.on(MISSING_YIELD_TYPE))
             || self.options.accept_no_yields_doc
             || self.options.min_length > 0
         {
@@ -869,16 +957,25 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         let doc = self.doc_of(func);
-        let documented = if doc.supports_yields() {
-            doc.has_yields()
+        let (documented, typed) = if doc.supports_yields() {
+            (doc.has_yields(), doc.has_yields_type())
         } else {
-            doc.has_returns()
+            (doc.has_returns(), doc.has_rtype())
         };
-        if !documented {
+        if self.on(MISSING_YIELD) && !documented {
             self.out.push(self.ctx.report(
                 MISSING_YIELD,
                 &func.name,
                 "Missing yield documentation",
+            ));
+        }
+        if self.on(MISSING_YIELD_TYPE)
+            && !(typed || func.returns.is_some() || type_comment(self.ctx.source, func).is_some())
+        {
+            self.out.push(self.ctx.report(
+                MISSING_YIELD_TYPE,
+                &func.name,
+                "Missing yield type documentation",
             ));
         }
     }
@@ -1275,8 +1372,9 @@ mod tests {
     use crate::native::classes::render;
 
     const PLUGIN: (&str, &str) = ("load-plugins", "pylint.extensions.docparams");
-    const IDS: [&str; 10] = [
-        "W9005", "W9006", "W9008", "W9010", "W9011", "W9013", "W9015", "W9016", "W9017", "W9018",
+    const IDS: [&str; 15] = [
+        "W9005", "W9006", "W9008", "W9010", "W9011", "W9012", "W9013", "W9014", "W9015", "W9016",
+        "W9017", "W9018", "W9019", "W9020", "W9021",
     ];
 
     #[test]
@@ -1320,7 +1418,7 @@ mod tests {
         assert_eq!(render(source, &options, &IDS), expected);
     }
 
-    const RETURN_IDS: [&str; 4] = ["W9008", "W9010", "W9011", "W9013"];
+    const RETURN_IDS: [&str; 6] = ["W9008", "W9010", "W9011", "W9012", "W9013", "W9014"];
 
     #[test]
     fn returns_and_yields() {
@@ -1374,6 +1472,39 @@ mod tests {
         let source = include_str!("fixtures/docparams_type_comments.py");
         let expected = include_str!("fixtures/docparams_type_comments.expected").trim_end();
         assert_eq!(render(source, &[PLUGIN], &IDS), expected);
+    }
+
+    #[test]
+    fn ignored_parameters() {
+        let source = include_str!("fixtures/docparams_ignored.py");
+        let expected = include_str!("fixtures/docparams_ignored.expected").trim_end();
+        let options = [PLUGIN, ("no-docstring-rgx", "^$")];
+        assert_eq!(render(source, &options, &IDS), expected);
+    }
+
+    #[test]
+    fn ignored_parameters_strict() {
+        let source = include_str!("fixtures/docparams_ignored.py");
+        let expected = include_str!("fixtures/docparams_ignored_strict.expected").trim_end();
+        let options = [
+            PLUGIN,
+            ("accept-no-param-doc", "no"),
+            ("no-docstring-rgx", "^$"),
+        ];
+        assert_eq!(render(source, &options, &IDS), expected);
+    }
+
+    #[test]
+    fn ignored_parameters_custom() {
+        let source = include_str!("fixtures/docparams_ignored.py");
+        let expected = include_str!("fixtures/docparams_ignored_custom.expected").trim_end();
+        let options = [
+            PLUGIN,
+            ("accept-no-param-doc", "no"),
+            ("ignored-argument-names", "^(_|b$)"),
+            ("no-docstring-rgx", "^$"),
+        ];
+        assert_eq!(render(source, &options, &IDS), expected);
     }
 
     #[test]

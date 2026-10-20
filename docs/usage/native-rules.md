@@ -1194,9 +1194,21 @@ messages read `accept-no-raise-doc`, `accept-no-return-doc` and
 section is accepted). Pylint measures the length of a `raise` or a `yield` as
 one line, so a positive `docstring-min-length` skips `W9006` and `W9013`
 altogether. `For the parameters, see` in a docstring tolerates what is missing. A function
-decorated `overload` is skipped. A function whose parameters all lack both
-description and type is `W9021` in Pylint, not these two; it reports nothing
-until that message is ported.
+decorated `overload` is skipped.
+
+* `W9012` `missing-return-type-doc` and `W9014` `missing-yield-type-doc`: the
+  type line of a return or yields section is missing, which a return
+  annotation or a function type comment stands for. They report with
+  `W9011` and `W9013`, and under the same options.
+* `W9019` `useless-param-doc` and `W9020` `useless-type-doc`: a parameter that
+  `ignored-argument-names` ignores (default `_.*|^ignored_|^unused_`) has a
+  description or a documented type. An annotation does not count for
+  `W9020`.
+* `W9021` `missing-any-param-doc`: every parameter of the function lacks both
+  a description and a type; it replaces `W9015` and `W9016`. A docstring that
+  documents no parameter is tolerated under the default `accept-no-param-doc`,
+  so it shows with `no`. A method never gets it, since `self` is not asked for
+  and so is never missing.
 
 Known divergences from Pylint:
 
