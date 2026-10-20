@@ -869,3 +869,69 @@ Known divergences:
   file with a builtin base other than `object` has no slots, as in Pylint,
   but a class of another module with one is not told apart, so its slots
   count.
+
+## Batch P: deprecated modules, methods and classes
+
+Pylint keeps tables of the deprecated names of the standard library, each
+with the Python version that deprecated it. `make pylint-deprecated` dumps
+them from Pylint 4.1.3 into `src/pylint_deprecated.rs`; run it again with the
+Python of a virtualenv that has the Pylint to follow
+(`make pylint-deprecated PYTHON=/path/to/python`).
+
+Pylint applies the entries up to the version of the interpreter it runs on.
+Here the target is the `py-version` setting, and `3.14` (the version of the
+table's interpreter) when it is not set. `deprecated-modules` adds its modules
+to the table, as in Pylint.
+
+* `W4901` `deprecated-module`: `import m`, `from m import x` and
+  `__import__("m")` of a module in the table or below it
+  (`distutils.core`). A relative `from` import is made absolute first, as
+  Pylint does.
+* `W4902` `deprecated-method`: a call of a function or method in the table,
+  through the imports that name it (`logging.warn(...)`, `from logging import
+  warn`, `import logging as lg`), or a call of a function of the file or a
+  builtin whose bare name is in the table (`assert_(x)` after `def assert_`).
+  The message names the function as called.
+* `W4904` `deprecated-class`: `from m import C` and `import m.C` of a class
+  in the table, and a call `m.C(...)` where `m` is a plain name; Pylint
+  compares the text of the owner here, so `m` need not be an import. A `from`
+  import directly under `if sys.version_info ...` or `if six.PY2/PY3` is
+  not reported, as in Pylint.
+
+Known divergences:
+
+* Pylint reports only a deprecated name that astroid infers on its
+  interpreter, so `time.clock` or `asyncio.coroutine`, removed from Python
+  3.14, give nothing there. The dump keeps the spellings that Python 3.14.8
+  infers (`asyncio.sleep` for `asyncio.tasks.sleep`, plus the names a public
+  module re-exports) and drops the others, so
+  those names stay silent here too, whatever the `py-version`; the version
+  only filters the entries by their date.
+* A callee that is a local variable, an instance or a call result is not
+  followed: `logger.warn(...)`, `thread.isAlive()` and
+  `logging.getLogger().warn()` give nothing, where Pylint reports them (twice
+  for a logger, which it infers as two classes). `self.assert_(x)` is
+  silent for the same reason.
+* `__import__` is checked for a string literal only; Pylint infers a name to
+  its value.
+
+## Batch Q: deprecated arguments, decorators and attributes
+
+The same tables and version target as Batch O (`make pylint-deprecated`).
+
+* `W4903` `deprecated-argument`: a call of a function in the table that
+  passes a deprecated argument by keyword (`asyncio.sleep(1, loop=None)`) or
+  by position (`shutil.rmtree(p, False, handler)`). A call that `W4902`
+  already reports is not checked again, as in Pylint.
+* `W4905` `deprecated-decorator`: the first decorator of a function or class
+  when it, or the function it calls, is in the table
+  (`@abc.abstractproperty`, `@abc.abstractproperty()`). Later decorators are
+  not looked at, as in Pylint.
+* `W4906` `deprecated-attribute`: a read of an attribute in the table
+  (`sys.last_type`, `calendar.January`). A store or a `del` is not a read.
+
+Known divergences:
+
+* The owner of a call or an attribute is followed through imports only. A
+  name bound to a module, an instance or a call result
+  (`alias = sys; alias.last_type`) is not, where Pylint infers it.

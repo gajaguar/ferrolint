@@ -13,6 +13,11 @@
   does not run Ruff, so no setting turns them on); `W3201` needs
   `pylint.extensions.dunder` in `load-plugins`.
 
+* **native-rules.md**: Added Batch P - `W4901`, `W4902` and `W4904`, the
+  deprecated modules, methods and classes of Pylint's tables, dumped by
+  `make pylint-deprecated`.
+* **native-rules.md**: Added Batch Q - `W4903`, `W4905` and `W4906`, the
+  deprecated arguments, decorators and attributes of the same tables.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.
