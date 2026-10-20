@@ -38,6 +38,7 @@ mod flow;
 mod formats;
 mod hierarchy;
 mod imports;
+mod imports_scan;
 mod inferred;
 mod instance_attrs;
 mod logging;
@@ -47,7 +48,9 @@ mod misc;
 mod names;
 mod overrides;
 mod project;
-pub use project::Project;
+pub use project::{Project, environment};
+mod duplicates;
+pub mod project_phase;
 mod scopes;
 mod slots;
 mod special;
@@ -141,6 +144,7 @@ pub fn rules() -> Vec<RuleInfo> {
     CHECKERS
         .iter()
         .flat_map(|checker| checker.rules())
+        .chain(project_phase::rules())
         .collect()
 }
 

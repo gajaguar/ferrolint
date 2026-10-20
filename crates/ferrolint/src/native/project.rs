@@ -17,7 +17,7 @@
 //! cleared. Upgrade with the contract's module index.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -42,6 +42,91 @@ pub struct Project {
     /// The package of the linted file, for its relative imports.
     package: String,
     modules: RefCell<HashMap<String, Option<Rc<Module>>>>,
+    /// Search the way astroid does for a whole run: the first package or
+    /// module that a name finds ends the search, and a directory is a
+    /// namespace package. Otherwise the nearest root that holds the whole
+    /// module wins (see [`Project::new`]).
+    strict: bool,
+    /// The modules the run lints, by dotted name: astroid has them all built
+    /// before it resolves an import, so they are found without a search.
+    linted: HashMap<String, (PathBuf, bool)>,
+    /// What each directory holds.
+    listings: RefCell<HashMap<PathBuf, Rc<Listing>>>,
+    specs: RefCell<HashMap<String, Option<Rc<Spec>>>>,
+    /// Every name a module binds, private ones too.
+    names: RefCell<HashMap<String, Option<Rc<HashSet<String>>>>>,
+    /// The directories listed and the files read, for a cache to stamp.
+    touched: RefCell<BTreeSet<PathBuf>>,
+    stdlib: Option<PathBuf>,
+    extensions: Extensions,
+}
+
+/// Which compiled modules outside the standard library astroid loads, and
+/// so knows the names of: the ones `extension-pkg-allow-list` names, or all.
+#[derive(Clone, Default)]
+pub struct Extensions {
+    pub allowed: Vec<String>,
+    pub all: bool,
+}
+
+/// What a directory holds, by name (`true` for a directory).
+#[derive(Default)]
+struct Listing {
+    entries: HashMap<String, bool>,
+    /// The stems of the compiled modules (`m` for `m.cpython-314-darwin.so`).
+    compiled: HashSet<String>,
+}
+
+/// A module found on the search path.
+pub struct Spec {
+    pub kind: Kind,
+    /// Where a package's submodules are looked for.
+    dirs: Vec<PathBuf>,
+}
+
+impl Spec {
+    fn of(kind: Kind) -> Self {
+        Self {
+            kind,
+            dirs: Vec::new(),
+        }
+    }
+
+    fn source(file: PathBuf, package: bool) -> Self {
+        let dirs = if package {
+            file.parent().map(Path::to_path_buf).into_iter().collect()
+        } else {
+            Vec::new()
+        };
+        Self {
+            kind: Kind::Source { file, package },
+            dirs,
+        }
+    }
+}
+
+pub enum Kind {
+    /// A `.py` file; `package` when it is an `__init__.py`.
+    Source { file: PathBuf, package: bool },
+    /// A compiled module outside the standard library, which astroid finds
+    /// empty unless it loads it.
+    Extension,
+    /// A directory with no `__init__.py`.
+    Namespace,
+    /// A module of the standard library with no source, and its public names.
+    Builtin(&'static [&'static str]),
+    /// A module astroid makes up when the import fails (`six.moves`).
+    Made,
+}
+
+/// What looking a name up in a module finds.
+pub enum Attr {
+    /// A name the module defines or astroid gives every module: the check
+    /// stops there.
+    Found,
+    /// A submodule of the package.
+    Module(Rc<Spec>),
+    Missing,
 }
 
 pub struct Module {
@@ -82,11 +167,54 @@ impl Project {
             .filter(|dir| !dir.join("__init__.py").is_file())
             .map(Path::to_path_buf)
             .collect();
+        Self::with(roots, package, false)
+    }
+
+    fn with(roots: Vec<PathBuf>, package: String, strict: bool) -> Self {
         Self {
             roots,
             package,
             modules: RefCell::default(),
+            strict,
+            linted: HashMap::new(),
+            listings: RefCell::default(),
+            specs: RefCell::default(),
+            names: RefCell::default(),
+            touched: RefCell::default(),
+            stdlib: None,
+            extensions: Extensions::default(),
         }
+    }
+
+    /// The project of a whole run: `sys.path` as Pylint builds it, the
+    /// `roots` of the linted files, then `PYTHONPATH`, the standard library
+    /// and the installed packages (`environment`, see [`environment`]).
+    pub fn for_run(
+        mut roots: Vec<PathBuf>,
+        linted: HashMap<String, (PathBuf, bool)>,
+        extensions: Extensions,
+        environment: Option<(PathBuf, Vec<PathBuf>)>,
+    ) -> Self {
+        roots.extend(
+            std::env::var_os("PYTHONPATH")
+                .iter()
+                .flat_map(std::env::split_paths)
+                .filter(|dir| !dir.as_os_str().is_empty()),
+        );
+        let mut stdlib = None;
+        if let Some((library, packages)) = environment {
+            roots.push(library.clone());
+            stdlib = Some(library);
+            for dir in packages {
+                roots.push(dir.clone());
+                roots.extend(path_files(&dir));
+            }
+        }
+        let mut project = Self::with(roots, String::new(), true);
+        project.linted = linted;
+        project.stdlib = stdlib;
+        project.extensions = extensions;
+        project
     }
 
     /// As [`Project::new`], with the standard library and the installed
@@ -94,18 +222,9 @@ impl Project {
     /// so a base class from either is read too.
     pub fn with_packages(path: &Path, module: &str) -> Self {
         let mut project = Self::new(path, module);
-        if let Some(env) = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from) {
-            project.roots.extend(stdlib(&env));
-            // `lib/pythonX.Y/site-packages` on Unix, `Lib/site-packages` on Windows.
-            let unix = std::fs::read_dir(env.join("lib"))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|entry| entry.path().join("site-packages"));
-            project.roots.extend(
-                unix.chain([env.join("Lib").join("site-packages")])
-                    .filter(|dir| dir.is_dir()),
-            );
+        if let Some((library, packages)) = environment() {
+            project.roots.push(library);
+            project.roots.extend(packages);
         }
         project
     }
@@ -148,6 +267,12 @@ impl Project {
     }
 
     fn locate(&self, name: &str) -> Option<(PathBuf, bool)> {
+        if self.strict {
+            return match &self.spec(name)?.kind {
+                Kind::Source { file, package } => Some((file.clone(), *package)),
+                _ => None,
+            };
+        }
         let relative: PathBuf = name.split('.').collect();
         // The root is the nearest directory that holds the module itself: an
         // inner package may share the top package's name (`app/api` and `api`).
@@ -165,9 +290,10 @@ impl Project {
     fn read(&self, name: &str) -> Option<Module> {
         let (file, is_package) = self.locate(name)?;
         // astroid prefers the compiled `m.*.so` to `m.py` and cannot read it
-        if !is_package && has_extension(&file) {
+        if !self.strict && !is_package && has_extension(&file) {
             return None;
         }
+        self.touched.borrow_mut().insert(file.clone());
         let source = std::fs::read_to_string(file).ok()?;
         let parsed = ruff_python_parser::parse_module(&source).ok()?;
         let package = if is_package {
@@ -222,6 +348,318 @@ impl Project {
     }
 }
 
+/// The modules whose names astroid's brain plugins add to, so a name that
+/// their source lacks may still be there.
+const BRAINS: &[&str] = &[
+    "collections",
+    "ctypes",
+    "crypt",
+    "curses",
+    "decimal",
+    "datetime",
+    "dateutil.parser",
+    "hashlib",
+    "mechanize",
+    "http",
+    "http.client",
+    "multiprocessing",
+    "pytest",
+    "py.test",
+    "pkg_resources",
+    "PyQt4.QtCore",
+    "re",
+    "regex",
+    "scipy.signal",
+    "responses",
+    "signal",
+    "six",
+    "six.moves",
+    "sqlalchemy.orm.session",
+    "subprocess",
+    "ssl",
+    "threading",
+    "unittest",
+    "typing",
+    "numpy",
+];
+
+/// The attributes astroid gives every module, and its `__path__` when it is a package.
+const SPECIAL: &[&str] = &[
+    "__new__",
+    "__init__",
+    "__ne__",
+    "__name__",
+    "__doc__",
+    "__file__",
+    "__dict__",
+    "__package__",
+    "__spec__",
+    "__loader__",
+    "__cached__",
+    "__builtins__",
+];
+
+impl Project {
+    /// What the directory `dir` holds; a stale listing is what the cache stamps catch.
+    fn listing(&self, dir: &Path) -> Rc<Listing> {
+        if let Some(found) = self.listings.borrow().get(dir) {
+            return found.clone();
+        }
+        self.touched.borrow_mut().insert(dir.to_path_buf());
+        let mut listing = Listing::default();
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry.path().is_dir();
+            if !is_dir
+                && Path::new(&name)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd"))
+            {
+                listing
+                    .compiled
+                    .insert(name.split('.').next().unwrap_or_default().to_owned());
+            }
+            listing.entries.insert(name, is_dir);
+        }
+        let listing = Rc::new(listing);
+        self.listings
+            .borrow_mut()
+            .insert(dir.to_path_buf(), listing.clone());
+        listing
+    }
+
+    /// The module or package a dotted `name` is on the search path, the way
+    /// astroid finds it: each part is searched in the places the part before
+    /// it leaves, and in each place a package beats a compiled module, which
+    /// beats a `.py` file, which beats a namespace directory.
+    pub fn spec(&self, name: &str) -> Option<Rc<Spec>> {
+        if let Some(found) = self.specs.borrow().get(name) {
+            return found.clone();
+        }
+        let found = self.find(name).map(Rc::new);
+        self.specs
+            .borrow_mut()
+            .insert(name.to_owned(), found.clone());
+        found
+    }
+
+    fn find(&self, name: &str) -> Option<Spec> {
+        if let Some((file, package)) = self.linted.get(name) {
+            return Some(Spec::source(file.clone(), *package));
+        }
+        // astroid answers for `os.path` with the platform's module.
+        if name == "os.path" {
+            return self.find("posixpath");
+        }
+        let Some((parent, last)) = name.rsplit_once('.') else {
+            return self.search(&self.roots, name, name);
+        };
+        let parent = self.spec(parent);
+        let found = parent
+            .as_deref()
+            .filter(|parent| {
+                matches!(
+                    parent.kind,
+                    Kind::Source { package: true, .. } | Kind::Namespace
+                )
+            })
+            .and_then(|parent| self.search(&parent.dirs, last, name));
+        // The module astroid makes up when a `six.moves` import fails.
+        found
+            .or_else(|| {
+                // Python 3.14 has no `collections/abc.py`: importlib finds
+                // the frozen `_collections_abc` under that name.
+                (name == "collections.abc")
+                    .then(|| self.find("_collections_abc"))
+                    .flatten()
+            })
+            .or_else(|| {
+                (name == "six.moves" || name.starts_with("six.moves."))
+                    .then(|| Spec::of(Kind::Made))
+            })
+    }
+
+    fn search(&self, dirs: &[PathBuf], part: &str, name: &str) -> Option<Spec> {
+        let mut namespaces = Vec::new();
+        for dir in dirs {
+            let listing = self.listing(dir);
+            let package = dir.join(part);
+            if listing.entries.get(part) == Some(&true) {
+                if self.listing(&package).entries.get("__init__.py") == Some(&false) {
+                    return Some(Spec::source(package.join("__init__.py"), true));
+                }
+                if !listing.compiled.contains(part)
+                    && listing.entries.get(&format!("{part}.py")) != Some(&false)
+                {
+                    namespaces.push(package);
+                    continue;
+                }
+            }
+            if listing.compiled.contains(part) {
+                return Some(Spec::of(Kind::Extension));
+            }
+            if listing.entries.get(&format!("{part}.py")) == Some(&false) {
+                return Some(Spec::source(dir.join(format!("{part}.py")), false));
+            }
+        }
+        if !namespaces.is_empty() {
+            return Some(Spec {
+                kind: Kind::Namespace,
+                dirs: namespaces,
+            });
+        }
+        c_module_names::names(name).map(|names| Spec::of(Kind::Builtin(names)))
+    }
+
+    /// Whether astroid loads the compiled module `name` and so knows its names.
+    fn loads_extension(&self, name: &str) -> bool {
+        self.extensions.all
+            || self.extensions.allowed.iter().any(|allowed| {
+                name == allowed
+                    || name
+                        .strip_prefix(allowed.as_str())
+                        .is_some_and(|rest| rest.starts_with('.'))
+            })
+    }
+
+    /// Every name the source module `name` binds, private ones too.
+    fn names_of(&self, name: &str) -> Option<Rc<HashSet<String>>> {
+        if let Some(found) = self.names.borrow().get(name) {
+            return found.clone();
+        }
+        let found = self.load(name).map(|loaded| {
+            let mut names = Vec::new();
+            self.bind_all(&loaded.package, &loaded.parsed.syntax().body, &mut names);
+            Rc::new(names.into_iter().collect())
+        });
+        self.names
+            .borrow_mut()
+            .insert(name.to_owned(), found.clone());
+        found
+    }
+
+    /// What looking `attr` up in the module `name` (found as `spec`) finds,
+    /// as Pylint's `_check_module_attrs` does.
+    pub fn attr(&self, name: &str, spec: &Spec, attr: &str) -> Attr {
+        let package = matches!(spec.kind, Kind::Source { package: true, .. });
+        if SPECIAL.contains(&attr)
+            || (attr == "__path__" && (package || matches!(spec.kind, Kind::Namespace)))
+        {
+            return Attr::Found;
+        }
+        let brain = BRAINS.contains(&name) || name.starts_with("numpy.");
+        let defined = brain
+            || match &spec.kind {
+                // A file that does not parse binds names that cannot be told.
+                Kind::Source { .. } => self.names_of(name).is_none_or(|names| names.contains(attr)),
+                Kind::Builtin(names) => attr.starts_with('_') || names.contains(&attr),
+                Kind::Extension => self.loads_extension(name),
+                Kind::Made => true,
+                Kind::Namespace => false,
+            };
+        if defined {
+            return Attr::Found;
+        }
+        // A package's submodule is found by `getattr` last.
+        let submodule = (package || matches!(spec.kind, Kind::Namespace))
+            .then(|| self.spec(&format!("{name}.{attr}")))
+            .flatten();
+        submodule.map_or(Attr::Missing, Attr::Module)
+    }
+
+    /// Whether `name` is a module of the standard library (as its top-level
+    /// name is one of the interpreter's own), when the library is known.
+    pub fn is_stdlib(&self, name: &str) -> bool {
+        let top = name.split('.').next().unwrap_or_default();
+        c_module_names::names(top).is_some()
+            || self.stdlib.as_ref().is_some_and(|dir| {
+                let listing = self.listing(dir);
+                listing.entries.contains_key(top)
+                    || listing.entries.contains_key(&format!("{top}.py"))
+            })
+    }
+
+    /// Whether the module `name` is found searching the `dirs` first (as
+    /// `file_from_modpath` does with a context file), then the search path.
+    pub fn exists_from(&self, dirs: &[PathBuf], name: &str) -> bool {
+        let mut found = None;
+        let mut places = dirs.to_vec();
+        let mut path = String::new();
+        for part in name.split('.') {
+            if !path.is_empty() {
+                path.push('.');
+            }
+            path.push_str(part);
+            let Some(spec) = self.search(&places, part, &path) else {
+                found = None;
+                break;
+            };
+            places.clone_from(&spec.dirs);
+            found = Some(spec);
+        }
+        found.is_some() || self.spec(name).is_some()
+    }
+
+    /// The directories listed and the files read so far, for a cache to stamp.
+    pub fn touched(&self) -> Vec<PathBuf> {
+        self.touched.borrow().iter().cloned().collect()
+    }
+}
+
+/// The module `import_name` names in the module `module` (the file `file`,
+/// a package when `is_package`) when `level` dots start it, as astroid's
+/// `relative_to_absolute_name` computes it, quirks included; `None` when it
+/// climbs above the top.
+pub fn relative_name(
+    module: &str,
+    file: &Path,
+    is_package: bool,
+    import_name: &str,
+    level: u32,
+) -> Option<String> {
+    // `module.rsplit(".", n)[0]`
+    let cut = |n: u32| {
+        let mut name = module;
+        for _ in 0..n {
+            match name.rfind('.') {
+                Some(at) => name = &name[..at],
+                None => break,
+            }
+        }
+        name.to_owned()
+    };
+    let package = if level > 0 {
+        let mut level = level;
+        let package = if is_package {
+            level -= 1;
+            cut(level)
+        } else if file.parent().is_some_and(|dir| {
+            !dir.join("__init__.py").exists()
+                && dir
+                    .join(import_name.split('.').next().unwrap_or_default())
+                    .exists()
+        }) {
+            level -= 1;
+            String::new()
+        } else {
+            cut(level)
+        };
+        if level > 0 && u32::try_from(module.matches('.').count()).is_ok_and(|dots| dots < level) {
+            return None;
+        }
+        package
+    } else if is_package {
+        module.to_owned()
+    } else {
+        cut(1)
+    };
+    Some(match (package.is_empty(), import_name.is_empty()) {
+        (true, _) => import_name.to_owned(),
+        (false, true) => package,
+        (false, false) => format!("{package}.{import_name}"),
+    })
+}
+
 impl Project {
     /// The names `from module import *` binds, in astroid's order: the public
     /// names the module binds at its top level (also under compound
@@ -262,14 +700,23 @@ impl Project {
     }
 
     fn bind_at(&self, package: &str, body: &[Stmt], depth: u8, out: &mut Vec<String>) {
+        self.bind_in(package, body, depth, false, out);
+    }
+
+    /// As [`Project::bound_names`], with the private names too.
+    fn bind_all(&self, package: &str, body: &[Stmt], out: &mut Vec<String>) {
+        self.bind_in(package, body, 0, true, out);
+    }
+
+    fn bind_in(&self, package: &str, body: &[Stmt], depth: u8, all: bool, out: &mut Vec<String>) {
         if depth >= 8 {
             return;
         }
         let mut late = Vec::new();
-        bound(package, body, &mut late, out);
+        bound(package, body, all, &mut late, out);
         for item in late {
             match item {
-                Late::Name(name) => add_public(out, &name),
+                Late::Name(name) => add_name(out, &name, all),
                 Late::Star(origin) => {
                     let _ = self.public_at(&origin, depth + 1, out);
                 }
@@ -287,9 +734,10 @@ enum Late {
 
 /// The public names `body` binds at its top level, also under compound
 /// statements, in `out`, and the `from` imports astroid binds last in `late`.
-fn bound(package: &str, body: &[Stmt], late: &mut Vec<Late>, out: &mut Vec<String>) {
+fn bound(package: &str, body: &[Stmt], all: bool, late: &mut Vec<Late>, out: &mut Vec<String>) {
     let mut binder = Binder {
         package,
+        all,
         globals: None,
         late,
         out,
@@ -299,6 +747,8 @@ fn bound(package: &str, body: &[Stmt], late: &mut Vec<Late>, out: &mut Vec<Strin
 
 struct Binder<'o> {
     package: &'o str,
+    /// Bind the private names too.
+    all: bool,
     /// `None` at the module's scope; in a function or a class, the names it
     /// declares `global`, the only ones that reach the module.
     globals: Option<Vec<String>>,
@@ -315,7 +765,7 @@ impl Binder<'_> {
 
     fn bind(&mut self, name: &str) {
         if self.binds(name) {
-            add_public(self.out, name);
+            add_name(self.out, name, self.all);
         }
     }
 
@@ -335,12 +785,12 @@ impl<'a> Visitor<'a> for Binder<'_> {
                 self.visit_parameters(&f.parameters);
                 self.scope(&f.body);
                 if self.globals.is_none() {
-                    add_public(self.out, f.name.as_str());
+                    add_name(self.out, f.name.as_str(), self.all);
                 }
             }
             Stmt::ClassDef(c) if self.globals.is_none() => {
                 self.scope(&c.body);
-                add_public(self.out, c.name.as_str());
+                add_name(self.out, c.name.as_str(), self.all);
             }
             Stmt::ClassDef(c) => self.visit_body(&c.body),
             Stmt::Global(g) => {
@@ -443,7 +893,11 @@ fn binds_all(body: &[Stmt]) -> bool {
 }
 
 fn add_public(out: &mut Vec<String>, name: &str) {
-    if !name.starts_with('_') && !out.iter().any(|seen| seen == name) {
+    add_name(out, name, false);
+}
+
+fn add_name(out: &mut Vec<String>, name: &str, all: bool) {
+    if (all || !name.starts_with('_')) && !out.iter().any(|seen| seen == name) {
         out.push(name.to_owned());
     }
 }
@@ -593,6 +1047,56 @@ fn has_extension(file: &Path) -> bool {
             })
         })
     })
+}
+
+/// The standard library and the `site-packages` directories of the
+/// environment that `VIRTUAL_ENV` names.
+pub fn environment() -> Option<(PathBuf, Vec<PathBuf>)> {
+    let env = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from)?;
+    let library = stdlib(&env)?;
+    // `lib/pythonX.Y/site-packages` on Unix, `Lib/site-packages` on Windows.
+    let unix = std::fs::read_dir(env.join("lib"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path().join("site-packages"));
+    let packages = unix
+        .chain([env.join("Lib").join("site-packages")])
+        .filter(|dir| dir.is_dir())
+        .collect();
+    Some((library, packages))
+}
+
+/// The directories the `.pth` files of a `site-packages` directory add to
+/// the search path, in file order (`site.addpackage`).
+pub fn path_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|e| e == "pth")
+                && !path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+        })
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .filter_map(|file| std::fs::read_to_string(file).ok())
+        .flat_map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|line| {
+                    !line.is_empty() && !line.starts_with('#') && !line.starts_with("import")
+                })
+                .map(|line| dir.join(line))
+                .collect::<Vec<_>>()
+        })
+        .filter(|path| path.is_dir())
+        .collect()
 }
 
 /// The standard library of the interpreter that made the environment

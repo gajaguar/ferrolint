@@ -14,6 +14,7 @@ mod host;
 mod infer;
 mod native;
 mod pragma;
+mod project_run;
 mod pylint;
 mod pylint_deprecated;
 mod pylint_names;
