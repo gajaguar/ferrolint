@@ -2,6 +2,9 @@
 
 ## 2026-10-20
 
+* **host-rules.md**: `FL003` words its message as Pylint's `E0001` does,
+  `Parsing failed: '<error> (<module>, line N)'`, with the divergences noted.
+
 * **diff-mode.md**: `R0401` and `R0801` compare only the changed files under
   `--diff-base`; **native-rules.md**: the same note among the project rules.
 
