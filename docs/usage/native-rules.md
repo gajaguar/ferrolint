@@ -1311,7 +1311,8 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   by a search whose order depends on the order of the files, so a project
   with many overlapping cycles may list other cycles (over the same modules)
   than Pylint. On the same graph (equal edge for edge to Pylint's on the
-  corpora measured, but for the points below) the search with the neighbours of a module in random order finds
+  corpora measured, but for the points below) the search with the neighbors
+  of a module in random order finds
   from 123 to 136 cycles where this finds 129, so a count that differs by a
   few percent is Pylint's own run-to-run spread (its sets iterate in the
   order of a hash seeded for each run), not a missing edge.
