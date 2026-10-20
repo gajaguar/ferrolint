@@ -31,6 +31,15 @@ pub struct Entry {
     pub unparsable: bool,
 }
 
+/// What the project phase stored for a run: its diagnostics by file, and the
+/// state of everything it read outside the linted files' own bytes.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ProjectEntry {
+    /// Each path (a directory or a file) and what it looked like.
+    pub stamps: Vec<(String, String)>,
+    pub findings: Vec<(String, Diagnostic)>,
+}
+
 /// A plugin's name and rules, by its binary's SHA-256.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginMeta {
@@ -84,6 +93,14 @@ impl Cache {
 
     pub fn store_entry(&self, key: &str, entry: &Entry) {
         Self::write(&self.path("files", key), entry);
+    }
+
+    pub fn project(&self, key: &str) -> Option<ProjectEntry> {
+        Self::read(&self.path("project", key))
+    }
+
+    pub fn store_project(&self, key: &str, entry: &ProjectEntry) {
+        Self::write(&self.path("project", key), entry);
     }
 
     pub fn plugin(&self, sha256: &str) -> Option<PluginMeta> {

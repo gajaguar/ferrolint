@@ -1,0 +1,23 @@
+4:W9016:"unused_c" missing in parameter type documentation
+4:W9019:"_b" useless ignored parameter documentation
+4:W9020:"_b" useless ignored parameter type documentation
+17:W9019:"_b" useless ignored parameter documentation
+33:W9020:"_b" useless ignored parameter type documentation
+50:W9019:"_b" useless ignored parameter documentation
+50:W9020:"_b" useless ignored parameter type documentation
+59:W9019:"_b" useless ignored parameter documentation
+59:W9020:"_b" useless ignored parameter type documentation
+71:W9015:"a" missing in parameter documentation
+71:W9016:"a" missing in parameter type documentation
+78:W9015:"a" missing in parameter documentation
+78:W9016:"a" missing in parameter type documentation
+86:W9015:"a" missing in parameter documentation
+100:W9015:"**kwargs, *args" missing in parameter documentation
+107:W9015:"a" missing in parameter documentation
+107:W9016:"a" missing in parameter type documentation
+128:W9015:"a" missing in parameter documentation
+128:W9016:"a" missing in parameter type documentation
+134:W9015:"a" missing in parameter documentation
+134:W9016:"a" missing in parameter type documentation
+140:W9015:"a" missing in parameter documentation
+140:W9016:"a" missing in parameter type documentation

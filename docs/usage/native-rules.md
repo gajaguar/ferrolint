@@ -1142,3 +1142,170 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   are not judged. A display with a starred element, such as `(*t, 1)`, and a
   dict with `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
+
+## Batch W: docparams
+
+The messages of `pylint.extensions.docparams` (they are not the
+`W9xxx` rules of the gajaguar plugin). They report only when `load-plugins`
+names that module. A docstring is read in the Sphinx, Epytext, Google or
+NumPy style, whichever has the most matching sections (ties go to the first of
+that list, and no match to `default-docstring-type`), with Pylint's own
+patterns.
+
+* `W9015` `missing-param-doc` and `W9016` `missing-type-doc`: a parameter that
+  the parameter section has no description (or no type, and no annotation) for.
+  `self`, `cls`, the names that match `ignored-argument-names` and, for the
+  type, `*args` and `**kwargs` are not asked for; `*args` may be documented
+  without its asterisks.
+* `W9017` `differing-param-doc` and `W9018` `differing-type-doc`: a documented
+  name that the signature does not have.
+* `W9005` `multiple-constructor-doc`: parameters documented in the class
+  docstring and in the one of `__init__` (or `__new__`). The constructor's
+  parameters are also judged against the class docstring, and the class
+  docstring may stand for the constructor's.
+
+* `W9006` `missing-raises-doc`: an exception that a `raise` of the function
+  names and the docstring does not document, judged one `raise` at a time
+  (so two `raise`s of one class report twice). The documented name may be an
+  ancestor of the raised class (`Exception` for `ValueError`), and a dotted
+  name counts by its last part. An exception that the nearest `try` around the
+  `raise` handles by name (`except ValueError`, not `except Exception`) or a
+  `contextlib.suppress(...)` around it names is left out, and so is
+  `NotImplementedError` in an abstract method. A bare `raise` in an `except`
+  re-raises the handler's classes. A setter without a docstring is judged
+  against its property's.
+* `W9011` `missing-return-doc`: a `return` with a value (not `None`) in a
+  function whose docstring has no return section; the type line of a property's
+  docstring stands for it. `W9013` `missing-yield-doc`: a `yield` in a
+  function whose docstring has no yields section (a Sphinx docstring takes
+  `:returns:`). Each `return` or `yield` reports on its own.
+* `W9008` `redundant-returns-doc`: a return section in a function with no
+  `return` that gives a value (counting the ones in nested functions), unless
+  it is a generator in a style without a yields section, or abstract.
+  `W9010` `redundant-yields-doc`: a yields section in a function that is not a
+  generator.
+
+They read `accept-no-param-doc` (a docstring with no parameter section at all
+is accepted when it is `yes`, the default), `default-docstring-type`,
+`no-docstring-rgx` (default `^_`, so `__init__` is skipped unless the option
+changes), `docstring-min-length` and `ignored-argument-names`; the new
+messages read `accept-no-raise-doc`, `accept-no-return-doc` and
+`accept-no-yields-doc` (all `yes` by default, so a docstring with no such
+section is accepted). Pylint measures the length of a `raise` or a `yield` as
+one line, so a positive `docstring-min-length` skips `W9006` and `W9013`
+altogether. `For the parameters, see` in a docstring tolerates what is
+missing. A function decorated `overload` is skipped.
+
+* `W9012` `missing-return-type-doc` and `W9014` `missing-yield-type-doc`: the
+  type line of a return or yields section is missing, which a return
+  annotation or a function type comment stands for. They report with
+  `W9011` and `W9013`, and under the same options.
+* `W9019` `useless-param-doc` and `W9020` `useless-type-doc`: a parameter that
+  `ignored-argument-names` ignores (default `_.*|^ignored_|^unused_`) has a
+  description or a documented type. An annotation does not count for
+  `W9020`.
+* `W9021` `missing-any-param-doc`: every parameter of the function lacks both
+  a description and a type; it replaces `W9015` and `W9016`. A docstring that
+  documents no parameter is tolerated under the default `accept-no-param-doc`,
+  so it shows with `no`. A method never gets it, since `self` is not asked for
+  and so is never missing.
+
+Known divergences from Pylint:
+
+* A function's type comment (`# type: (int) -> str`) and one on each parameter
+  are read and matched to the parameters by position, as Pylint does. Pylint
+  drops every type comment of a file that holds a misplaced one (the file
+  then parses without them); that is not reproduced.
+* A method is a constructor's owner when the nearest class around it is the
+  class; Pylint resolves the same frame, with astroid's inference of
+  decorators left out here (`overload` is taken by its last name).
+* A raised exception is the class that a name, an attribute (`mod.Error`,
+  `self.Error`, `Class.Error`) or a call names directly: a builtin (`IOError`
+  and `socket.error` are `OSError`), a class of the file or one the project
+  holds. Pylint also infers `raise error` for a variable that holds an
+  instance, a name assigned a class, a function that returns an exception and
+  an instance attribute (`raise self.predicate()`); those are not reported
+  here. Pylint cannot see a name imported in a branch it takes as
+  unreachable (an `else` of a `sys.version_info` test), so it does not judge
+  a bare `raise` under `except mod.Error` there, where this reports it. A
+  class that only a C module defines (`queue.Empty`) is not followed.
+* A property is a decorator named `property`, `functools.cached_property`,
+  `abc.abstractproperty` or a class that derives from them; a function that
+  returns a property is not followed. A setter finds its property among the
+  methods of its own class, not those of its ancestors.
+* A `yield` in a `lambda` is not checked: Pylint crashes on it.
+
+## Batch X: project-wide rules and isinstance
+
+* `W1116` `isinstance-second-argument-not-valid-type`: `isinstance(x, y)` where
+  `y` is certainly no class: a literal (number, string, `None`, list, dict,
+  set, lambda), a function, a module the project holds, an instance of a class
+  of the file, a tuple with such an element, or `a | b` with such a side other
+  than `None`. A name bound once to one of those counts too, also inside a
+  tuple.
+* `E0401` `import-error`, `E0402` `relative-beyond-top-level` and `E0611`
+  `no-name-in-module`: an import that no module answers, a relative import
+  that climbs above the top package, and a name that the module imported does
+  not bind. The modules are found the way astroid finds them: the
+  directory above each linted package, `PYTHONPATH`, the standard library and
+  the `site-packages` of `VIRTUAL_ENV`, with packages ahead of compiled modules
+  ahead of `.py` files ahead of namespace directories. `ignored-modules`,
+  `analyse-fallback-blocks`, `source-roots`, `extension-pkg-allow-list` and
+  `unsafe-load-any-extension` apply. An import under `if TYPE_CHECKING:`, under
+  a `sys.version_info` or `six.PY2/PY3` test, in a `try` that catches
+  `ImportError`, in `with suppress(ImportError)` or beside a fallback import is
+  not reported, as in Pylint.
+* `R0401` `cyclic-import`: the cycles of the imports among the linted modules
+  (and the packages they import from), each reported once as
+  `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
+  `# pylint: disable=cyclic-import` leaves the graph.
+
+* `R0801` `duplicate-code`: lines that two or more linted files share, found
+  as `symilar` finds them: the stripped lines of every file, a window of
+  `min-similarity-lines` of them (default 4) hashed, and the windows that
+  match merged into runs. Reported once, at line 1 of the last file, as
+  `Similar lines in N files` followed by `==module:[start:end]` for each file
+  and the shared lines. `min-similarity-lines`, `ignore-comments`,
+  `ignore-docstrings`, `ignore-imports` and `ignore-signatures` apply.
+  A line under `# pylint: disable=duplicate-code` leaves the comparison, and
+  so does a file whose configuration (`per-file-ignores`) turns the rule off.
+
+These five rules need the whole run, not one file. They run after the
+per-file pass and keep their result in one cache entry: see
+[Result cache](result-cache.md).
+
+Known divergences from Pylint, where Pylint infers the second argument:
+
+* `W1116` leaves out every expression that `E0239` cannot classify without
+  types: a call of a function, an attribute of an object, a name bound twice,
+  a parameter, a subscript such as `list[int]`. A union held by a name is
+  never judged (Pylint infers it only when both sides are classes).
+
+Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
+`R0801`):
+
+* Without `VIRTUAL_ENV` the standard library and the installed packages are
+  unknown, so an absolute import is never reported as missing and a name is
+  never judged missing in them; relative imports and the project's own modules
+  still are. Set `VIRTUAL_ENV` to the environment Pylint runs in to match it.
+* `R0401` is reported once per cycle at line 1 of the file that sorts last
+  among the linted ones; Pylint attaches it to the file it checked last, in
+  filesystem order. The cycles and their text agree.
+* `R0801` takes the files in name order and attaches the message to the last
+  one; Pylint takes them in the order of its file walk. Pylint prints the
+  lines of any one of the files (a set's iteration order); this prints those
+  of the first. Several `R0401` or `R0801` findings of one run come out
+  ordered by message, since both sit at the same position. The hash of a
+  window is the sum of its lines' hashes, as in Pylint 4.1.3, so a window of
+  the same lines in another order matches too. The `R0401` cycles are found
+  by a search whose order depends on the order of the files, so a project
+  with many overlapping cycles may list other cycles (over the same modules)
+  than Pylint.
+* Pylint reads astroid's brain plugins, which add names to some modules
+  (`hashlib`, `six`, `numpy` and others); those modules accept any name here.
+  A name that a module imports from another is not followed to what it infers
+  to.
+* `TYPE_CHECKING`, `ImportError`, `typing` and `suppress` are recognized by
+  their spelling and the file's own imports, where Pylint infers them.
+* The cache entry stamps the directories and files the resolution read; a
+  `.pth` file edited in place without a size or time change is not noticed.

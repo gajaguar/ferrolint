@@ -28,6 +28,8 @@ mod conditions;
 mod contextmgr;
 mod deprecated;
 mod django;
+mod docparams;
+mod docstring;
 mod duplicate_args;
 mod exceptions;
 mod extensions;
@@ -36,6 +38,7 @@ mod flow;
 mod formats;
 mod hierarchy;
 mod imports;
+mod imports_scan;
 mod inferred;
 mod instance_attrs;
 mod logging;
@@ -45,7 +48,9 @@ mod misc;
 mod names;
 mod overrides;
 mod project;
-pub use project::Project;
+pub use project::{Project, environment};
+mod duplicates;
+pub mod project_phase;
 mod scopes;
 mod slots;
 mod special;
@@ -103,6 +108,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &contextmgr::ContextManagers,
     &deprecated::Deprecated,
     &django::Django,
+    &docparams::DocParams,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
     &extensions::Extensions,
@@ -138,6 +144,7 @@ pub fn rules() -> Vec<RuleInfo> {
     CHECKERS
         .iter()
         .flat_map(|checker| checker.rules())
+        .chain(project_phase::rules())
         .collect()
 }
 

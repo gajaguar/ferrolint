@@ -11,8 +11,10 @@ cspell
 Dicted
 direnv
 distyl
+docstringify
 doesn
 envrc
+epytext
 español
 falsey
 fastmcp
@@ -65,6 +67,7 @@ rana
 redef
 retag
 rposition
+rtype
 shailesh
 smol
 thinh
@@ -73,6 +76,7 @@ tolineno
 toptal
 truong
 unbypassable
+unsubscript
 uv
 vocabulary
 workos
@@ -124,3 +128,5 @@ ixin
 pyvenv
 Variadics
 xpylint
+symilar
+ytype

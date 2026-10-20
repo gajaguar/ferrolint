@@ -22,6 +22,7 @@ use crate::discover::{self, Excludes};
 use crate::error::{Error, Result};
 use crate::host::{FileData, Host, LoadedPlugin, Outcome, PluginSource};
 use crate::native;
+use crate::project_run;
 use crate::selection::Selection;
 use crate::semantic::Model;
 use crate::suppress::{self, Suppressions};
@@ -77,6 +78,10 @@ pub struct Options {
     pub started: Instant,
 }
 
+/// What one file gave: its findings, or why it could not be linted.
+type FileResult = Result<Vec<Finding>>;
+
+#[allow(clippy::too_many_lines)]
 pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let config = config::load(cwd, options.config.as_deref())?;
     let changed = match &options.diff_base {
@@ -106,7 +111,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         counters: Counters::new(workers),
         started: options.started,
     };
-    let (displays, per_file, lint_time) = std::thread::scope(|scope| {
+    let (displays, names, per_file, lint_time) = std::thread::scope(|scope| {
         scope.spawn(|| {
             // A panic must still fill the cell, or every waiting worker hangs.
             let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -128,14 +133,14 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
                 }
             })
         });
-        let mut per_file: Vec<(String, Result<Vec<Finding>>)> = pool.install(|| {
+        let mut per_file: Vec<(String, PathBuf, Result<Vec<Finding>>)> = pool.install(|| {
             receiver
                 .into_iter()
                 .par_bridge()
                 .map(|path| {
                     let display = discover::display_path(cwd, &path);
                     let findings = linter.lint_file(&path, &display);
-                    (display, findings)
+                    (display, path, findings)
                 })
                 .collect()
         });
@@ -147,13 +152,16 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         walker
             .join()
             .unwrap_or_else(|_| Err(Error::io("the file walk panicked")))?;
-        let (displays, per_file): (Vec<String>, Vec<Result<Vec<Finding>>>) =
-            per_file.into_iter().unzip();
+        let (names, per_file): (Vec<(PathBuf, String)>, Vec<FileResult>) = per_file
+            .into_iter()
+            .map(|(display, path, findings)| ((path, display), findings))
+            .unzip();
+        let displays: Vec<String> = names.iter().map(|(_, display)| display.clone()).collect();
         // Parallelism counts from the moment the plugins are ready.
         let lint_time = loaded_at
             .get()
             .map_or(Duration::ZERO, |at| ended.saturating_duration_since(*at));
-        Ok::<_, Error>((displays, per_file, lint_time))
+        Ok::<_, Error>((displays, names, per_file, lint_time))
     })?;
     let compiles = setup
         .get()
@@ -164,6 +172,8 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let Setup {
         registry,
         selection,
+        py_version,
+        options: rule_options,
         ..
     } = setup
         .into_inner()
@@ -173,6 +183,18 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         findings.extend(result?);
     }
     findings.extend(config_findings(cwd, &config, &registry, &selection));
+    findings.extend(project_run::run(
+        &project_run::Params {
+            cwd,
+            arguments: &options.paths,
+            registry: &registry,
+            selection: &selection,
+            options: &rule_options,
+            py_version,
+            cache: cache.as_ref(),
+        },
+        &names,
+    ));
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
     let mut displays = displays;

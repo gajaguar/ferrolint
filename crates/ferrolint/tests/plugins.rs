@@ -154,6 +154,17 @@ fn singleton_comparison() {
     );
 }
 
+/// The fixture holds the quoting, operand order and `bool()` cases;
+/// `messages.txt` is Pylint's output on it (`line: message`).
+#[test]
+fn singleton_comparison_messages_match_pylint() {
+    let fixtures = support::workspace().join("plugins/singleton-comparison/fixtures");
+    let source = std::fs::read_to_string(fixtures.join("messages.py")).unwrap();
+    let recorded = std::fs::read_to_string(fixtures.join("messages.txt")).unwrap();
+    let found = findings("ferrolint-plugin-singleton-comparison", &source);
+    assert_eq!(found, recorded.lines().collect::<Vec<_>>());
+}
+
 #[test]
 fn self_assigning_variable() {
     let source = "x = 1\nx = x\ny = x\n";

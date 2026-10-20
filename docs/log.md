@@ -2,6 +2,34 @@
 
 ## 2026-10-19
 
+* **plugins.md**: `singleton-comparison` words `C0121` like Pylint for quoted
+  operands, operand order and the `bool(...)` suggestion.
+
+* **native-rules.md**: Batch W completes `pylint.extensions.docparams` with
+  `W9012`, `W9014`, `W9019`, `W9020` and `W9021`.
+
+* **native-rules.md**: Batch W adds the return, raise and yield messages of
+  `pylint.extensions.docparams`: `W9006`, `W9008`, `W9010`, `W9011` and
+  `W9013`.
+
+* **native-rules.md**: Added Batch W - the parameter messages of
+  `pylint.extensions.docparams` (`W9005`, `W9015` to `W9018`), over a
+  docstring parser for the Sphinx, Epytext, Google and NumPy styles.
+
+* **native-rules.md**: Batch X adds `R0801` duplicate-code to the project
+  phase, with the `min-similarity-lines` and `ignore-*` options.
+* **configuration-file.md**: `duplicate-code` is no longer the example of a
+  rule ferrolint does not have.
+
+* **native-rules.md**: Batch X adds `E0401` import-error, `E0402`
+  relative-beyond-top-level, `E0611` no-name-in-module and `R0401`
+  cyclic-import, run as a project phase after the per-file pass.
+* **result-cache.md**: The project rules keep their result in one stamped
+  entry instead of the per-file ones.
+
+* **native-rules.md**: Added Batch X with `W1116` isinstance-second-argument-not-valid-type,
+  for literals, functions and instances that a name bound once stands for.
+
 * **native-rules.md**: Batch V adds `W0632` unbalanced-tuple-unpacking and
   `W0644` unbalanced-dict-unpacking, for tuple, list, set and dict displays
   (also behind a name or a function of the file) and the views of a dict.

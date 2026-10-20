@@ -294,7 +294,7 @@ struct Walk<'a, 'e> {
 }
 
 /// Whether a decorator of `func` is `typing.overload`, by its last name.
-fn is_overload(func: &StmtFunctionDef) -> bool {
+pub(super) fn is_overload(func: &StmtFunctionDef) -> bool {
     func.decorator_list.iter().any(|d| {
         let expr = match &d.expression {
             Expr::Call(call) => &*call.func,

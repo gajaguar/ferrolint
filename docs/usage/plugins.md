@@ -32,6 +32,12 @@ answers to its Pylint msg-id and symbol as well as its code.
   doc comment lists what it leaves out, such as loop variables for
   `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
+* `singleton-comparison` quotes the operands as Pylint does in the simple
+  cases (double-quoted strings print single-quoted, the operands keep their
+  order, `bool(...)` appears outside a test condition) and is compared with
+  Pylint on `plugins/singleton-comparison/fixtures`. Any other spelling
+  (a string prefix, an escape, a line break, odd spacing, redundant
+  parentheses) prints as written.
 * `not-callable` uses the type inference query: it asks the host's type
   inference and reports only calls of a resolved builtin instance such
   as an `int` or a `list`. It is not one of the ten plugins the
