@@ -1,0 +1,4 @@
+pkg/h.py:1:R0801:Similar lines in 2 files|==pkg.a:[19:26]|==pkg.b:[15:22]
+pkg/h.py:1:R0801:Similar lines in 2 files|==pkg.c:[13:18]|==pkg.d:[12:17]
+pkg/h.py:1:R0801:Similar lines in 2 files|==pkg.c:[4:10]|==pkg.d:[3:9]
+pkg/h.py:1:R0801:Similar lines in 2 files|==pkg.d:[3:12]|==pkg.e:[3:10]

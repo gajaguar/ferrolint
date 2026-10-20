@@ -76,7 +76,7 @@ relative paths.
   `enable` turns them back on. An entry is a ferrolint code, a Pylint
   msg-id or symbol, a category letter (`C`, `R`, `W`, `E`, `F`, `I`: the
   rules whose msg-id starts with it) or `all`.
-* An entry naming no rule ferrolint has (`duplicate-code`, `fixme`, a
+* An entry naming no rule ferrolint has (`fixme`, a
   checker name) is dropped without an error, unlike `ignore`.
 * `py-version` sets the target Python version; `ignore` (Pylint's base
   names, like `CVS`) is added to `exclude`.

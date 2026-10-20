@@ -22,7 +22,7 @@ use crate::cache::{Cache, ProjectEntry};
 use crate::engine::hex;
 use crate::native::Project;
 use crate::native::project_phase::{
-    self, CYCLIC, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
+    self, CYCLIC, DUPLICATE, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
 };
 use crate::selection::Selection;
 
@@ -49,12 +49,13 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
         .iter()
         .any(|code| enabled.iter().any(|set| set.contains(*code)));
     let cyclic = params.selection.is_enabled(CYCLIC);
-    if !imports && !cyclic {
+    let opts = Opts::new(params.options);
+    let duplicates = params.selection.is_enabled(DUPLICATE) && opts.duplicates.min > 0;
+    if !imports && !cyclic && !duplicates {
         return Vec::new();
     }
-    let opts = Opts::new(params.options);
-    let units = units(params, files, &opts);
-    let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME];
+    let units = units(params, files, &opts, &enabled);
+    let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
     let key = params.cache.map(|cache| {
         let hashes: Vec<String> = files
             .par_iter()
@@ -66,7 +67,7 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
             .collect();
         let mut parts = vec!["project".to_owned(), format!("{:?}", params.py_version)];
         parts.push(format!("{:?}", params.options));
-        parts.push(format!("{cyclic}"));
+        parts.push(format!("{cyclic}{duplicates}"));
         for name in ["VIRTUAL_ENV", "PYTHONPATH"] {
             parts.push(std::env::var(name).unwrap_or_default());
         }
@@ -100,42 +101,52 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
             .collect();
     }
 
-    let prepared = project_phase::prepare_all(&units);
-    let linted = units
-        .iter()
-        .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
-        .collect();
-    let environment = crate::native::environment();
-    let known = environment.is_some();
-    let project = Project::for_run(
-        roots(params, &opts),
-        linted,
-        opts.extensions.clone(),
-        environment,
-    );
-    let found = project_phase::analyse(&units, &prepared, &project, known, &opts, params.registry);
-
     let mut out: Vec<(String, ferrolint_core::Diagnostic)> = Vec::new();
-    for ((unit, diagnostics), set) in units.iter().zip(found.files).zip(&enabled) {
-        out.extend(
-            diagnostics
-                .into_iter()
-                .filter(|d| set.contains(&d.code))
-                .map(|d| (unit.display.clone(), d)),
+    let mut touched = Vec::new();
+    if imports || cyclic {
+        let prepared = project_phase::prepare_all(&units);
+        let linted = units
+            .iter()
+            .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
+            .collect();
+        let environment = crate::native::environment();
+        let known = environment.is_some();
+        let project = Project::for_run(
+            roots(params, &opts),
+            linted,
+            opts.extensions.clone(),
+            environment,
         );
+        let found =
+            project_phase::analyse(&units, &prepared, &project, known, &opts, params.registry);
+        for ((unit, diagnostics), set) in units.iter().zip(found.files).zip(&enabled) {
+            out.extend(
+                diagnostics
+                    .into_iter()
+                    .filter(|d| set.contains(&d.code))
+                    .map(|d| (unit.display.clone(), d)),
+            );
+        }
+        // Pylint reports these at the start of the file it checked last.
+        if cyclic && let Some(last) = units.last() {
+            out.extend(
+                found
+                    .cycles
+                    .iter()
+                    .map(|cycle| (last.display.clone(), project_phase::cycle_diagnostic(cycle))),
+            );
+        }
+        touched = project.touched();
     }
-    // Pylint reports these at the start of the file it checked last.
-    if cyclic && let Some(last) = units.last() {
+    if duplicates && let Some(last) = units.last() {
         out.extend(
-            found
-                .cycles
-                .iter()
-                .map(|cycle| (last.display.clone(), project_phase::cycle_diagnostic(cycle))),
+            project_phase::duplicates(&units, &opts, params.registry)
+                .into_iter()
+                .map(|d| (last.display.clone(), d)),
         );
     }
     if let Some((cache, key)) = params.cache.zip(key.as_deref()) {
-        let stamps = project
-            .touched()
+        let stamps = touched
             .into_iter()
             .map(|path| (path.to_string_lossy().into_owned(), stamp_of(&path)))
             .collect();
@@ -198,7 +209,12 @@ fn arguments(params: &Params<'_>) -> Vec<PathBuf> {
 /// The files with the module name Pylint gives each: relative to the root
 /// of the argument that holds it, then to the other roots and the working
 /// directory.
-fn units(params: &Params<'_>, files: &[(PathBuf, String)], opts: &Opts) -> Vec<Unit> {
+fn units(
+    params: &Params<'_>,
+    files: &[(PathBuf, String)],
+    opts: &Opts,
+    enabled: &[BTreeSet<String>],
+) -> Vec<Unit> {
     let roots = roots(params, opts);
     let sources = source_roots(params, opts);
     let cwd = fs::canonicalize(params.cwd).unwrap_or_else(|_| params.cwd.to_path_buf());
@@ -213,7 +229,8 @@ fn units(params: &Params<'_>, files: &[(PathBuf, String)], opts: &Opts) -> Vec<U
         .collect();
     files
         .iter()
-        .map(|(path, display)| {
+        .zip(enabled)
+        .map(|((path, display), set)| {
             let real = fs::canonicalize(path).unwrap_or_else(|_| path.clone());
             let owner = arguments
                 .iter()
@@ -241,6 +258,7 @@ fn units(params: &Params<'_>, files: &[(PathBuf, String)], opts: &Opts) -> Vec<U
                 path: real,
                 display: display.clone(),
                 module,
+                duplicates: set.contains(DUPLICATE),
             }
         })
         .collect()

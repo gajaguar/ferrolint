@@ -2,6 +2,11 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch X adds `R0801` duplicate-code to the project
+  phase, with the `min-similarity-lines` and `ignore-*` options.
+* **configuration-file.md**: `duplicate-code` is no longer the example of a
+  rule ferrolint does not have.
+
 * **native-rules.md**: Batch X adds `E0401` import-error, `E0402`
   relative-beyond-top-level, `E0611` no-name-in-module and `R0401`
   cyclic-import, run as a project phase after the per-file pass.

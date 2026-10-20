@@ -47,6 +47,7 @@ mod names;
 mod overrides;
 mod project;
 pub use project::{Project, environment};
+mod duplicates;
 pub mod project_phase;
 mod scopes;
 mod slots;

@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use ruff_python_parser::ParseOptions;
 
+use super::duplicates::{LineSet, Settings};
 use super::imports_scan::{self, Import};
 use super::project::{Attr, Extensions, Project, Spec, relative_name};
 use super::rule;
@@ -33,6 +34,7 @@ pub const IMPORT_ERROR: &str = "E0401";
 pub const RELATIVE_BEYOND_TOP: &str = "E0402";
 pub const NO_NAME: &str = "E0611";
 pub const CYCLIC: &str = "R0401";
+pub const DUPLICATE: &str = "R0801";
 
 /// The rules of this phase; the per-file checkers do not own them.
 pub fn rules() -> Vec<ferrolint_core::RuleInfo> {
@@ -49,6 +51,11 @@ pub fn rules() -> Vec<ferrolint_core::RuleInfo> {
             "cyclic-import",
             "Modules import each other in a cycle",
         ),
+        rule(
+            DUPLICATE,
+            "duplicate-code",
+            "Similar lines in several files",
+        ),
     ]
 }
 
@@ -58,6 +65,7 @@ pub struct Opts {
     analyse_fallback: bool,
     pub extensions: Extensions,
     pub source_roots: Vec<String>,
+    pub duplicates: Settings,
 }
 
 impl Opts {
@@ -98,6 +106,7 @@ impl Opts {
                 all: yes("unsafe-load-any-extension"),
             },
             source_roots: csv("source-roots"),
+            duplicates: Settings::new(options),
         }
     }
 
@@ -159,6 +168,8 @@ pub struct Unit {
     /// The dotted name Pylint gives the module.
     pub module: String,
     pub is_package: bool,
+    /// Whether `duplicate-code` is enabled for the file.
+    pub duplicates: bool,
 }
 
 /// What reading one file gives the phase.
@@ -167,30 +178,47 @@ pub struct Prepared {
     spans: Vec<Span>,
 }
 
-/// Parse a file and read its imports; `None` when it does not parse, is not
-/// UTF-8, or a pragma ends it (Pylint checks nothing in such a file).
-pub fn prepare(path: &Path) -> Option<Prepared> {
+/// A file the rules of this phase can read: its text, tree and line index.
+/// `None` when it does not parse, is not UTF-8, or a pragma ends it (Pylint
+/// checks nothing in such a file).
+pub struct Loaded {
+    pub source: String,
+    pub parsed: ruff_python_parser::Parsed<ruff_python_ast::ModModule>,
+    pub index: LineIndex,
+}
+
+pub fn load(path: &Path) -> Option<Loaded> {
     let bytes = std::fs::read(path).ok()?;
-    let source = std::str::from_utf8(&bytes).ok()?;
+    let source = String::from_utf8(bytes).ok()?;
     let options = ParseOptions::from(ruff_python_ast::PySourceType::Python)
         .with_target_version(ruff_python_ast::PythonVersion::latest());
-    let parsed = ruff_python_parser::parse_unchecked(source, options)
+    let parsed = ruff_python_parser::parse_unchecked(&source, options)
         .try_into_module()
         .unwrap_or_else(|| unreachable!("Python source parses to a module"));
     if parsed.has_syntax_errors() {
         return None;
     }
-    let index = LineIndex::new(source);
-    let comments = suppress::comments(source, parsed.tokens());
-    if pragma::informational(source, &comments, &index)
+    let index = LineIndex::new(&source);
+    let comments = suppress::comments(&source, parsed.tokens());
+    if pragma::informational(&source, &comments, &index)
         .iter()
         .any(|d| d.code == "I0013")
     {
         return None;
     }
+    Some(Loaded {
+        source,
+        parsed,
+        index,
+    })
+}
+
+/// Parse a file and read its imports.
+pub fn prepare(path: &Path) -> Option<Prepared> {
+    let loaded = load(path)?;
     Some(Prepared {
-        imports: imports_scan::scan(&parsed.syntax().body, source, &index),
-        spans: suppress::spelled(source, &parsed, &index),
+        imports: imports_scan::scan(&loaded.parsed.syntax().body, &loaded.source, &loaded.index),
+        spans: suppress::spelled(&loaded.source, &loaded.parsed, &loaded.index),
     })
 }
 
@@ -661,6 +689,41 @@ pub fn file_start() -> Range {
     Range { start: at, end: at }
 }
 
+/// R0801's diagnostics for `units`, whose rule is enabled: the message of each
+/// duplicate, to be placed at the start of the file checked last.
+pub fn duplicates(units: &[Unit], opts: &Opts, registry: &Registry) -> Vec<Diagnostic> {
+    let sets: Vec<LineSet> = units
+        .par_iter()
+        .filter(|unit| unit.duplicates)
+        .filter_map(|unit| {
+            let loaded = load(&unit.path)?;
+            let spans = suppress::spelled(&loaded.source, &loaded.parsed, &loaded.index);
+            let suppressions = Suppressions::resolve(&spans, registry);
+            let disabled = |line: u32| {
+                suppressions.suppresses(&diagnostic(DUPLICATE, String::new(), line_start(line)))
+            };
+            Some(LineSet::new(
+                &unit.module,
+                &loaded.source,
+                &loaded.parsed,
+                &loaded.index,
+                &opts.duplicates,
+                disabled,
+            ))
+        })
+        .collect();
+    super::duplicates::report(&sets, opts.duplicates.min)
+        .into_iter()
+        .map(|message| Diagnostic {
+            code: DUPLICATE.into(),
+            message,
+            range: file_start(),
+            severity: Severity::Info,
+            fix: None,
+        })
+        .collect()
+}
+
 /// R0401's diagnostic.
 pub fn cycle_diagnostic(cycle: &str) -> Diagnostic {
     Diagnostic {
@@ -702,6 +765,7 @@ mod tests {
                     .into_owned(),
                 module: module_name(path, &[root.to_path_buf()], true).unwrap(),
                 is_package: path.file_name().is_some_and(|n| n == "__init__.py"),
+                duplicates: true,
             })
             .collect();
         let options: Vec<(String, String)> = options
@@ -792,6 +856,31 @@ mod tests {
     }
 
     #[test]
+    fn an_absolute_import_inside_a_package_is_shown_as_written() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("stdlib/_collections_abc.py", "class Mapping: ...\n"),
+                ("stdlib/collections/__init__.py", ""),
+                ("pkg/__init__.py", ""),
+                (
+                    "pkg/a.py",
+                    "import collections.abc\nfrom collections.abc import Mapping\nfrom nothing.sub import x\n",
+                ),
+            ],
+        );
+        let found = run(dir.path(), &[]);
+        assert_eq!(
+            found
+                .iter()
+                .map(|f| (f.1, f.3.as_str()))
+                .collect::<Vec<_>>(),
+            [(3, "Unable to import 'nothing.sub'")]
+        );
+    }
+
+    #[test]
     fn guards_and_fallbacks_silence_a_missing_import() {
         let dir = tempfile::tempdir().unwrap();
         write(
@@ -842,28 +931,3 @@ mod tests {
         );
     }
 }
-    #[test]
-    fn an_absolute_import_inside_a_package_is_shown_as_written() {
-        let dir = tempfile::tempdir().unwrap();
-        write(
-            dir.path(),
-            &[
-                ("stdlib/_collections_abc.py", "class Mapping: ...\n"),
-                ("stdlib/collections/__init__.py", ""),
-                ("pkg/__init__.py", ""),
-                (
-                    "pkg/a.py",
-                    "import collections.abc\nfrom collections.abc import Mapping\nfrom nothing.sub import x\n",
-                ),
-            ],
-        );
-        let found = run(dir.path(), &[]);
-        assert_eq!(
-            found
-                .iter()
-                .map(|f| (f.1, f.3.as_str()))
-                .collect::<Vec<_>>(),
-            [(3, "Unable to import 'nothing.sub'")]
-        );
-    }
-

@@ -11,7 +11,7 @@ use std::path::Path;
 
 use support::Project;
 
-const SELECT: &str = "select = [\"E0401\", \"E0402\", \"E0611\", \"R0401\"]\n";
+const SELECT: &str = "select = [\"E0401\", \"E0402\", \"E0611\", \"R0401\", \"R0801\"]\n";
 
 /// A project holding the tree `name` of `tests/data/project`, with the
 /// rules above selected.
@@ -24,22 +24,27 @@ fn project(name: &str) -> Project {
     project
 }
 
-/// The findings of a run as `path:line:code:message`, sorted.
+/// The findings of a run as `path:line:code:message`, sorted. A duplicate
+/// is one entry: its first line and its `==module:[a:b]` lines, joined by
+/// `|`, without the copied lines, which Pylint takes from either file.
 fn findings(project: &Project, args: &[&str]) -> Vec<String> {
     let run = project.run(args);
     assert!(run.code <= 1, "{run:?}");
-    let mut found: Vec<String> = run
-        .finding_lines()
-        .iter()
-        .map(|line| {
+    let mut found: Vec<String> = Vec::new();
+    for line in run.finding_lines() {
+        if line.starts_with("==") {
+            let last = found.last_mut().unwrap();
+            last.push('|');
+            last.push_str(line);
+        } else if line.contains(" error ") || line.contains(" info ") {
             let mut parts = line.splitn(4, ':');
             let (path, row) = (parts.next().unwrap(), parts.next().unwrap());
             let rest = parts.last().unwrap();
             let (code, message) = rest.split_once(") ").unwrap();
             let code = code.split_whitespace().nth(1).unwrap();
-            format!("{path}:{row}:{code}:{message}")
-        })
-        .collect();
+            found.push(format!("{path}:{row}:{code}:{message}"));
+        }
+    }
     found.sort();
     found
 }
@@ -68,6 +73,33 @@ fn cycles_match_pylint() {
         findings(&project("cycles"), &["--no-cache"]),
         expected("cycles")
     );
+}
+
+#[test]
+fn duplicates_match_pylint() {
+    let project = project("duplicates");
+    assert_eq!(findings(&project, &["--no-cache"]), expected("duplicates"));
+}
+
+#[test]
+fn the_duplicate_options_reach_the_rule() {
+    let project = project("duplicates");
+    let config = |options: &str| format!("{SELECT}[options]\n{options}\n");
+    project.write("ferrolint.toml", config("min-similarity-lines = \"3\""));
+    assert_eq!(
+        findings(&project, &["--no-cache"]),
+        expected("duplicates.min3")
+    );
+    project.write(
+        "ferrolint.toml",
+        config("ignore-imports = \"n\"\nignore-signatures = \"n\""),
+    );
+    assert_eq!(
+        findings(&project, &["--no-cache"]),
+        expected("duplicates.keep")
+    );
+    project.write("ferrolint.toml", config("min-similarity-lines = \"0\""));
+    assert!(findings(&project, &["--no-cache"]).is_empty());
 }
 
 #[test]

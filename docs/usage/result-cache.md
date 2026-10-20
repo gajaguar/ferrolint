@@ -33,13 +33,13 @@ A run keeps its results in `.ferrolint-cache/` in the working directory;
 * Replay feeds the same suppression, filtering and ordering steps as a
   cold run, so the report is byte-identical. Nothing evicts old entries;
   deleting the directory is always safe.
-* The project rules (`E0401`, `E0402`, `E0611`, `R0401`) depend on files other
-  than the one reported, so they are not in a file's entry. They run after the
-  per-file pass on every run, and their findings are stored as one project
-  entry, keyed on every linted file's bytes, path and module name, the rules
-  that report for it, the options, `py-version`, `VIRTUAL_ENV` and
-  `PYTHONPATH`. The entry also records a stamp of each directory listed and
-  file read while resolving imports (its entries' names, or a file's size and
+* The project rules (`E0401`, `E0402`, `E0611`, `R0401`, `R0801`) depend on
+  files other than the one reported, so they are not in a file's entry. They run
+  after the per-file pass on every run, and their findings are stored as one
+  project entry, keyed on every linted file's bytes, path and module name, the
+  rules that report for it, the options, `py-version`, `VIRTUAL_ENV` and
+  `PYTHONPATH`. The entry also records a stamp of each directory listed and file
+  read while resolving imports (its entries' names, or a file's size and
   modification time); a run replays the entry only while every stamp still
   holds, so installing a package or adding a module on the search path reruns
   the phase. A run that enables none of these rules does not run the phase.

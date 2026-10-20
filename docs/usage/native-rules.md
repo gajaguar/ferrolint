@@ -1168,7 +1168,17 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
   `# pylint: disable=cyclic-import` leaves the graph.
 
-These four rules need the whole run, not one file. They run after the
+* `R0801` `duplicate-code`: lines that two or more linted files share, found
+  as `symilar` finds them: the stripped lines of every file, a window of
+  `min-similarity-lines` of them (default 4) hashed, and the windows that
+  match merged into runs. Reported once, at line 1 of the last file, as
+  `Similar lines in N files` followed by `==module:[start:end]` for each file
+  and the shared lines. `min-similarity-lines`, `ignore-comments`,
+  `ignore-docstrings`, `ignore-imports` and `ignore-signatures` apply.
+  A line under `# pylint: disable=duplicate-code` leaves the comparison, and
+  so does a file whose configuration (`per-file-ignores`) turns the rule off.
+
+These five rules need the whole run, not one file. They run after the
 per-file pass and keep their result in one cache entry: see
 [Result cache](result-cache.md).
 
@@ -1179,7 +1189,8 @@ Known divergences from Pylint, where Pylint infers the second argument:
   a parameter, a subscript such as `list[int]`. A union held by a name is
   never judged (Pylint infers it only when both sides are classes).
 
-Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`):
+Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
+`R0801`):
 
 * Without `VIRTUAL_ENV` the standard library and the installed packages are
   unknown, so an absolute import is never reported as missing and a name is
@@ -1188,11 +1199,21 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`):
 * `R0401` is reported once per cycle at line 1 of the file that sorts last
   among the linted ones; Pylint attaches it to the file it checked last, in
   filesystem order. The cycles and their text agree.
+* `R0801` takes the files in name order and attaches the message to the last
+  one; Pylint takes them in the order of its file walk. Pylint prints the
+  lines of any one of the files (a set's iteration order); this prints those
+  of the first. Several `R0401` or `R0801` findings of one run come out
+  ordered by message, since both sit at the same position. The hash of a
+  window is the sum of its lines' hashes, as in Pylint 4.1.3, so a window of
+  the same lines in another order matches too. The `R0401` cycles are found
+  by a search whose order depends on the order of the files, so a project
+  with many overlapping cycles may list other cycles (over the same modules)
+  than Pylint.
 * Pylint reads astroid's brain plugins, which add names to some modules
   (`hashlib`, `six`, `numpy` and others); those modules accept any name here.
   A name that a module imports from another is not followed to what it infers
   to.
-* `TYPE_CHECKING`, `ImportError`, `typing` and `suppress` are recognised by
+* `TYPE_CHECKING`, `ImportError`, `typing` and `suppress` are recognized by
   their spelling and the file's own imports, where Pylint infers them.
 * The cache entry stamps the directories and files the resolution read; a
   `.pth` file edited in place without a size or time change is not noticed.
