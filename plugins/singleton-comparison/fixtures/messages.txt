@@ -1,0 +1,34 @@
+8: Comparison 'frame['lat'] != None' should be 'frame['lat'] is not None'
+8: Comparison 'frame["it's"] == None' should be 'frame["it's"] is None'
+8: Comparison 'frame['single'] == None' should be 'frame['single'] is None'
+12: Comparison 'False == r.valid' should be 'False is r.valid' if checking for the singleton value False, or 'not r.valid' if testing for falsiness
+13: Comparison 'None == r.valid' should be 'None is r.valid'
+13: Comparison 'None != r.valid' should be 'None is not r.valid'
+13: Comparison 'True == r' should be 'True is r' if checking for the singleton value True, or 'bool(r)' if testing for truthiness
+13: Comparison 'False != r' should be 'False is not r' if checking for the singleton value False, or 'bool(r)' if testing for truthiness
+17: Comparison 'None == None' should be 'None is None'
+17: Comparison 'True != None' should be 'True is not None' if checking for the singleton value True, or 'not None' if testing for falsiness
+17: Comparison 'False == True' should be 'False is True' if checking for the singleton value False, or 'not True' if testing for falsiness
+21: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'x' if testing for truthiness
+23: Comparison 'y != False' should be 'y is not False' if checking for the singleton value False, or 'y' if testing for truthiness
+25: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'x' if testing for truthiness
+27: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'x' if testing for truthiness
+28: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+29: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+30: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'x' if testing for truthiness
+31: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+32: Comparison 'i == True' should be 'i is True' if checking for the singleton value True, or 'i' if testing for truthiness
+33: Comparison 'i == True' should be 'i is True' if checking for the singleton value True, or 'bool(i)' if testing for truthiness
+34: Comparison 'items == True' should be 'items is True' if checking for the singleton value True, or 'bool(items)' if testing for truthiness
+35: Comparison 'i != False' should be 'i is not False' if checking for the singleton value False, or 'i' if testing for truthiness
+36: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'x' if testing for truthiness
+37: Comparison 'x != False' should be 'x is not False' if checking for the singleton value False, or 'x' if testing for truthiness
+38: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+39: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+40: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+41: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+42: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+43: Comparison 'x == True' should be 'x is True' if checking for the singleton value True, or 'bool(x)' if testing for truthiness
+43: Comparison 'x != True' should be 'x is not True' if checking for the singleton value True, or 'not x' if testing for falsiness
+43: Comparison 'x == False' should be 'x is False' if checking for the singleton value False, or 'not x' if testing for falsiness
+43: Comparison 'x != False' should be 'x is not False' if checking for the singleton value False, or 'bool(x)' if testing for truthiness

@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **plugins.md**: `singleton-comparison` words `C0121` like Pylint for quoted
+  operands, operand order and the `bool(...)` suggestion.
+
 * **native-rules.md**: Batch V adds `W0632` unbalanced-tuple-unpacking and
   `W0644` unbalanced-dict-unpacking, for tuple, list, set and dict displays
   (also behind a name or a function of the file) and the views of a dict.
