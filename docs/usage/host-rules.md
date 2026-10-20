@@ -19,3 +19,18 @@ plugin rule.
 
 A file with a syntax error still gets its comment checks, but no plugin
 runs on it.
+
+`FL003` words its message as Pylint's `E0001` does:
+`Parsing failed: '<error> (<module>, line N)'`, where `<module>` is the
+dotted name the file imports under (its path below the nearest directory
+without `__init__.py`) and `N` is the line the finding reports.
+
+Known divergences from Pylint:
+
+* `<error>` is the Ruff parser's text, not CPython's: `missing closing quote
+  in string literal` where Pylint says `unterminated string literal (detected
+  at line 35)`.
+* The line can differ: Ruff reports an unclosed bracket at the end of the file,
+  where CPython reports the line of the bracket.
+* For an `__init__.py`, `<module>` is the package name (`pkg`), as the import
+  system names it; `pylint .` names the file `pkg.__init__`.

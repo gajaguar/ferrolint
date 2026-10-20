@@ -655,7 +655,7 @@ fn ac_14_text_output_default() {
             "a.py:1:1: warning IMP001 (W0611, unused-import) Unused import os",
             "a.py:2:1: warning IMP001 (W0611, unused-import) Unused import sys",
             "a.py:2:13: warning FL002 `# noqa` without codes suppresses nothing; name the codes",
-            "d.py:1:12: error FL003 (E0001, syntax-error) Expected a parameter or the end of the parameter list",
+            "d.py:1:12: error FL003 (E0001, syntax-error) Parsing failed: 'Expected a parameter or the end of the parameter list (d, line 1)'",
             "pkg/c.py:1:1: warning IMP001 (W0611, unused-import) Unused Any imported from typing",
         ]
     );

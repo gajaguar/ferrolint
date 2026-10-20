@@ -576,7 +576,7 @@ impl Linter<'_> {
             return Ok((entry, Vec::new()));
         };
         let known = |name: &str| setup.registry.resolve(name).is_some();
-        entry.host = checks::check(&source, &parsed, &index, &known);
+        entry.host = checks::check(&source, &parsed, &index, file.module, &known);
         if parsed.has_no_syntax_errors() && native::wanted(enabled) {
             let flat = ast::flatten(&source, &index, parsed.syntax());
             let model = Model::build(

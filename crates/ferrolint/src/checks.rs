@@ -155,18 +155,25 @@ pub fn check(
     source: &str,
     parsed: &Parsed<ModModule>,
     index: &LineIndex,
+    module: &str,
     known: &dyn Fn(&str) -> bool,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     if let Some(error) = parsed.errors().first() {
+        let range = index.range(
+            source,
+            error.location.start().to_u32(),
+            error.location.end().to_u32(),
+        );
+        // The shape of Pylint's E0001; the parser's text stands in for CPython's.
+        let message = format!(
+            "Parsing failed: '{} ({module}, line {})'",
+            error.error, range.start.line
+        );
         diagnostics.push(Diagnostic {
             code: SYNTAX_ERROR.into(),
-            message: error.error.to_string(),
-            range: index.range(
-                source,
-                error.location.start().to_u32(),
-                error.location.end().to_u32(),
-            ),
+            message,
+            range,
             severity: Severity::Error,
             fix: None,
         });
@@ -209,4 +216,28 @@ pub fn check(
         }
     }
     diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use ferrolint_core::LineIndex;
+    use ruff_python_ast::PySourceType;
+    use ruff_python_parser::{ParseOptions, parse_unchecked};
+
+    use super::check;
+
+    #[test]
+    fn syntax_error_names_the_module_as_pylint_does() {
+        let source = "x = 1\ndef f(:\n    pass\n";
+        let parsed = parse_unchecked(source, ParseOptions::from(PySourceType::Python))
+            .try_into_module()
+            .unwrap();
+        let index = LineIndex::new(source);
+        let diagnostics = check(source, &parsed, &index, "pkg.sub.mod", &|_| true);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            "Parsing failed: 'Expected a parameter or the end of the parameter list (pkg.sub.mod, line 2)'"
+        );
+    }
 }
