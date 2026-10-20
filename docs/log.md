@@ -5,6 +5,17 @@
 * **plugins.md**: `singleton-comparison` words `C0121` like Pylint for quoted
   operands, operand order and the `bool(...)` suggestion.
 
+* **native-rules.md**: Batch W completes `pylint.extensions.docparams` with
+  `W9012`, `W9014`, `W9019`, `W9020` and `W9021`.
+
+* **native-rules.md**: Batch W adds the return, raise and yield messages of
+  `pylint.extensions.docparams`: `W9006`, `W9008`, `W9010`, `W9011` and
+  `W9013`.
+
+* **native-rules.md**: Added Batch W - the parameter messages of
+  `pylint.extensions.docparams` (`W9005`, `W9015` to `W9018`), over a
+  docstring parser for the Sphinx, Epytext, Google and NumPy styles.
+
 * **native-rules.md**: Batch V adds `W0632` unbalanced-tuple-unpacking and
   `W0644` unbalanced-dict-unpacking, for tuple, list, set and dict displays
   (also behind a name or a function of the file) and the views of a dict.

@@ -1,0 +1,55 @@
+15:W9011:Missing return documentation
+15:W9012:Missing return type documentation
+20:W9011:Missing return documentation
+20:W9011:Missing return documentation
+20:W9012:Missing return type documentation
+20:W9012:Missing return type documentation
+32:W9008:Redundant returns documentation
+40:W9008:Redundant returns documentation
+56:W9012:Missing return type documentation
+62:W9011:Missing return documentation
+62:W9012:Missing return type documentation
+74:W9011:Missing return documentation
+74:W9012:Missing return type documentation
+90:W9011:Missing return documentation
+90:W9012:Missing return type documentation
+99:W9008:Redundant returns documentation
+129:W9010:Redundant yields documentation
+129:W9011:Missing return documentation
+129:W9012:Missing return type documentation
+151:W9013:Missing yield documentation
+151:W9014:Missing yield type documentation
+156:W9013:Missing yield documentation
+156:W9014:Missing yield type documentation
+179:W9008:Redundant returns documentation
+179:W9013:Missing yield documentation
+179:W9014:Missing yield type documentation
+188:W9010:Redundant yields documentation
+188:W9011:Missing return documentation
+188:W9012:Missing return type documentation
+197:W9011:Missing return documentation
+197:W9012:Missing return type documentation
+216:W9010:Redundant yields documentation
+216:W9011:Missing return documentation
+216:W9012:Missing return type documentation
+223:W9013:Missing yield documentation
+223:W9014:Missing yield type documentation
+233:W9011:Missing return documentation
+233:W9012:Missing return type documentation
+251:W9011:Missing return documentation
+251:W9012:Missing return type documentation
+256:W9012:Missing return type documentation
+264:W9014:Missing yield type documentation
+285:W9008:Redundant returns documentation
+298:W9011:Missing return documentation
+298:W9012:Missing return type documentation
+301:W9011:Missing return documentation
+301:W9012:Missing return type documentation
+305:W9013:Missing yield documentation
+305:W9014:Missing yield type documentation
+310:W9011:Missing return documentation
+310:W9012:Missing return type documentation
+314:W9011:Missing return documentation
+314:W9012:Missing return type documentation
+354:W9014:Missing yield type documentation
+363:W9011:Missing return documentation

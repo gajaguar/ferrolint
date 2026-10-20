@@ -1,0 +1,8 @@
+4:W9019:"_b, ignored_d, unused_c" useless ignored parameter documentation
+4:W9020:"_b, ignored_d" useless ignored parameter type documentation
+17:W9019:"_b" useless ignored parameter documentation
+33:W9020:"_b" useless ignored parameter type documentation
+50:W9019:"_b" useless ignored parameter documentation
+50:W9020:"_b" useless ignored parameter type documentation
+59:W9019:"_b" useless ignored parameter documentation
+59:W9020:"_b" useless ignored parameter type documentation

@@ -28,6 +28,8 @@ mod conditions;
 mod contextmgr;
 mod deprecated;
 mod django;
+mod docparams;
+mod docstring;
 mod duplicate_args;
 mod exceptions;
 mod extensions;
@@ -103,6 +105,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &contextmgr::ContextManagers,
     &deprecated::Deprecated,
     &django::Django,
+    &docparams::DocParams,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
     &extensions::Extensions,

@@ -1,0 +1,21 @@
+4:W9019:"_b, ignored_d, unused_c" useless ignored parameter documentation
+4:W9020:"_b, ignored_d" useless ignored parameter type documentation
+17:W9019:"_b" useless ignored parameter documentation
+33:W9020:"_b" useless ignored parameter type documentation
+50:W9019:"_b" useless ignored parameter documentation
+50:W9020:"_b" useless ignored parameter type documentation
+59:W9019:"_b" useless ignored parameter documentation
+59:W9020:"_b" useless ignored parameter type documentation
+71:W9021:Missing any documentation in "nothing_documented"
+78:W9021:Missing any documentation in "nothing_documented_google"
+86:W9015:"a, b" missing in parameter documentation
+86:W9016:"b" missing in parameter type documentation
+100:W9015:"**kwargs, *args" missing in parameter documentation
+107:W9015:"a" missing in parameter documentation
+107:W9016:"a" missing in parameter type documentation
+128:W9015:"a, b" missing in parameter documentation
+128:W9016:"a, b" missing in parameter type documentation
+134:W9015:"a, b" missing in parameter documentation
+134:W9016:"a, b" missing in parameter type documentation
+140:W9015:"a, b" missing in parameter documentation
+140:W9016:"a, b" missing in parameter type documentation
