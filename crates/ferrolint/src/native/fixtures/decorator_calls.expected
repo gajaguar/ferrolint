@@ -1,0 +1,9 @@
+8:R0202:Consider using a decorator instead of calling classmethod
+9:R0203:Consider using a decorator instead of calling staticmethod
+14:R0202:Consider using a decorator instead of calling classmethod
+22:R0203:Consider using a decorator instead of calling staticmethod
+39:R0203:Consider using a decorator instead of calling staticmethod
+48:R0202:Consider using a decorator instead of calling classmethod
+54:R0203:Consider using a decorator instead of calling staticmethod
+59:R0202:Consider using a decorator instead of calling classmethod
+98:R0203:Consider using a decorator instead of calling staticmethod

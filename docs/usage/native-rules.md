@@ -179,8 +179,8 @@ Statements and text:
 * `W0105` `pointless-string-statement`, `W0124` `confusing-with-statement`,
   `C0200` `consider-using-enumerate` and `R1713` `consider-using-join`
   (it reads `suggest-join-with-non-empty-separator`).
-* `W4701` `modified-iterating-list`, `E4702` `modified-iterating-dict` and
-  `W4801` `looping-through-iterator`.
+* `W4701` `modified-iterating-list`, `E4702` `modified-iterating-dict`,
+  `E4703` `modified-iterating-set` and `W4801` `looping-through-iterator`.
 * `E0113` `invalid-star-assignment-target` and `E3102`
   `positional-only-arguments-expected`.
 * `C0302` `too-many-lines` (`max-module-lines`, default 1000), reported on
@@ -196,9 +196,9 @@ Statements and text:
 `E1904` `multiple-class-sub-patterns`, `R1905` `match-class-bind-self` and
 `R1906` `match-class-positional-attributes`.
 
-Not ported: `R0917` `too-many-positional-arguments` (a project may disable it),
-`E4703` `modified-iterating-set` and the other `pylint-django` rules
-`R5101` and `R5103`, which a typical run does not need.
+Not ported: `R0917` `too-many-positional-arguments` (a project may disable it)
+and the other `pylint-django` rules `R5101` and `R5103`, which a typical run
+does not need.
 
 Known divergences from Pylint, where Pylint infers a value, a class or a
 call:
@@ -237,9 +237,10 @@ call:
 * `C0117` fires for a comparison whose two sides have a known type: a
   literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
   a call of a builtin class, or `len` of one of these. Pylint infers more.
-* `W4701` and `E4702` take the iterated name as a list or dict when it is
-  assigned a display, `list()`, `dict()` or `list` of a display of
-  constants; an attribute (`self.items`) is not followed. `W4801` finds an
+* `W4701`, `E4702` and `E4703` take the iterated name as a list, dict or set
+  when it is assigned a display, `list()`, `dict()`, `set()` or `list` or
+  `set` of a display of constants; an attribute (`self.items`) is not
+  followed. `W4801` finds an
   iterator in a generator expression, a generator function of the file and
   the calls of `map`, `filter`, `zip`, `iter`, `reversed`, `enumerate` and
   `itertools` (through imports).
@@ -828,3 +829,39 @@ Known divergences:
   ported: they need to know which pragma silenced each finding, and `I0021`
   would call a pragma useless when it names a message ferrolint does not
   implement.
+
+## Batch O: Ruff preview rules
+
+ferrolint does not run Ruff: it only reads Ruff's parser crates, and a user runs
+the `ruff` binary beside it. Ruff's preview rules are therefore out of reach
+of a ferrolint setting, and these five Pylint messages, which Ruff has only
+as preview rules, are ported.
+
+* `E4703` `modified-iterating-set`: a set that the `for` loop iterating it
+  adds to, removes from, clears or pops (`add`, `clear`, `discard`, `pop`,
+  `remove`), or whose loop target it deletes. Beside `W4701` and `E4702`,
+  with the same rules for what the loop iterates (see Batch C).
+* `R0202` `no-classmethod-decorator` and `R0203` `no-staticmethod-decorator`:
+  `name = classmethod(method)` or `staticmethod(method)` in a class body,
+  where `method` is a function of the class. As in Pylint the callee is
+  matched by its name alone, the argument must be a plain name, and the
+  first binding of that name in the class must be a `def`. The message sits on
+  the first assignment target.
+* `W0244` `redefined-slots-in-subclass`: a slot of a class that an ancestor
+  with `__slots__` already has, reported on the `__slots__` value as
+  `Redefined slots ['a', 'b'] in subclass`. The slots of an ancestor are
+  those of its whole MRO, and none when one class there has no plain slots,
+  as in astroid.
+* `W3201` `bad-dunder-name` (`pylint.extensions.dunder`): a method (not an
+  `async def`, which Pylint skips) whose name starts and ends with `_` and is
+  not one of Python's special names, those of `py-version` and
+  `good-dunder-names`. Reports only when `load-plugins` names the extension.
+
+Known divergences:
+
+* `W0244` reads `__slots__` as the slot rules do (a display of strings written
+  in the class body), so a value built by a call (`tuple([...])`) or a name
+  is not followed. The ancestors come from the MRO of Batch G. A class of the
+  file with a builtin base other than `object` has no slots, as in Pylint,
+  but a class of another module with one is not told apart, so its slots
+  count.

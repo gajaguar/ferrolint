@@ -22,7 +22,7 @@ const CONFUSING_ELIF: &str = "R5601";
 const MATH_NOT_FLOAT: &str = "R6106";
 
 /// Whether the configuration loads `pylint.extensions.<module>`.
-fn loaded(ctx: &Ctx<'_>, module: &str) -> bool {
+pub(super) fn loaded(ctx: &Ctx<'_>, module: &str) -> bool {
     ctx.option("load-plugins").is_some_and(|list| {
         list.split(',')
             .any(|name| name.trim().strip_prefix("pylint.extensions.") == Some(module))

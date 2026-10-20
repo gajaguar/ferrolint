@@ -1,7 +1,8 @@
 //! Statements and the text around them: `W0105` pointless-string-statement,
 //! `W0124` confusing-with-statement, `C0200` consider-using-enumerate,
 //! `R1713` consider-using-join, `W4701` modified-iterating-list, `E4702`
-//! modified-iterating-dict, `W4801` looping-through-iterator, `E3102`
+//! modified-iterating-dict, `E4703` modified-iterating-set, `W4801`
+//! looping-through-iterator, `E3102`
 //! positional-only-arguments-expected, `R5102`
 //! http-response-with-content-type-json (pylint-django), `E0113`
 //! invalid-star-assignment-target, `C0302`
@@ -33,6 +34,7 @@ const ENUMERATE: &str = "C0200";
 const JOIN: &str = "R1713";
 const LIST: &str = "W4701";
 const DICT: &str = "E4702";
+const SET: &str = "E4703";
 const ITERATOR: &str = "W4801";
 const POSITIONAL_ONLY: &str = "E3102";
 const STAR_TARGET: &str = "E0113";
@@ -74,6 +76,11 @@ impl Checker for Statements {
                 DICT,
                 "modified-iterating-dict",
                 "A dict modified in the loop that iterates it.",
+            ),
+            rule(
+                SET,
+                "modified-iterating-set",
+                "A set modified in the loop that iterates it.",
             ),
             rule(
                 ITERATOR,
@@ -122,6 +129,7 @@ impl Checker for Statements {
             JOIN,
             LIST,
             DICT,
+            SET,
             ITERATOR,
             POSITIONAL_ONLY,
             JSON_RESPONSE,
@@ -549,10 +557,10 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    /// Whether `expr` infers to a list (`Some(true)`) or a dict
-    /// (`Some(false)`) node: a literal, `list()` and `dict()`, `list(...)` of
-    /// a literal of constants, or a name that is assigned one of them.
-    fn container(&self, expr: &'a Expr) -> Option<bool> {
+    /// Whether `expr` infers to a list, dict or set node: a literal,
+    /// `list()`, `dict()` and `set()`, `list(...)` or `set(...)` of a literal
+    /// of constants, or a name that is assigned one of them.
+    fn container(&self, expr: &'a Expr) -> Option<Kind> {
         let value = match expr {
             Expr::Name(name) => {
                 let binding = self.env.binding(name)?;
@@ -564,16 +572,19 @@ impl<'a> Walk<'a, '_> {
             other => other,
         };
         match value {
-            Expr::List(_) => Some(true),
-            Expr::Dict(_) => Some(false),
+            Expr::List(_) => Some(Kind::List),
+            Expr::Dict(_) => Some(Kind::Dict),
+            Expr::Set(_) => Some(Kind::Set),
             Expr::Call(call)
                 if matches!(&*call.func, Expr::Name(_)) && call.arguments.keywords.is_empty() =>
             {
                 let builtin = self.env.qualified(&call.func)?;
                 match (builtin.as_str(), &call.arguments.args[..]) {
-                    ("list", []) => Some(true),
-                    ("dict", []) => Some(false),
-                    ("list", [only]) => self.constants(only).then_some(true),
+                    ("list", []) => Some(Kind::List),
+                    ("dict", []) => Some(Kind::Dict),
+                    ("set", []) => Some(Kind::Set),
+                    ("list", [only]) => self.constants(only).then_some(Kind::List),
+                    ("set", [only]) => self.constants(only).then_some(Kind::Set),
                     _ => None,
                 }
             }
@@ -611,7 +622,7 @@ impl<'a> Walk<'a, '_> {
         })
     }
 
-    /// W4701 and E4702 for a loop that iterates a name.
+    /// W4701, E4702 and E4703 for a loop that iterates a name.
     fn modified(&mut self, node: &'a StmtFor) {
         let Expr::Name(iterated) = &*node.iter else {
             return;
@@ -619,14 +630,15 @@ impl<'a> Walk<'a, '_> {
         let Some(binding) = self.env.binding(iterated) else {
             return;
         };
-        let kind = self.container(&node.iter);
-        let Some(list) = kind else { return };
+        let Some(kind) = self.container(&node.iter) else {
+            return;
+        };
         let mut modified = Modified {
             env: self.env,
             iterated: iterated.id.as_str(),
             binding: binding.id,
             target: &node.target,
-            list,
+            kind,
             found: Vec::new(),
         };
         modified.visit_body(&node.body);
@@ -899,8 +911,16 @@ struct Modified<'x, 'a> {
     iterated: &'x str,
     binding: u32,
     target: &'x Expr,
-    list: bool,
+    kind: Kind,
     found: Vec<(TextRange, &'static str, String)>,
+}
+
+/// What a loop iterates, for the rules about modifying it.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    List,
+    Dict,
+    Set,
 }
 impl Modified<'_, '_> {
     /// Whether `expr` names the iterated variable.
@@ -909,22 +929,26 @@ impl Modified<'_, '_> {
             && self.env.binding(n).is_some_and(|b| b.id == self.binding))
     }
     fn report(&mut self, range: TextRange) {
-        let (id, message) = if self.list {
-            (
+        let name = self.iterated;
+        let (id, message) = match self.kind {
+            Kind::List => (
                 LIST,
                 format!(
-                    "Iterated list '{}' is being modified inside for loop body, consider iterating through a copy of it instead.",
-                    self.iterated
+                    "Iterated list '{name}' is being modified inside for loop body, consider iterating through a copy of it instead."
                 ),
-            )
-        } else {
-            (
+            ),
+            Kind::Dict => (
                 DICT,
                 format!(
-                    "Iterated dict '{}' is being modified inside for loop body, iterate through a copy of it instead.",
-                    self.iterated
+                    "Iterated dict '{name}' is being modified inside for loop body, iterate through a copy of it instead."
                 ),
-            )
+            ),
+            Kind::Set => (
+                SET,
+                format!(
+                    "Iterated set '{name}' is being modified inside for loop body, iterate through a copy of it instead."
+                ),
+            ),
         };
         self.found.push((range, id, message));
     }
@@ -937,16 +961,19 @@ impl<'b> Visitor<'b> for Modified<'_, '_> {
             {
                 self.report(stmt.range());
             }
-            Stmt::Expr(e) if self.list => {
+            Stmt::Expr(e) if self.kind != Kind::Dict => {
                 if let Expr::Call(call) = &*e.value
                     && let Expr::Attribute(a) = &*call.func
                     && self.same(&a.value)
-                    && matches!(a.attr.as_str(), "append" | "remove")
+                    && match self.kind {
+                        Kind::List => matches!(a.attr.as_str(), "append" | "remove"),
+                        _ => matches!(a.attr.as_str(), "add" | "clear" | "discard" | "pop" | "remove"),
+                    }
                 {
                     self.report(stmt.range());
                 }
             }
-            Stmt::Assign(a) if !self.list => {
+            Stmt::Assign(a) if self.kind == Kind::Dict => {
                 if let Some(Expr::Subscript(s)) = a.targets.first()
                     && self.same(&s.value)
                     // updating the key that the loop is on is fine
@@ -1032,7 +1059,7 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
                 if self.on(ENUMERATE) && !node.is_async {
                     self.enumerate(node);
                 }
-                if !node.is_async && (self.on(LIST) || self.on(DICT)) {
+                if !node.is_async && (self.on(LIST) || self.on(DICT) || self.on(SET)) {
                     self.modified(node);
                 }
                 self.loops.push(node);
@@ -1081,6 +1108,13 @@ mod tests {
         let expected = include_str!("fixtures/statements.expected").trim_end();
         let options = [("load-plugins", "pylint_django")];
         assert_eq!(render(source, &options, BATCH_C), expected);
+    }
+
+    #[test]
+    fn modified_iterating_set() {
+        let source = include_str!("fixtures/modified_iterating_set.py");
+        let expected = include_str!("fixtures/modified_iterating_set.expected").trim_end();
+        assert_eq!(render(source, &[], BATCH_C), expected);
     }
 
     #[test]

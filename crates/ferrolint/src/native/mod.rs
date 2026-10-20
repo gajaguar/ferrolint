@@ -35,6 +35,7 @@ mod imports;
 mod instance_attrs;
 mod logging;
 mod matchpat;
+mod members;
 mod misc;
 mod names;
 mod overrides;
@@ -102,6 +103,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &instance_attrs::InstanceAttrs,
     &logging::Logging,
     &matchpat::MatchPatterns,
+    &members::Members,
     &misc::Misc,
     &names::Naming,
     &overrides::Overrides,
