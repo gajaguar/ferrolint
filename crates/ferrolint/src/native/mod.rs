@@ -15,11 +15,13 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod ancestors;
 mod astring;
 mod bad_super;
 mod booleaness;
 mod calls;
 mod class_members;
+mod class_bases;
 mod classes;
 mod code_style;
 mod conditions;
@@ -89,9 +91,11 @@ pub trait Checker: Sync {
 
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
+    &ancestors::Ancestors,
     &bad_super::BadSuper,
     &booleaness::Booleaness,
     &calls::Calls,
+    &class_bases::ClassBases,
     &classes::Classes,
     &code_style::CodeStyle,
     &conditions::Conditions,

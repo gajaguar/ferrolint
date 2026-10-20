@@ -24,6 +24,17 @@
   expression stands for, without type inference.
 * **native-rules.md**: Added Batch R - `E1120`, `E1121`, `E1123`, `E1124` and `E1125`, the arity of a call, on the
   callees that `W1114` resolves.
+
+* **native-rules.md**: Added Batch U - `E0110`, `E0240`, `E0244`, `W0239` and
+  `W0240`, on abstract instantiation, inconsistent MROs, enumerations that
+  already have members and `typing.final` classes and methods. A package
+  directory is no longer a module root, so a sibling `collections.py` does not
+  hide the standard library's, and `collections.abc` reads as
+  `_collections_abc`.
+* **native-rules.md**: Added Batch T - `W0222`, `W0233`, `W0236`, `W0246` and
+  `R0901`, the override and ancestor-count messages that read the MRO of
+  Batch G; removed the stale line that listed `W0237` and `E0203` as not
+  ported.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.

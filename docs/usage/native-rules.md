@@ -330,8 +330,6 @@ Not ported:
   is still here, to tell `W0601` from it. Pylint skips `W0603` for a
   statement that gets `W0601` or `W0602`; the `global-statement` plugin
   reports it anyway.
-* `W0237` `arguments-renamed` and `E0203` `access-member-before-definition`
-  need the class hierarchy across files.
 * `E0601` `used-before-assignment` shares the filter of `E0606` but gets its
   other cases from `try` blocks, which are not run (see below).
 
@@ -1002,3 +1000,93 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the
   callee.
+
+## Batch T: overrides and ancestors
+
+The ancestors are those of Batch G (see its divergences for what is read).
+
+* `W0222` `signature-differs`: a method that takes fewer default values than
+  the method it overrides, with the same parameters otherwise; the filters of
+  `W0221` apply (private names, setters, `@overload` stubs, constructors).
+* `W0233` `non-parent-init-called`: in `__init__`, `Name.__init__(self)` where
+  `Name` is a class that is not a direct base (builtins such as `object` and
+  `Exception` included), and `self.__init__()`; a `Name.__init__` that is a
+  direct base is counted once, as `W0231` counts it. `super().__init__` ends
+  the check.
+* `W0236` `invalid-overridden-method`: a method overridden as a property, or a
+  property as a method, `classmethod` or `staticmethod`, and a method
+  overridden as `async` or the reverse. `property`, `functools.cached_property`,
+  `abc.abstractproperty`, a subclass of `property` and `@x.setter` count as
+  properties.
+* `W0246` `useless-parent-delegation`: a method whose only statement (after
+  the docstring) calls the same method of `super()` with its own parameters,
+  and that adds no decorator, default, annotation or `*args` the parent lacks.
+  `__new__`, `__init_subclass__`, `__class_getitem__` and an `__hash__` next to
+  an `__eq__` are left out. `super(Class, self)` and `super(self.__class__,
+  self)` count.
+* `R0901` `too-many-ancestors`: more ancestors than `max-parents` (default 7),
+  the classes in Pylint's list of standard classes and in `ignored-parents`
+  (and what they inherit) not counted. The builtin exceptions, `ABC`,
+  `Generic`, `Protocol` and the builtin types count as Pylint counts them, and
+  so does the `NoneType` astroid adds to a class that derives from `Enum` or
+  `Flag`.
+
+Known divergences:
+
+* A method of a builtin parent is not judged by `W0222`, `W0236` and `W0246`
+  (Pylint reads its signature from the interpreter, `dict.__iter__` for
+  instance); only a class with no base but the project's own and `object`,
+  `ABC`, `Generic` or `Protocol` is compared with `object`, for `__init__`,
+  `__repr__`, `__str__`, `__dir__`, `__sizeof__`, `__reduce__` and
+  `__getstate__` written with `self` alone.
+* `W0236` takes a decorator that is a function returning a property for an
+  ordinary method.
+* `W0246` compares default values as written: `1`, `1.0` and `True` differ here
+  and are equal in Python.
+* `W0233` needs every base to be known, and skips a call whose target it
+  cannot resolve.
+* `R0901` leaves out a base it cannot read, as Pylint does for one it cannot
+  infer, so a count can fall short; a module name bound by an import and again
+  by an assignment (`try: import x` / `except ImportError: x = None`) is such a
+  base.
+
+## Batch U: final classes and methods, inheritance and instantiation
+
+The bases are those of Batch G (see its divergences for what is read).
+
+* `E0240` `inconsistent-mro`: bases that cannot be merged into a method
+  resolution order, as `class C(A, B)` with `B` derived from `A`, and a class
+  that derives from one that is inconsistent. `object` before another base
+  counts. A base that cannot be read is left out, as Pylint leaves out one it
+  cannot infer, so the rule still reports the bases it can read. Duplicate
+  bases are `E0241`, which is not ported.
+* `E0244` `invalid-enum-extension`: a direct base that derives from `Enum`
+  (`IntEnum`, `Flag`, `StrEnum` included) and holds a member. A member is any
+  name of its body bound only by assignments, the first with a value, other
+  than `_ignore_`; so `_order_ = ...` counts, and `kind: int` does not.
+* `W0240` `subclassed-final-class`: one message per direct base decorated
+  with `typing.final` (or `typing_extensions.final`, called or not), also for
+  `Base[int]`.
+* `W0239` `overridden-final-method`: a method that overrides the one that its
+  closest ancestor binds, when that one is decorated with `typing.final`.
+  `W0239` and `W0240` stay silent for `py-version` below 3.8.
+* `E0110` `abstract-class-instantiated`: a call of a class that still has a
+  method decorated with `abc.abstractmethod`, `abstractproperty`,
+  `abstractclassmethod` or `abstractstaticmethod` after the overrides of its
+  MRO, when its metaclass is `ABCMeta` itself, declared or by deriving from
+  `ABC`. A call inside the body of that class, or of a function in it, is
+  left alone, and so is a `Protocol`.
+
+Known divergences:
+
+* `E0240` does not know the builtin classes other than `object`, so
+  `class A(int, bool)` and `class A(dict, OrderedDict)` pass.
+* `E0110` and `W0239` name a class only as an import, a class of the file or an
+  attribute chain resolves it; a class held by a variable (`Alias = Base`), a
+  parameter or a re-export (`from .compat import final`) is not seen. A class
+  with a base it cannot read has no MRO, so `E0110` skips it.
+* `E0244` finds a member in plain assignments, the way astroid's `Enum`
+  support does, and does not follow a `for`, `with` or `except` that binds one.
+  An enum the standard library builds without an `Enum` base in its source
+  (`http.HTTPStatus`, made by `@_simple_enum`, and `signal.Signals`, made by
+  `_convert_`) is not seen.

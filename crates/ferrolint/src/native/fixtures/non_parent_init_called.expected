@@ -1,0 +1,17 @@
+27:W0233:__init__ method from a non direct base class 'Base' is called
+35:W0233:__init__ method from a non direct base class 'Base' is called
+40:W0233:__init__ method from a non direct base class 'Other' is called
+47:W0233:__init__ method from a non direct base class 'Base' is called
+56:W0233:__init__ method from a non direct base class 'Base' is called
+61:W0233:__init__ method from a non direct base class 'Base' is called
+66:W0231:__init__ method from base class 'Base' is not called
+67:W0233:__init__ method from a non direct base class 'object' is called
+68:W0233:__init__ method from a non direct base class 'Exception' is called
+75:W0233:__init__ method from a non direct base class 'Leaf8' is called
+79:W0231:__init__ method from base class 'Base' is not called
+81:W0233:__init__ method from a non direct base class 'Other' is called
+86:W0233:__init__ method from a non direct base class 'Other' is called
+93:W0231:__init__ method from base class 'Base' is not called
+94:W0233:__init__ method from a non direct base class 'Other' is called
+95:W0233:__init__ method from a non direct base class 'Leaf10' is called
+102:W0233:__init__ method from a non direct base class 'Other' is called

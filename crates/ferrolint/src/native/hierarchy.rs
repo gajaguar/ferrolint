@@ -10,7 +10,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use ruff_python_ast::{Expr, StmtClassDef};
+use ruff_python_ast::{Decorator, Expr, StmtClassDef};
 use ruff_text_size::TextSize;
 
 use super::classes::{Env, bases};
@@ -50,11 +50,29 @@ impl Class<'_> {
     }
 }
 
+/// A base as written, and what the MRO makes of it.
+enum Entry<'a> {
+    Class(Class<'a>),
+    Object,
+    /// A builtin, `Generic` or another base that adds no method.
+    Empty,
+    Unknown,
+}
+
+/// Why bases have no MRO, as astroid tells them apart.
+#[derive(Clone, Copy, PartialEq)]
+enum Fail {
+    Duplicate,
+    Inconsistent,
+}
+
 pub struct Hierarchy<'a, 'e> {
     pub env: &'e Env<'a>,
     pub project: Project,
     /// The MRO of each class met, by key; `None` when it cannot be built.
     cache: RefCell<HashMap<String, Option<Vec<Class<'a>>>>>,
+    /// The same, with the bases the project cannot read left out.
+    known: RefCell<HashMap<String, Result<Vec<Class<'a>>, Fail>>>,
 }
 
 impl<'a, 'e> Hierarchy<'a, 'e> {
@@ -63,7 +81,20 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
             env,
             project: Project::with_packages(env.ctx.path, env.ctx.module),
             cache: RefCell::default(),
+            known: RefCell::default(),
         }
+    }
+
+    /// Whether a decorator names `typing.final`, as written in `owner`.
+    pub fn is_final(&self, owner: &Class<'a>, decorators: &[Decorator]) -> bool {
+        decorators.iter().any(|decorator| {
+            let expr = match &decorator.expression {
+                Expr::Call(call) => &*call.func,
+                other => other,
+            };
+            self.qualify(owner, expr)
+                .is_some_and(|name| name == "typing.final" || name == "typing_extensions.final")
+        })
     }
 
     /// The dotted name `expr` stands for where `class` is written.
@@ -93,54 +124,77 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     /// The class `expr` names where `class` is written, or `None` when it
     /// names none the project holds.
     pub fn resolve(&self, class: &Class<'a>, expr: &Expr) -> Option<Class<'a>> {
-        if let Class::Local(_) = class
-            && let Some(local) = self.env.class_of(expr)
-        {
+        match class {
+            Class::Local(_) => self.resolve_here(expr),
+            Class::Remote(_) => {
+                let qualified = self.qualify(class, expr)?;
+                self.project.class(&qualified).map(Class::Remote)
+            }
+        }
+    }
+
+    /// The class `expr` names where it is written in this file.
+    pub fn resolve_here(&self, expr: &Expr) -> Option<Class<'a>> {
+        if let Some(local) = self.env.class_of(expr) {
             return Some(Class::Local(local));
         }
-        let qualified = self.qualify(class, expr)?;
-        let qualified = match class {
-            Class::Local(_) => self.project.absolute(&qualified),
-            Class::Remote(_) => qualified,
-        };
+        let qualified = self.project.absolute(&self.env.qualified(expr)?);
         self.project.class(&qualified).map(Class::Remote)
     }
 
-    /// The direct bases of `class`, or `None` when one is unknown.
-    pub fn bases(&self, class: &Class<'a>) -> Option<Vec<Class<'a>>> {
+    /// The bases of `class` as written, each as the MRO reads it.
+    fn entries(&self, class: &Class<'a>) -> Vec<Entry<'a>> {
         match class {
             Class::Local(def) => bases(def)
                 .iter()
-                .filter_map(|base| {
+                .map(|base| {
                     // `Base[T]` derives from `Base`.
                     let base = match base {
                         Expr::Subscript(s) => &*s.value,
                         other => other,
                     };
                     if let Some(local) = self.env.class_of(base) {
-                        return Some(Some(Class::Local(local)));
+                        return Entry::Class(Class::Local(local));
                     }
                     let Some(qualified) = self.env.qualified(base) else {
-                        return Some(None);
+                        return Entry::Unknown;
                     };
+                    if qualified == "object" {
+                        return Entry::Object;
+                    }
                     // A builtin has no module part and declares nothing abstract.
                     if !qualified.contains('.') || EMPTY_BASES.contains(&qualified.as_str()) {
-                        return None;
+                        return Entry::Empty;
                     }
                     let qualified = self.project.absolute(&qualified);
-                    Some(self.project.class(&qualified).map(Class::Remote))
+                    self.project
+                        .class(&qualified)
+                        .map_or(Entry::Unknown, |class| Entry::Class(Class::Remote(class)))
                 })
                 .collect(),
             Class::Remote(remote) => remote
                 .bases(&self.project)
                 .into_iter()
-                .filter_map(|base| match base {
-                    Ok(base) => Some(Some(Class::Remote(base))),
-                    Err(name) if EMPTY_BASES.contains(&name.as_str()) => None,
-                    Err(_) => Some(None),
+                .map(|base| match base {
+                    Ok(base) => Entry::Class(Class::Remote(base)),
+                    Err(name) if name == "object" => Entry::Object,
+                    Err(name) if EMPTY_BASES.contains(&name.as_str()) => Entry::Empty,
+                    Err(_) => Entry::Unknown,
                 })
                 .collect(),
         }
+    }
+
+    /// The direct bases of `class`, or `None` when one is unknown.
+    pub fn bases(&self, class: &Class<'a>) -> Option<Vec<Class<'a>>> {
+        self.entries(class)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Entry::Class(base) => Some(Some(base)),
+                Entry::Unknown => Some(None),
+                Entry::Object | Entry::Empty => None,
+            })
+            .collect()
     }
 
     /// The C3 linearization of `class`, as Python computes it.
@@ -168,6 +222,64 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
             .flatten();
         self.cache.borrow_mut().insert(key, found.clone());
         found
+    }
+}
+
+impl<'a> Hierarchy<'a, '_> {
+    /// Whether the bases of `class`, or of one of its ancestors, cannot be
+    /// merged into an MRO, as astroid's `InconsistentMroError`. A base the
+    /// project cannot read is left out, as astroid leaves out an uninferable
+    /// one; a builtin other than `object` is not modelled, so `class A(int,
+    /// bool)` passes.
+    pub fn inconsistent(&self, class: &Class<'a>) -> bool {
+        matches!(self.known_mro(class, 0), Err(Fail::Inconsistent))
+    }
+
+    fn known_mro(&self, class: &Class<'a>, depth: u8) -> Result<Vec<Class<'a>>, Fail> {
+        let key = class.key();
+        if let Some(found) = self.known.borrow().get(&key) {
+            return found.clone();
+        }
+        let found = if depth < 32 {
+            self.merge_known(class, depth)
+        } else {
+            Ok(vec![class.clone()])
+        };
+        self.known.borrow_mut().insert(key, found.clone());
+        found
+    }
+
+    fn merge_known(&self, class: &Class<'a>, depth: u8) -> Result<Vec<Class<'a>>, Fail> {
+        let mut bases = Vec::new();
+        let mut object_first = false;
+        let mut seen_object = false;
+        for entry in self.entries(class) {
+            match entry {
+                Entry::Class(base) => {
+                    object_first |= seen_object;
+                    bases.push(base);
+                }
+                Entry::Object => seen_object = true,
+                Entry::Empty | Entry::Unknown => {}
+            }
+        }
+        let mut seqs = bases
+            .iter()
+            .map(|base| self.known_mro(base, depth + 1))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut keys: Vec<String> = bases.iter().map(Class::key).collect();
+        keys.sort();
+        if keys.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(Fail::Duplicate);
+        }
+        // `object` heads the MRO of every base, so it cannot come first.
+        if object_first {
+            return Err(Fail::Inconsistent);
+        }
+        seqs.push(bases);
+        let mut out = vec![class.clone()];
+        out.extend(merge(seqs).ok_or(Fail::Inconsistent)?);
+        Ok(out)
     }
 }
 

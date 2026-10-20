@@ -1,0 +1,12 @@
+68:W0222:Signature differs from overridden 'm2' method
+74:W0221:Number of parameters was 3 in 'A.m4' and is now 3 in overriding 'B.m4' method
+80:W0222:Signature differs from overridden '_m6' method
+98:W0222:Signature differs from overridden 'm9' method
+102:W0222:Signature differs from overridden 'm10' method
+105:W0222:Signature differs from overridden '__post_init__' method
+108:W0222:Signature differs from overridden '__new__' method
+114:W0222:Signature differs from overridden 'm12' method
+117:W0222:Signature differs from overridden '__eq__' method
+128:W0222:Signature differs from overridden 'm13' method
+136:W0221:Number of parameters was 3 in 'B.m12' and is now 2 in overriding 'C.m12' method
+149:W0222:Signature differs from overridden 'm2' method

@@ -1,0 +1,15 @@
+118:E0110:Abstract class 'Base' with abstract methods instantiated
+126:E0110:Abstract class 'Base' with abstract methods instantiated
+130:E0110:Abstract class 'Base' with abstract methods instantiated
+131:E0110:Abstract class 'ByMeta' with abstract methods instantiated
+132:E0110:Abstract class 'ByAbcMeta' with abstract methods instantiated
+136:E0110:Abstract class 'Partial' with abstract methods instantiated
+137:E0110:Abstract class 'Deep' with abstract methods instantiated
+138:E0110:Abstract class 'Property' with abstract methods instantiated
+139:E0110:Abstract class 'OldProperty' with abstract methods instantiated
+140:E0110:Abstract class 'ClassMethod' with abstract methods instantiated
+144:E0110:Abstract class 'MixedLast' with abstract methods instantiated
+145:E0110:Abstract class 'AbstractAgain' with abstract methods instantiated
+149:E0110:Abstract class 'Base' with abstract methods instantiated
+154:E0110:Abstract class 'Base' with abstract methods instantiated
+166:E0110:Abstract class 'Base' with abstract methods instantiated
