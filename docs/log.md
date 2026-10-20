@@ -2,6 +2,12 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Added Batch P - `E0110`, `E0240`, `E0244`, `W0239` and
+  `W0240`, on abstract instantiation, inconsistent MROs, enumerations that
+  already have members and `typing.final` classes and methods. A package
+  directory is no longer a module root, so a sibling `collections.py` does not
+  hide the standard library's, and `collections.abc` reads as
+  `_collections_abc`.
 * **native-rules.md**: Added Batch O - `W0222`, `W0233`, `W0236`, `W0246` and
   `R0901`, the override and ancestor-count messages that read the MRO of
   Batch G; removed the stale line that listed `W0237` and `E0203` as not

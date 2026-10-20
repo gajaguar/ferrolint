@@ -20,6 +20,7 @@ mod astring;
 mod bad_super;
 mod booleaness;
 mod calls;
+mod class_bases;
 mod classes;
 mod code_style;
 mod conditions;
@@ -90,6 +91,7 @@ const CHECKERS: &[&dyn Checker] = &[
     &bad_super::BadSuper,
     &booleaness::Booleaness,
     &calls::Calls,
+    &class_bases::ClassBases,
     &classes::Classes,
     &code_style::CodeStyle,
     &conditions::Conditions,

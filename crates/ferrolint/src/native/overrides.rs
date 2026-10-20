@@ -1,11 +1,12 @@
 //! The rules on a method against the one it overrides: `W0221`
 //! arguments-differ, `W0222` signature-differs, `W0237` arguments-renamed,
-//! `W0236` invalid-overridden-method, `W0246` useless-parent-delegation, and
-//! on the `__init__` calls of a constructor, `W0231` super-init-not-called and
-//! `W0233` non-parent-init-called. The ancestors come from
-//! [`super::hierarchy`]: a class without an MRO is not checked, nor a base
-//! Pylint reads from a running interpreter (a builtin such as `dict`), whose
-//! methods it does not compare either.
+//! `W0236` invalid-overridden-method, `W0239` overridden-final-method,
+//! `W0246` useless-parent-delegation, and on the `__init__` calls of a
+//! constructor, `W0231` super-init-not-called and `W0233`
+//! non-parent-init-called. The ancestors come from [`super::hierarchy`]: a
+//! class without an MRO is not checked, nor a base Pylint reads from a running
+//! interpreter (a builtin such as `dict`), whose methods it does not compare
+//! either.
 
 use std::collections::BTreeSet;
 
@@ -30,7 +31,8 @@ const SUPER_INIT: &str = "W0231";
 const NON_PARENT_INIT: &str = "W0233";
 const INVALID_OVERRIDE: &str = "W0236";
 const USELESS_DELEGATION: &str = "W0246";
-const IDS: [&str; 7] = [
+const FINAL_METHOD: &str = "W0239";
+const IDS: [&str; 8] = [
     DIFFER,
     SIGNATURE,
     RENAMED,
@@ -38,6 +40,7 @@ const IDS: [&str; 7] = [
     NON_PARENT_INIT,
     INVALID_OVERRIDE,
     USELESS_DELEGATION,
+    FINAL_METHOD,
 ];
 
 /// The builtin classes a `Name.__init__(self)` call can name.
@@ -260,6 +263,11 @@ impl Checker for Overrides {
                 "useless-parent-delegation",
                 "A method that only calls the same method of `super()` with its own parameters.",
             ),
+            rule(
+                FINAL_METHOD,
+                "overridden-final-method",
+                "A method that overrides a method decorated with `typing.final`.",
+            ),
         ]
     }
 
@@ -418,7 +426,7 @@ impl<'a> Walk<'a, '_> {
                 if self.enabled.contains(SUPER_INIT) || self.enabled.contains(NON_PARENT_INIT) {
                     self.constructor(class, method);
                 }
-            } else if [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE]
+            } else if [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE, FINAL_METHOD]
                 .iter()
                 .any(|id| self.enabled.contains(*id))
             {
@@ -461,6 +469,21 @@ impl<'a> Walk<'a, '_> {
         self.compare(class, def, parent, method);
         if self.enabled.contains(INVALID_OVERRIDE) {
             self.invalid_override(&Class::Local(class), owner, parent, method);
+        }
+        if self.enabled.contains(FINAL_METHOD)
+            && self.env.ctx.py_version.is_none_or(|v| v >= (3, 8))
+            && self.hierarchy.is_final(owner, &parent.decorator_list)
+        {
+            let message = format!(
+                "Method {} overrides a method decorated with typing.final which is defined in class {}",
+                py_repr(name),
+                py_repr(&def.name)
+            );
+            self.out.push(
+                self.env
+                    .ctx
+                    .report_at(FINAL_METHOD, method.name.range(), message),
+            );
         }
     }
 
@@ -519,7 +542,7 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    /// Pylint's `_check_invalid_overridden_method`, less the `typing.final` test.
+    /// Pylint's `_check_invalid_overridden_method`: `W0236`.
     fn invalid_override(
         &mut self,
         own: &Class<'a>,
@@ -1133,6 +1156,13 @@ mod tests {
         let source = include_str!("fixtures/invalid_overridden_method.py");
         let expected = include_str!("fixtures/invalid_overridden_method.expected").trim_end();
         assert_eq!(render(source, &[], &["W0236"]), expected);
+    }
+
+    #[test]
+    fn overridden_final_method() {
+        let source = include_str!("fixtures/overridden_final_method.py");
+        let expected = include_str!("fixtures/overridden_final_method.expected").trim_end();
+        assert_eq!(render(source, &[], &["W0239"]), expected);
     }
 
     #[test]

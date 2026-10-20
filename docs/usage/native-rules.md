@@ -875,3 +875,44 @@ Known divergences:
   infer, so a count can fall short; a module name bound by an import and again
   by an assignment (`try: import x` / `except ImportError: x = None`) is such a
   base.
+
+## Batch P: final classes and methods, inheritance and instantiation
+
+The bases are those of Batch G (see its divergences for what is read).
+
+* `E0240` `inconsistent-mro`: bases that cannot be merged into a method
+  resolution order, as `class C(A, B)` with `B` derived from `A`, and a class
+  that derives from one that is inconsistent. `object` before another base
+  counts. A base that cannot be read is left out, as Pylint leaves out one it
+  cannot infer, so the rule still reports the bases it can read. Duplicate
+  bases are `E0241`, which is not ported.
+* `E0244` `invalid-enum-extension`: a direct base that derives from `Enum`
+  (`IntEnum`, `Flag`, `StrEnum` included) and holds a member. A member is any
+  name of its body bound only by assignments, the first with a value, other
+  than `_ignore_`; so `_order_ = ...` counts, and `kind: int` does not.
+* `W0240` `subclassed-final-class`: one message per direct base decorated
+  with `typing.final` (or `typing_extensions.final`, called or not), also for
+  `Base[int]`.
+* `W0239` `overridden-final-method`: a method that overrides the one that its
+  closest ancestor binds, when that one is decorated with `typing.final`.
+  `W0239` and `W0240` stay silent for `py-version` below 3.8.
+* `E0110` `abstract-class-instantiated`: a call of a class that still has a
+  method decorated with `abc.abstractmethod`, `abstractproperty`,
+  `abstractclassmethod` or `abstractstaticmethod` after the overrides of its
+  MRO, when its metaclass is `ABCMeta` itself, declared or by deriving from
+  `ABC`. A call inside the body of that class, or of a function in it, is
+  left alone, and so is a `Protocol`.
+
+Known divergences:
+
+* `E0240` does not know the builtin classes other than `object`, so
+  `class A(int, bool)` and `class A(dict, OrderedDict)` pass.
+* `E0110` and `W0239` name a class only as an import, a class of the file or an
+  attribute chain resolves it; a class held by a variable (`Alias = Base`), a
+  parameter or a re-export (`from .compat import final`) is not seen. A class
+  with a base it cannot read has no MRO, so `E0110` skips it.
+* `E0244` finds a member in plain assignments, the way astroid's `Enum`
+  support does, and does not follow a `for`, `with` or `except` that binds one.
+  An enum the standard library builds without an `Enum` base in its source
+  (`http.HTTPStatus`, made by `@_simple_enum`, and `signal.Signals`, made by
+  `_convert_`) is not seen.

@@ -71,10 +71,13 @@ impl Project {
                 .rsplit_once('.')
                 .map_or(String::new(), |(p, _)| p.to_owned())
         };
+        // A package directory is no root, as on `sys.path`: its `collections.py`
+        // does not hide the standard library's.
         let roots = path
             .ancestors()
             .skip(1)
             .take(LEVELS)
+            .filter(|dir| !dir.join("__init__.py").is_file())
             .map(Path::to_path_buf)
             .collect();
         Self {
@@ -187,6 +190,12 @@ impl Project {
 
     fn class_at(&self, qualified: &str, depth: u8) -> Option<ClassRef> {
         let (module, name) = qualified.rsplit_once('.')?;
+        // `collections.abc` has no file of its own: the interpreter aliases it.
+        let module = if module == "collections.abc" {
+            "_collections_abc"
+        } else {
+            module
+        };
         let loaded = self.load(module)?;
         if find_class(&loaded.parsed.syntax().body, name).is_some() {
             return Some(ClassRef {
@@ -656,6 +665,23 @@ mod tests {
         let project = Project::new(&root.path().join("app/views.py"), "app.views");
         let class = project.class("api.base.Base").unwrap();
         assert_eq!(class.qname(), "api.base.Base");
+    }
+
+    #[test]
+    fn a_module_of_the_package_does_not_hide_one_of_the_same_name() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write("app/base.py", "class Local:\n    pass\n");
+        write("base.py", "class Top:\n    pass\n");
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        assert!(project.class("base.Top").is_some());
+        assert!(project.class("base.Local").is_none());
     }
 
     #[test]
