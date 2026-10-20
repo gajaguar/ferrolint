@@ -1090,3 +1090,55 @@ Known divergences:
   An enum the standard library builds without an `Enum` base in its source
   (`http.HTTPStatus`, made by `@_simple_enum`, and `signal.Signals`, made by
   `_convert_`) is not seen.
+
+## Batch V: overlapping exceptions, unpacking and the result of a call
+
+* `W0714` `overlapping-except`: two classes of one `except` tuple (or list)
+  that are the same class (`ValueError and ValueError are the same`,
+  `IOError and OSError`) or where one is an ancestor of the other, one message
+  per pair. It belongs to `pylint.extensions.overlapping_exceptions`, so it
+  reports only when `load-plugins` names that module. The hierarchy is the
+  builtin exceptions and the classes of the file; `builtins.X`, `os.error`,
+  `select.error` and `socket.error` are `OSError`, and `socket.timeout` is
+  `TimeoutError`. `bad-except-order` (`E0701`) reads the same names now.
+* `E1111` `assignment-from-no-return` and `E1128` `assignment-from-none`:
+  `x = f()` where `f` is a function of the file with no `return`, or with
+  `return` statements that all return nothing or `None`. Like Pylint it
+  leaves out a decorated function, an `async` one, a generator, one whose body
+  is a lone `raise` or ends in a `raise` with no `return`, and one whose first
+  statement raises `NotImplementedError`. `E1111` names the function and
+  suggests `sorted(...)` or `reversed(...)` after `sort` and `reverse`, or what
+  `known-side-effects-only-functions` pairs. Only an `Assign` counts: an
+  annotated assignment and `x += f()` do not.
+* `W0632` `unbalanced-tuple-unpacking` and `W0644` `unbalanced-dict-unpacking`:
+  `a, b = value` whose number of names differs from the items of `value`, and
+  `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
+  from the items of every key or value. `value` is a tuple, list, set or dict
+  display, a name bound once to one, a call of a function of the file whose
+  only `return` returns one, or the view of such a dict. The tuple rule words
+  the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
+  as `defined at line N` otherwise. A starred name on the left, an abstract
+  enclosing class, a starred element in the display and a dict with `**other`
+  are left out, as in Pylint. A loop over the dict itself is not judged:
+  Pylint leaves it to `dict-iter-missing-items` (`E1141`).
+
+Not ported: `E0633` `unpacking-non-sequence` needs the type of a value.
+
+Known divergences from Pylint, where Pylint infers a class or a callee:
+
+* `W0714` leaves out a class held by a variable (`Alias = ValueError`), a
+  class the file defines twice and one imported from another module; a local
+  class counts the builtin and local bases it can read as its ancestors.
+* `E1111` and `E1128` take the callee that `W1114` resolves (see Batch B and
+  Batch R), a constructor aside: a name bound once to a function of the file
+  or `self.method` of the enclosing class. A method called as `Class.method(x)`,
+  a method that only a base class defines, a name that the function binds
+  again further down and a builtin method such as `lst.sort()` are not
+  followed, where Pylint infers the callee.
+* `W0632` and `W0644` follow no more than the displays above. A name bound twice
+  (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
+  a conditional expression, a slice or a sum, an attribute such as `self.v`,
+  a property, a classmethod, a lambda and a method called as `Class.method()`
+  are not judged. A display with a starred element, such as `(*t, 1)`, and a
+  dict with `**other` are left out, where Pylint expands them, and an
+  f-string inside the display is written with double quotes in the message.

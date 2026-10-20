@@ -1,0 +1,22 @@
+150:E1111:Assigning result of a function call, but 'no_return' returns None
+151:E1128:Assigning result of a function call, where the function returns None
+152:E1128:Assigning result of a function call, where the function returns None
+155:E1111:Assigning result of a function call, but 'docstring_only' returns None
+156:E1111:Assigning result of a function call, but 'ellipsis_only' returns None
+160:E1128:Assigning result of a function call, where the function returns None
+169:E1111:Assigning result of a function call, but 'nested_return' returns None
+170:E1128:Assigning result of a function call, where the function returns None
+171:E1111:Assigning result of a function call, but 'loop_only' returns None
+172:E1111:Assigning result of a function call, but 'sort' returns None, did you mean to use 'sorted(...)' instead?
+173:E1128:Assigning result of a function call, where the function returns None
+213:E1111:Assigning result of a function call, but 'no_return' returns None
+214:E1128:Assigning result of a function call, where the function returns None
+217:E1111:Assigning result of a function call, but 'no_return' returns None
+219:E1111:Assigning result of a function call, but 'no_return' returns None
+237:E1111:Assigning result of a function call, but 'nothing' returns None
+238:E1128:Assigning result of a function call, where the function returns None
+279:E1128:Assigning result of a function call, where the function returns None
+281:E1111:Assigning result of a function call, but 'sort' returns None, did you mean to use 'sorted(...)' instead?
+282:E1111:Assigning result of a function call, but 'reverse' returns None, did you mean to use 'reversed(...)' instead?
+288:E1111:Assigning result of a function call, but 'no_return' returns None
+325:E1111:Assigning result of a function call, but 'nothing' returns None

@@ -2,6 +2,19 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch V adds `W0632` unbalanced-tuple-unpacking and
+  `W0644` unbalanced-dict-unpacking, for tuple, list, set and dict displays
+  (also behind a name or a function of the file) and the views of a dict.
+
+* **native-rules.md**: Batch V adds `E1111` assignment-from-no-return and
+  `E1128` assignment-from-none, for the functions of the file that `W1114`
+  resolves.
+
+* **native-rules.md**: Added Batch V - `W0714` overlapping-except, on the
+  builtin exception tree and the classes of the file; it needs
+  `pylint.extensions.overlapping_exceptions`. `E0701` follows `builtins.X`,
+  `socket.error` and the other names of a builtin exception.
+
 * **native-rules.md**: `W0614` skips a module whose compiled `.so` sits next to
   its `.py` (astroid loads the compiled one and finds it empty), as Pylint does.
 

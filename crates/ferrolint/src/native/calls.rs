@@ -4,14 +4,17 @@
 //! arguments-out-of-order and `W1117` kwarg-superseded-by-positional-arg; and
 //! the arity of the same callees: `E1120` no-value-for-parameter, `E1121`
 //! too-many-function-args, `E1123` unexpected-keyword-arg, `E1124`
-//! redundant-keyword-arg and `E1125` missing-kwoa.
+//! redundant-keyword-arg and `E1125` missing-kwoa; and `E1111`
+//! assignment-from-no-return and `E1128` assignment-from-none for a function
+//! of the file.
 //!
 //! shortcut: Pylint infers what a call calls. Here a callee is a name bound
 //! once to an undecorated function of this file, `self.method` of the
 //! enclosing class, or a class of this file with an `__init__` (`W1114` and
 //! `W1117`, and the arity rules, which also drop a class whose bases are not
 //! all known); a `self` is a `TestCase` when a base is named `...TestCase`
-//! (`W1503`). Upgrade with a call inference.
+//! (`W1503`). `E1111` and `E1128` take the same callees but a constructor,
+//! and not the builtin methods (`lst.sort()`). Upgrade with a call inference.
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -22,7 +25,11 @@ use ruff_python_ast::{
     StmtRaise,
 };
 
+use super::abstract_methods::raises_not_implemented;
 use super::classes::{Env, Local, const_repr, is_static, locals, py_repr};
+use super::flow::own_returns;
+use super::misc::csv;
+use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -38,6 +45,8 @@ const TOO_MANY: &str = "E1121";
 const UNEXPECTED: &str = "E1123";
 const REDUNDANT: &str = "E1124";
 const MISSING_KWOA: &str = "E1125";
+const NO_RETURN: &str = "E1111";
+const NONE_RETURNED: &str = "E1128";
 const ARITY: [&str; 5] = [MISSING, TOO_MANY, UNEXPECTED, REDUNDANT, MISSING_KWOA];
 
 pub struct Calls;
@@ -81,6 +90,16 @@ impl Checker for Calls {
                 "A keyword argument named like a positional-only parameter of a function with `**kwargs`.",
             ),
             rule(
+                NO_RETURN,
+                "assignment-from-no-return",
+                "The result of a call to a function of the file that returns nothing, assigned.",
+            ),
+            rule(
+                NONE_RETURNED,
+                "assignment-from-none",
+                "The result of a call to a function of the file that returns only `None`, assigned.",
+            ),
+            rule(
                 MISSING,
                 "no-value-for-parameter",
                 "A call that leaves a parameter without a value.",
@@ -117,6 +136,8 @@ impl Checker for Calls {
             FORMAT_TUPLE,
             OUT_OF_ORDER,
             SUPERSEDED,
+            NO_RETURN,
+            NONE_RETURNED,
         ]
         .into_iter()
         .chain(ARITY);
@@ -273,92 +294,13 @@ impl<'a> Walk<'a, '_> {
 
     /// The function a call calls, with how Pylint names the call.
     fn callee(&self, call: &ExprCall) -> Option<Callee<'a>> {
-        match &*call.func {
-            Expr::Name(name) => {
-                if let Some(func) = self.env.func_of(name) {
-                    return func.decorator_list.is_empty().then_some(Callee {
-                        func,
-                        kind: "function",
-                        class: None,
-                    });
-                }
-                let class = self.env.class_of(&call.func)?;
-                let plain = class.decorator_list.is_empty()
-                    && class
-                        .arguments
-                        .as_ref()
-                        .is_none_or(|a| a.keywords.is_empty());
-                let init = own_method(class, "__init__")?;
-                (plain && own_method(class, "__new__").is_none()).then_some(Callee {
-                    func: init,
-                    kind: "constructor",
-                    class: Some(class),
-                })
-            }
-            Expr::Attribute(attribute) => {
-                let Expr::Name(receiver) = &*attribute.value else {
-                    return None;
-                };
-                let is_self = receiver.id.as_str() == "self"
-                    && self
-                        .env
-                        .binding(receiver)
-                        .is_some_and(|b| b.kind == BindingKind::Parameter);
-                let (class, _) = self.classes.last()?;
-                let func = own_method(class, attribute.attr.as_str()).filter(|_| is_self)?;
-                Some(Callee {
-                    func,
-                    kind: if is_static(func) {
-                        "staticmethod"
-                    } else {
-                        "method"
-                    },
-                    class: None,
-                })
-            }
-            _ => None,
-        }
+        callee(self.env, &self.classes, call)
     }
 
     /// Whether the arity rules can trust `callee`: Pylint reads the
     /// constructor off the whole class, and a method off the instance.
     fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
-        let name = callee.func.name.as_str();
-        match (&*call.func, callee.class) {
-            (_, Some(class)) => self.constructible(class, 0),
-            // A function of a class body is no name inside its methods.
-            (Expr::Name(_), None) => !self.classes.iter().any(|(class, _)| {
-                super::classes::methods(&class.body)
-                    .into_iter()
-                    .any(|m| std::ptr::eq(m, callee.func))
-            }),
-            // Pylint does not judge `self.__init__`, and an attribute
-            // assigned to `self.name` hides the method.
-            _ => {
-                name != "__init__"
-                    && self.classes.last().is_some_and(|(class, _)| {
-                        let mut stores = Stores(name, false);
-                        stores.visit_body(&class.body);
-                        !stores.1
-                    })
-            }
-        }
-    }
-
-    /// Whether the constructor of `class` is its `__init__`: no `__new__`
-    /// and no base but a builtin class or such a class of the file.
-    fn constructible(&self, class: &StmtClassDef, depth: u8) -> bool {
-        depth < 16
-            && !locals(&class.body).iter().any(|(n, _)| n == "__new__")
-            && super::classes::bases(class).iter().all(|base| {
-                self.env.class_of(base).map_or_else(
-                    || {
-                        matches!(base, Expr::Name(n)
-                            if self.env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin))
-                    },
-                    |class| self.constructible(class, depth + 1),
-                )
-            })
+        settled(self.env, &self.classes, call, callee)
     }
 
     fn arguments(&mut self, call: &ExprCall) {
@@ -513,6 +455,68 @@ impl<'a> Walk<'a, '_> {
         self.out.extend(found);
     }
 
+    /// `x = f()` where `f` returns nothing (`E1111`) or only `None` (`E1128`).
+    fn assignment(&mut self, assign: &StmtAssign) {
+        let Expr::Call(call) = &*assign.value else {
+            return;
+        };
+        let Some(func) = function_called(self.env, &self.classes, call)
+            .filter(|func| func.decorator_list.is_empty() && !func.is_async)
+        else {
+            return;
+        };
+        let returns = own_returns(&func.body);
+        // astroid keeps the docstring out of the body
+        let docstring =
+            matches!(func.body.first(), Some(Stmt::Expr(e)) if e.value.is_string_literal_expr());
+        let body = &func.body[usize::from(docstring)..];
+        let raises = |stmt: Option<&Stmt>| matches!(stmt, Some(Stmt::Raise(_)));
+        if (body.len() == 1 && raises(body.first()))
+            || (raises(body.last()) && returns.is_empty())
+            || is_generator(func)
+            || raises_not_implemented(func)
+        {
+            return;
+        }
+        let ctx = self.env.ctx;
+        if returns.is_empty() {
+            if self.on(NO_RETURN) {
+                let name = match &*call.func {
+                    Expr::Attribute(attribute) => attribute.attr.as_str(),
+                    other => name_of(other).unwrap_or_default(),
+                };
+                let hint = csv(
+                    ctx,
+                    "known-side-effects-only-functions",
+                    "reverse:reversed,sort:sorted",
+                )
+                .iter()
+                .filter_map(|pair| pair.split_once(':'))
+                .find(|(function, _)| *function == name)
+                .map_or_else(String::new, |(_, suggestion)| {
+                    format!(", did you mean to use '{suggestion}(...)' instead?")
+                });
+                self.out.push(ctx.report(
+                    NO_RETURN,
+                    assign,
+                    format!("Assigning result of a function call, but '{name}' returns None{hint}"),
+                ));
+            }
+        } else if self.on(NONE_RETURNED)
+            && returns.iter().all(|r| {
+                r.value
+                    .as_deref()
+                    .is_none_or(|v| matches!(v, Expr::NoneLiteral(_)))
+            })
+        {
+            self.out.push(ctx.report(
+                NONE_RETURNED,
+                assign,
+                "Assigning result of a function call, where the function returns None",
+            ));
+        }
+    }
+
     fn dunder_name(&mut self, assign: &StmtAssign) {
         let Some(Expr::Attribute(target)) = assign.targets.first() else {
             return;
@@ -555,16 +559,126 @@ impl<'a> Walk<'a, '_> {
     }
 }
 
+/// The function a call calls, with how Pylint names the call.
+pub(super) fn callee<'a>(
+    env: &Env<'a>,
+    classes: &[(&'a StmtClassDef, bool)],
+    call: &ExprCall,
+) -> Option<Callee<'a>> {
+    match &*call.func {
+        Expr::Name(name) => {
+            if let Some(func) = env.func_of(name) {
+                return func.decorator_list.is_empty().then_some(Callee {
+                    func,
+                    kind: "function",
+                    class: None,
+                });
+            }
+            let class = env.class_of(&call.func)?;
+            let plain = class.decorator_list.is_empty()
+                && class
+                    .arguments
+                    .as_ref()
+                    .is_none_or(|a| a.keywords.is_empty());
+            let init = own_method(class, "__init__")?;
+            (plain && own_method(class, "__new__").is_none()).then_some(Callee {
+                func: init,
+                kind: "constructor",
+                class: Some(class),
+            })
+        }
+        Expr::Attribute(attribute) => {
+            let Expr::Name(receiver) = &*attribute.value else {
+                return None;
+            };
+            let is_self = receiver.id.as_str() == "self"
+                && env
+                    .binding(receiver)
+                    .is_some_and(|b| b.kind == BindingKind::Parameter);
+            let (class, _) = classes.last()?;
+            let func = own_method(class, attribute.attr.as_str()).filter(|_| is_self)?;
+            Some(Callee {
+                func,
+                kind: if is_static(func) {
+                    "staticmethod"
+                } else {
+                    "method"
+                },
+                class: None,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Whether the arity rules can trust `callee`: Pylint reads the
+/// constructor off the whole class, and a method off the instance.
+fn settled<'a>(
+    env: &Env<'a>,
+    classes: &[(&'a StmtClassDef, bool)],
+    call: &ExprCall,
+    callee: &Callee<'a>,
+) -> bool {
+    let name = callee.func.name.as_str();
+    match (&*call.func, callee.class) {
+        (_, Some(class)) => constructible(env, class, 0),
+        // A function of a class body is no name inside its methods.
+        (Expr::Name(_), None) => !classes.iter().any(|(class, _)| {
+            super::classes::methods(&class.body)
+                .into_iter()
+                .any(|m| std::ptr::eq(m, callee.func))
+        }),
+        // Pylint does not judge `self.__init__`, and an attribute
+        // assigned to `self.name` hides the method.
+        _ => {
+            name != "__init__"
+                && classes.last().is_some_and(|(class, _)| {
+                    let mut stores = Stores(name, false);
+                    stores.visit_body(&class.body);
+                    !stores.1
+                })
+        }
+    }
+}
+
+/// Whether the constructor of `class` is its `__init__`: no `__new__`
+/// and no base but a builtin class or such a class of the file.
+fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
+    depth < 16
+        && !locals(&class.body).iter().any(|(n, _)| n == "__new__")
+        && super::classes::bases(class).iter().all(|base| {
+            env.class_of(base).map_or_else(
+                || {
+                    matches!(base, Expr::Name(n)
+                        if env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin))
+                },
+                |class| constructible(env, class, depth + 1),
+            )
+        })
+}
+
+/// The function or method of the file that a call calls, which Pylint
+/// resolves too: no constructor, and no name a class body or a `self.name = ...`
+/// would change.
+pub(super) fn function_called<'a>(
+    env: &Env<'a>,
+    classes: &[(&'a StmtClassDef, bool)],
+    call: &ExprCall,
+) -> Option<&'a StmtFunctionDef> {
+    let callee = callee(env, classes, call).filter(|callee| callee.class.is_none())?;
+    settled(env, classes, call, &callee).then_some(callee.func)
+}
+
 fn named(a: &ParameterWithDefault) -> &str {
     a.parameter.name.as_str()
 }
 
 /// A function a call calls: `kind` is how Pylint names the call, and
 /// `class` the class a constructor call builds.
-struct Callee<'a> {
-    func: &'a StmtFunctionDef,
+pub(super) struct Callee<'a> {
+    pub(super) func: &'a StmtFunctionDef,
     kind: &'static str,
-    class: Option<&'a StmtClassDef>,
+    pub(super) class: Option<&'a StmtClassDef>,
 }
 
 /// Whether a class body assigns an attribute called `.0`.
@@ -629,6 +743,9 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
                 if self.on(DUNDER_NAME) {
                     self.dunder_name(assign);
                 }
+                if self.on(NO_RETURN) || self.on(NONE_RETURNED) {
+                    self.assignment(assign);
+                }
                 visitor::walk_stmt(self, stmt);
             }
             Stmt::Raise(raise) => {
@@ -675,6 +792,24 @@ mod tests {
         let source = include_str!("fixtures/call_arguments.py");
         let expected = include_str!("fixtures/call_arguments.expected").trim_end();
         assert_eq!(render(source, &[], &["W1114", "W1117"]), expected);
+    }
+
+    #[test]
+    fn assignment_from_no_return() {
+        let source = include_str!("fixtures/assignment_from_no_return.py");
+        let expected = include_str!("fixtures/assignment_from_no_return.expected").trim_end();
+        assert_eq!(render(source, &[], &["E1111", "E1128"]), expected);
+    }
+
+    #[test]
+    fn side_effects_hints_follow_the_option() {
+        let source = "def put():\n    pass\n\n\ndef sort():\n    pass\n\n\nx = put()\ny = sort()\n";
+        let options = [("known-side-effects-only-functions", "put:putting")];
+        assert_eq!(
+            render(source, &options, &["E1111"]),
+            "9:E1111:Assigning result of a function call, but 'put' returns None, did you mean to use 'putting(...)' instead?\n\
+             10:E1111:Assigning result of a function call, but 'sort' returns None"
+        );
     }
 
     #[test]

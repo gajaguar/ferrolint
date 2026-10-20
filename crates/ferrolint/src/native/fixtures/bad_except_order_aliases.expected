@@ -1,0 +1,2 @@
+16:E0701:Bad except clauses order (Exception is an ancestor class of ValueError)
+18:E0701:Bad except clauses order (Exception is an ancestor class of TimeoutError)
