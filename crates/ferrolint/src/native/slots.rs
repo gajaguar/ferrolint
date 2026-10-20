@@ -1,5 +1,6 @@
 //! `__slots__` rules: `E0236` invalid-slots-object, `E0238` invalid-slots,
-//! `E0242` class-variable-slots-conflict and `E0245` declare-non-slot.
+//! `E0242` class-variable-slots-conflict, `E0245` declare-non-slot and
+//! `W0244` redefined-slots-in-subclass.
 //!
 //! shortcut: the slots are read only where `__slots__` is a list, tuple, set
 //! or dict written in the class body (the last assignment, like Pylint's
@@ -14,12 +15,14 @@ use ruff_python_ast::{Expr, Stmt, StmtClassDef};
 use ruff_text_size::Ranged;
 
 use super::classes::{Env, Local, bases, const_repr, locals, py_repr};
+use super::hierarchy::{Class, Hierarchy};
 use super::{Checker, Ctx, rule};
 
 const OBJECT: &str = "E0236";
 const INVALID: &str = "E0238";
 const CONFLICT: &str = "E0242";
 const NON_SLOT: &str = "E0245";
+const REDEFINED: &str = "W0244";
 
 pub struct Slots;
 
@@ -46,11 +49,16 @@ impl Checker for Slots {
                 "declare-non-slot",
                 "An annotated name absent from a class's `__slots__`.",
             ),
+            rule(
+                REDEFINED,
+                "redefined-slots-in-subclass",
+                "A slot that an ancestor's `__slots__` already declares.",
+            ),
         ]
     }
 
     fn check(&self, ctx: &Ctx<'_>, enabled: &BTreeSet<String>, out: &mut Vec<Diagnostic>) {
-        if ![OBJECT, INVALID, CONFLICT, NON_SLOT]
+        if ![OBJECT, INVALID, CONFLICT, NON_SLOT, REDEFINED]
             .iter()
             .any(|id| enabled.contains(*id))
         {
@@ -59,6 +67,7 @@ impl Checker for Slots {
         let env = Env::new(ctx);
         let mut walk = Walk {
             env: &env,
+            hierarchy: enabled.contains(REDEFINED).then(|| Hierarchy::new(&env)),
             enabled,
             out,
         };
@@ -116,18 +125,76 @@ pub(super) fn names(value: &Expr) -> Option<Vec<&str>> {
 
 struct Walk<'a, 'e> {
     env: &'e Env<'a>,
+    hierarchy: Option<Hierarchy<'a, 'e>>,
     enabled: &'e BTreeSet<String>,
     out: &'e mut Vec<Diagnostic>,
 }
 
-impl Walk<'_, '_> {
+impl<'a> Walk<'a, '_> {
     fn on(&self, id: &str) -> bool {
         self.enabled.contains(id)
     }
 
-    fn class(&mut self, class: &StmtClassDef) {
+    /// The slots of `class` and of every class of its MRO, as astroid's
+    /// `slots()` gives them: none when one of those has no plain slots.
+    fn all_slots(&self, hierarchy: &Hierarchy<'a, '_>, class: &Class<'a>) -> Option<Vec<String>> {
+        let mut all = Vec::new();
+        for member in hierarchy.mro(class)? {
+            // a builtin base other than `object` has no slots
+            if let Class::Local(def) = &member
+                && bases(def).iter().any(|base| {
+                    self.env
+                        .qualified(base)
+                        .is_some_and(|q| !q.contains('.') && q != "object")
+                })
+            {
+                return None;
+            }
+            let slots = names(slots_value(member.def()?)?)?;
+            all.extend(slots.into_iter().map(str::to_owned));
+        }
+        Some(all)
+    }
+
+    /// `W0244`: a slot of the class that an ancestor with `__slots__` has.
+    fn redefined(&mut self, class: &'a StmtClassDef, value: &Expr) {
+        let Some(hierarchy) = &self.hierarchy else {
+            return;
+        };
+        let (Some(items), Some(mro)) = (items(value), hierarchy.mro(&Class::Local(class))) else {
+            return;
+        };
+        let inherited: Vec<String> = mro
+            .iter()
+            .skip(1)
+            .filter(|ancestor| ancestor.def().is_some_and(|d| slots_value(d).is_some()))
+            .filter_map(|ancestor| self.all_slots(hierarchy, ancestor))
+            .flatten()
+            .collect();
+        let shown: Vec<String> = items
+            .iter()
+            .filter_map(|item| match item {
+                Expr::StringLiteral(s) => Some(s.value.to_str()),
+                _ => None,
+            })
+            .filter(|name| inherited.iter().any(|slot| slot == name))
+            .map(py_repr)
+            .collect();
+        if !shown.is_empty() {
+            self.out.push(self.env.ctx.report(
+                REDEFINED,
+                value,
+                format!("Redefined slots [{}] in subclass", shown.join(", ")),
+            ));
+        }
+    }
+
+    fn class(&mut self, class: &'a StmtClassDef) {
         if let Some(value) = slots_value(class) {
             self.check_slots(class, value);
+            if self.on(REDEFINED) {
+                self.redefined(class, value);
+            }
         }
         if self.on(NON_SLOT) {
             self.declare_non_slot(class);
@@ -274,6 +341,13 @@ mod tests {
         let expected =
             include_str!("fixtures/invalid_slots_objects_and_conflicts.expected").trim_end();
         assert_eq!(render(source, &[], &["E0236", "E0238", "E0242"]), expected);
+    }
+
+    #[test]
+    fn redefined_slots_in_subclass() {
+        let source = include_str!("fixtures/redefined_slots.py");
+        let expected = include_str!("fixtures/redefined_slots.expected").trim_end();
+        assert_eq!(render(source, &[], &["W0244"]), expected);
     }
 
     #[test]

@@ -1,0 +1,9 @@
+6:W0244:Redefined slots ['b'] in subclass
+10:W0244:Redefined slots ['a', 'c'] in subclass
+22:W0244:Redefined slots ['a'] in subclass
+46:W0244:Redefined slots ['shared', 'left'] in subclass
+50:W0244:Redefined slots ['a'] in subclass
+54:W0244:Redefined slots ['a'] in subclass
+58:W0244:Redefined slots ['a', 'b'] in subclass
+66:W0244:Redefined slots ['a', 'a'] in subclass
+70:W0244:Redefined slots ['a'] in subclass

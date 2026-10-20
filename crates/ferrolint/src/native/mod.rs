@@ -15,14 +15,18 @@ use crate::ast::Flat;
 use crate::semantic::Model;
 
 mod abstract_methods;
+mod ancestors;
 mod astring;
 mod bad_super;
 mod booleaness;
 mod calls;
+mod class_bases;
+mod class_members;
 mod classes;
 mod code_style;
 mod conditions;
 mod contextmgr;
+mod deprecated;
 mod django;
 mod duplicate_args;
 mod exceptions;
@@ -32,9 +36,11 @@ mod flow;
 mod formats;
 mod hierarchy;
 mod imports;
+mod inferred;
 mod instance_attrs;
 mod logging;
 mod matchpat;
+mod members;
 mod misc;
 mod names;
 mod overrides;
@@ -85,13 +91,16 @@ pub trait Checker: Sync {
 
 const CHECKERS: &[&dyn Checker] = &[
     &abstract_methods::AbstractMethods,
+    &ancestors::Ancestors,
     &bad_super::BadSuper,
     &booleaness::Booleaness,
     &calls::Calls,
+    &class_bases::ClassBases,
     &classes::Classes,
     &code_style::CodeStyle,
     &conditions::Conditions,
     &contextmgr::ContextManagers,
+    &deprecated::Deprecated,
     &django::Django,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,
@@ -99,9 +108,12 @@ const CHECKERS: &[&dyn Checker] = &[
     &finally::Finally,
     &flow::Flow,
     &imports::Imports,
+    &class_members::ClassMembers,
+    &inferred::Inferred,
     &instance_attrs::InstanceAttrs,
     &logging::Logging,
     &matchpat::MatchPatterns,
+    &members::Members,
     &misc::Misc,
     &names::Naming,
     &overrides::Overrides,

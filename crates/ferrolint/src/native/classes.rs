@@ -224,7 +224,7 @@ pub enum Local {
     Other,
 }
 
-fn target_names(target: &Expr, out: &mut Vec<(String, Local)>) {
+pub fn target_names(target: &Expr, out: &mut Vec<(String, Local)>) {
     match target {
         Expr::Name(name) => out.push((name.id.to_string(), Local::Other)),
         Expr::Tuple(t) => t.elts.iter().for_each(|e| target_names(e, out)),

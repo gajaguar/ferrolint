@@ -4,6 +4,8 @@ attribution
 capsys
 commitizen
 conventionalkit
+coro
+cpython
 CREIWF
 cspell
 Dicted
@@ -25,15 +27,19 @@ infinty
 infj
 infx
 inifinity
+isdst
 katex
 klass
+kwoa
 kwonlyargs
+lenn
 markdownlint
 maturin
 mise
 musllinux
 cpio
 dotrc
+mymethods
 nanj
 nnan
 pypa
@@ -57,6 +63,7 @@ pxxxx
 rana
 redef
 retag
+rposition
 shailesh
 smol
 thinh

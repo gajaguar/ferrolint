@@ -18,6 +18,7 @@
 138:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
 139:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
 143:E4702:Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead.
+147:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
 150:W4701:Iterated list 'other' is being modified inside for loop body, consider iterating through a copy of it instead.
 152:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.
 154:E4702:Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead.

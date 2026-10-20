@@ -8,7 +8,9 @@
 //! so the standard library and the installed packages stay unknown but for
 //! [`Project::with_packages`] (a base from them ends the chain), and a C
 //! module never is, except that `from m import *` knows its public names
-//! from a table of one Python version (`make c-module-names`); a name is
+//! from a table of one Python version (`make c-module-names`), and a `m.py`
+//! with a compiled `m.*.so` beside it is not read, as astroid takes the
+//! compiled one and finds it empty; a name is
 //! followed through `import`, `from` and `from m import *` statements of the
 //! top level only; and a result that depends on another module is cached
 //! with the file, so it is stale until the file changes or the cache is
@@ -71,10 +73,13 @@ impl Project {
                 .rsplit_once('.')
                 .map_or(String::new(), |(p, _)| p.to_owned())
         };
+        // A package directory is no root, as on `sys.path`: its `collections.py`
+        // does not hide the standard library's.
         let roots = path
             .ancestors()
             .skip(1)
             .take(LEVELS)
+            .filter(|dir| !dir.join("__init__.py").is_file())
             .map(Path::to_path_buf)
             .collect();
         Self {
@@ -159,6 +164,10 @@ impl Project {
 
     fn read(&self, name: &str) -> Option<Module> {
         let (file, is_package) = self.locate(name)?;
+        // astroid prefers the compiled `m.*.so` to `m.py` and cannot read it
+        if !is_package && has_extension(&file) {
+            return None;
+        }
         let source = std::fs::read_to_string(file).ok()?;
         let parsed = ruff_python_parser::parse_module(&source).ok()?;
         let package = if is_package {
@@ -187,6 +196,12 @@ impl Project {
 
     fn class_at(&self, qualified: &str, depth: u8) -> Option<ClassRef> {
         let (module, name) = qualified.rsplit_once('.')?;
+        // `collections.abc` has no file of its own: the interpreter aliases it.
+        let module = if module == "collections.abc" {
+            "_collections_abc"
+        } else {
+            module
+        };
         let loaded = self.load(module)?;
         if find_class(&loaded.parsed.syntax().body, name).is_some() {
             return Some(ClassRef {
@@ -497,7 +512,18 @@ impl ClassRef {
                         name: name.id.to_string(),
                     }));
                 }
-                let qualified = self.module.qualify(base)?;
+                let Some(qualified) = self.module.qualify(base) else {
+                    // A name that `from module import *` binds.
+                    let Expr::Name(name) = base else {
+                        return None;
+                    };
+                    return self
+                        .module
+                        .stars
+                        .iter()
+                        .find_map(|star| project.class(&format!("{star}.{}", name.id)))
+                        .map(Ok);
+                };
                 Some(project.class(&qualified).ok_or(qualified))
             })
             .collect()
@@ -544,6 +570,28 @@ fn exact_case(path: &Path) -> bool {
     };
     std::fs::read_dir(dir).is_ok_and(|mut entries| {
         entries.any(|entry| entry.is_ok_and(|entry| entry.file_name() == name))
+    })
+}
+
+/// Whether a compiled module (`m.cpython-314-darwin.so`, `m.pyd`) sits next
+/// to the source file `m.py`.
+fn has_extension(file: &Path) -> bool {
+    let (Some(dir), Some(stem)) = (file.parent(), file.file_stem().and_then(|s| s.to_str())) else {
+        return false;
+    };
+    std::fs::read_dir(dir).is_ok_and(|mut entries| {
+        entries.any(|entry| {
+            entry.is_ok_and(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.strip_prefix(stem).is_some_and(|rest| {
+                    rest.starts_with('.')
+                        && Path::new(rest).extension().is_some_and(|e| {
+                            e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd")
+                        })
+                })
+            })
+        })
     })
 }
 
@@ -648,6 +696,44 @@ mod tests {
     }
 
     #[test]
+    fn a_module_of_the_package_does_not_hide_one_of_the_same_name() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write("app/base.py", "class Local:\n    pass\n");
+        write("base.py", "class Top:\n    pass\n");
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        assert!(project.class("base.Top").is_some());
+        assert!(project.class("base.Local").is_none());
+    }
+
+    #[test]
+    fn a_base_bound_by_a_star_import_is_found() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write("app/base.py", "class Base:\n    pass\n");
+        write(
+            "app/child.py",
+            "from .base import *\n\nclass Child(Base):\n    pass\n",
+        );
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let bases = project.class("app.child.Child").unwrap().bases(&project);
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].as_ref().unwrap().qname(), "app.base.Base");
+    }
+
+    #[test]
     fn public_names_follow_stars_and_skip_private_ones() {
         let root = tempfile::tempdir().unwrap();
         let write = |path: &str, text: &str| {
@@ -668,6 +754,26 @@ mod tests {
             ["os", "a", "f", "K", "c", "z"]
         );
         assert!(project.public_names("app.missing").is_none());
+    }
+
+    #[test]
+    fn a_compiled_module_beside_the_source_hides_it() {
+        let root = tempfile::tempdir().unwrap();
+        for file in [
+            "app/m.py",
+            "app/m.cpython-314-darwin.so",
+            "app/n.py",
+            "app/o.py",
+        ] {
+            let path = root.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "a = 1\n").unwrap();
+        }
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        assert!(project.has_module("app.m") && project.public_names("app.m").is_none());
+        assert!(project.public_names("app.n").is_some());
+        // `o.py` is not `m.py`'s sibling by prefix alone
+        assert!(project.public_names("app.o").is_some());
     }
 
     #[test]

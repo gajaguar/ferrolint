@@ -179,8 +179,8 @@ Statements and text:
 * `W0105` `pointless-string-statement`, `W0124` `confusing-with-statement`,
   `C0200` `consider-using-enumerate` and `R1713` `consider-using-join`
   (it reads `suggest-join-with-non-empty-separator`).
-* `W4701` `modified-iterating-list`, `E4702` `modified-iterating-dict` and
-  `W4801` `looping-through-iterator`.
+* `W4701` `modified-iterating-list`, `E4702` `modified-iterating-dict`,
+  `E4703` `modified-iterating-set` and `W4801` `looping-through-iterator`.
 * `E0113` `invalid-star-assignment-target` and `E3102`
   `positional-only-arguments-expected`.
 * `C0302` `too-many-lines` (`max-module-lines`, default 1000), reported on
@@ -196,9 +196,9 @@ Statements and text:
 `E1904` `multiple-class-sub-patterns`, `R1905` `match-class-bind-self` and
 `R1906` `match-class-positional-attributes`.
 
-Not ported: `R0917` `too-many-positional-arguments` (a project may disable it),
-`E4703` `modified-iterating-set` and the other `pylint-django` rules
-`R5101` and `R5103`, which a typical run does not need.
+Not ported: `R0917` `too-many-positional-arguments` (a project may disable it)
+and the other `pylint-django` rules `R5101` and `R5103`, which a typical run
+does not need.
 
 Known divergences from Pylint, where Pylint infers a value, a class or a
 call:
@@ -237,9 +237,10 @@ call:
 * `C0117` fires for a comparison whose two sides have a known type: a
   literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
   a call of a builtin class, or `len` of one of these. Pylint infers more.
-* `W4701` and `E4702` take the iterated name as a list or dict when it is
-  assigned a display, `list()`, `dict()` or `list` of a display of
-  constants; an attribute (`self.items`) is not followed. `W4801` finds an
+* `W4701`, `E4702` and `E4703` take the iterated name as a list, dict or set
+  when it is assigned a display, `list()`, `dict()`, `set()` or `list` or
+  `set` of a display of constants; an attribute (`self.items`) is not
+  followed. `W4801` finds an
   iterator in a generator expression, a generator function of the file and
   the calls of `map`, `filter`, `zip`, `iter`, `reversed`, `enumerate` and
   `itertools` (through imports).
@@ -285,11 +286,15 @@ Imports:
   star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
   and a star in a function or class, and counts the names in the file's own
-  literal `__all__` as read. Divergences: a module is found as base
+  literal `__all__` as read; a name that a function, class or comprehension
+  binds itself (a variable, a parameter) and reads there is not a use of the
+  wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
   and packages of `VIRTUAL_ENV`), so a module that is not found is skipped
   (a module is also matched by the case it is spelled in, even where the
-  file system ignores it); the result depends on another file, so it is as
+  file system ignores it); a `m.py` with a compiled
+  `m.*.so` or `m.pyd` beside it is skipped, as astroid takes the compiled file
+  and finds it empty; the result depends on another file, so it is as
   stale as the cache is (see the project module's shortcut note). A C or
   builtin module of the standard library (`math`, `itertools`, `time`) has
   no file, so its public names, sorted as Python's `dir` lists them, come
@@ -325,8 +330,6 @@ Not ported:
   is still here, to tell `W0601` from it. Pylint skips `W0603` for a
   statement that gets `W0601` or `W0602`; the `global-statement` plugin
   reports it anyway.
-* `W0237` `arguments-renamed` and `E0203` `access-member-before-definition`
-  need the class hierarchy across files.
 * `E0601` `used-before-assignment` shares the filter of `E0606` but gets its
   other cases from `try` blocks, which are not run (see below).
 
@@ -828,3 +831,262 @@ Known divergences:
   ported: they need to know which pragma silenced each finding, and `I0021`
   would call a pragma useless when it names a message ferrolint does not
   implement.
+
+## Batch O: Ruff preview rules
+
+ferrolint does not run Ruff: it only reads Ruff's parser crates, and a user runs
+the `ruff` binary beside it. Ruff's preview rules are therefore out of reach
+of a ferrolint setting, and these five Pylint messages, which Ruff has only
+as preview rules, are ported.
+
+* `E4703` `modified-iterating-set`: a set that the `for` loop iterating it
+  adds to, removes from, clears or pops (`add`, `clear`, `discard`, `pop`,
+  `remove`), or whose loop target it deletes. Beside `W4701` and `E4702`,
+  with the same rules for what the loop iterates (see Batch C).
+* `R0202` `no-classmethod-decorator` and `R0203` `no-staticmethod-decorator`:
+  `name = classmethod(method)` or `staticmethod(method)` in a class body,
+  where `method` is a function of the class. As in Pylint the callee is
+  matched by its name alone, the argument must be a plain name, and the
+  first binding of that name in the class must be a `def`. The message sits on
+  the first assignment target.
+* `W0244` `redefined-slots-in-subclass`: a slot of a class that an ancestor
+  with `__slots__` already has, reported on the `__slots__` value as
+  `Redefined slots ['a', 'b'] in subclass`. The slots of an ancestor are
+  those of its whole MRO, and none when one class there has no plain slots,
+  as in astroid.
+* `W3201` `bad-dunder-name` (`pylint.extensions.dunder`): a method (not an
+  `async def`, which Pylint skips) whose name starts and ends with `_` and is
+  not one of Python's special names, those of `py-version` and
+  `good-dunder-names`. Reports only when `load-plugins` names the extension.
+
+Known divergences:
+
+* `W0244` reads `__slots__` as the slot rules do (a display of strings written
+  in the class body), so a value built by a call (`tuple([...])`) or a name
+  is not followed. The ancestors come from the MRO of Batch G. A class of the
+  file with a builtin base other than `object` has no slots, as in Pylint,
+  but a class of another module with one is not told apart, so its slots
+  count.
+
+## Batch P: deprecated modules, methods and classes
+
+Pylint keeps tables of the deprecated names of the standard library, each
+with the Python version that deprecated it. `make pylint-deprecated` dumps
+them from Pylint 4.1.3 into `src/pylint_deprecated.rs`; run it again with the
+Python of a virtualenv that has the Pylint to follow
+(`make pylint-deprecated PYTHON=/path/to/python`).
+
+Pylint applies the entries up to the version of the interpreter it runs on.
+Here the target is the `py-version` setting, and `3.14` (the version of the
+table's interpreter) when it is not set. `deprecated-modules` adds its modules
+to the table, as in Pylint.
+
+* `W4901` `deprecated-module`: `import m`, `from m import x` and
+  `__import__("m")` of a module in the table or below it
+  (`distutils.core`). A relative `from` import is made absolute first, as
+  Pylint does.
+* `W4902` `deprecated-method`: a call of a function or method in the table,
+  through the imports that name it (`logging.warn(...)`, `from logging import
+  warn`, `import logging as lg`), or a call of a function of the file or a
+  builtin whose bare name is in the table (`assert_(x)` after `def assert_`).
+  The message names the function as called.
+* `W4904` `deprecated-class`: `from m import C` and `import m.C` of a class
+  in the table, and a call `m.C(...)` where `m` is a plain name; Pylint
+  compares the text of the owner here, so `m` need not be an import. A `from`
+  import directly under `if sys.version_info ...` or `if six.PY2/PY3` is
+  not reported, as in Pylint.
+
+Known divergences:
+
+* Pylint reports only a deprecated name that astroid infers on its
+  interpreter, so `time.clock` or `asyncio.coroutine`, removed from Python
+  3.14, give nothing there. The dump keeps the spellings that Python 3.14.8
+  infers (`asyncio.sleep` for `asyncio.tasks.sleep`, plus the names a public
+  module re-exports) and drops the others, so
+  those names stay silent here too, whatever the `py-version`; the version
+  only filters the entries by their date.
+* A callee that is a local variable, an instance or a call result is not
+  followed: `logger.warn(...)`, `thread.isAlive()` and
+  `logging.getLogger().warn()` give nothing, where Pylint reports them (twice
+  for a logger, which it infers as two classes). `self.assert_(x)` is
+  silent for the same reason.
+* `__import__` is checked for a string literal only; Pylint infers a name to
+  its value.
+
+## Batch Q: deprecated arguments, decorators and attributes
+
+The same tables and version target as Batch P (`make pylint-deprecated`).
+
+* `W4903` `deprecated-argument`: a call of a function in the table that
+  passes a deprecated argument by keyword (`asyncio.sleep(1, loop=None)`) or
+  by position (`shutil.rmtree(p, False, handler)`). A call that `W4902`
+  already reports is not checked again, as in Pylint.
+* `W4905` `deprecated-decorator`: the first decorator of a function or class
+  when it, or the function it calls, is in the table
+  (`@abc.abstractproperty`, `@abc.abstractproperty()`). Later decorators are
+  not looked at, as in Pylint.
+* `W4906` `deprecated-attribute`: a read of an attribute in the table
+  (`sys.last_type`, `calendar.January`). A store or a `del` is not a read.
+
+Known divergences:
+
+* The owner of a call or an attribute is followed through imports only. A
+  name bound to a module, an instance or a call result
+  (`alias = sys; alias.last_type`) is not, where Pylint infers it.
+
+## Batch R: the arity of a call
+
+* `E1120` `no-value-for-parameter`, `E1121` `too-many-function-args`, `E1123`
+  `unexpected-keyword-arg`, `E1124` `redundant-keyword-arg` and `E1125`
+  `missing-kwoa`: Pylint's match of the arguments of a call with the
+  parameters of the function, with its messages (`... in function call`,
+  `... in method call`, `... in constructor call`, `... in staticmethod call`).
+  Like Pylint it counts the `self` of a method and of a constructor as an
+  argument, lets a parameter before `/` be named by keyword, and leaves a
+  keyword to `**kwargs` when the function has one (`W1117` reports the
+  positional-only ones).
+
+Not ported: a call whose callee needs types or a decorator model.
+
+Known divergences from Pylint, where Pylint infers the callee:
+
+* The callee is the one `W1114` resolves (see Batch B): a name bound once to
+  an undecorated function of the file, `self.method` of the enclosing class
+  (undecorated or `staticmethod`) or a class of the file with one `__init__`.
+  An imported function, a decorated one, a class method, an alias of a method
+  (`g = f`), a method that `self.name = ...` replaces, a function or an
+  `__init__` defined twice and `self.__init__` (which Pylint does not judge)
+  are not followed.
+* A class is followed only when it has no `__new__`, metaclass or decorator and
+  every base is a builtin class or such a class of the file. Pylint reads the
+  constructor of an imported base too.
+* A call with a starred argument or a `**` is skipped, where Pylint unpacks a
+  literal list, tuple or dict written in the call.
+
+## Batch S: private members, public methods and what an expression stands for
+
+* `W0238` `unused-private-member`: a private function, variable or attribute
+  of a class (a name with two leading underscores and not ending in two) that
+  the class never uses. It follows Pylint's own reading, quirks included: a
+  name used anywhere under the class counts, an attribute counts when read off
+  `self`, `cls` or the class, a variable counts when any attribute is read off
+  something that is not a name, and the class is judged again as part of each
+  class that contains it. A function shows with its parameters as astroid
+  prints them (`Cls.__f(self, a, b: int = 1, *rest, **kw)`).
+* `R0903` `too-few-public-methods`: fewer public methods, counted over the
+  class and its bases, than `min-public-methods` (default 2), plus the special
+  methods the class itself defines other than `__init__`. Exceptions, enums,
+  metaclasses, named tuples, typed dicts, dataclasses and `attrs` classes are
+  exempt, and so is a class with an ancestor that `exclude-too-few-public-methods`
+  matches.
+* `E0239` `inherit-non-class`, `E0243` `invalid-class-object` and `W0143`
+  `comparison-with-callable`: a base that is a function, a lambda, a literal
+  or an instance of a class of the file; `X.__class__ = value` where the value
+  is not a class; and `==`, `!=`, `is` and the like against a function, method
+  or lambda.
+
+Known divergences from Pylint, where Pylint infers a value or a base:
+
+* `R0903` judges a class only when every base is a class of the project, a
+  builtin exception, `object` or `type`. A class with another builtin base
+  (`dict`, `list`), a base that is not found (an import from outside the
+  project, `Generic[...]`, a starred base) is never reported, where Pylint
+  counts the methods of the base.
+* `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
+  class, a module, a call of a class of the file and a name bound once to one
+  of those. A call of a function, a name bound twice, an imported name, a
+  parameter and an attribute of an object have no answer and stay silent.
+* `E0239` prints a base written as an f-string as written; Pylint rewrites its
+  quotes.
+* `W0238` takes `type(self).__x` for the class itself, where Pylint infers the
+  callee.
+
+## Batch T: overrides and ancestors
+
+The ancestors are those of Batch G (see its divergences for what is read).
+
+* `W0222` `signature-differs`: a method that takes fewer default values than
+  the method it overrides, with the same parameters otherwise; the filters of
+  `W0221` apply (private names, setters, `@overload` stubs, constructors).
+* `W0233` `non-parent-init-called`: in `__init__`, `Name.__init__(self)` where
+  `Name` is a class that is not a direct base (builtins such as `object` and
+  `Exception` included), and `self.__init__()`; a `Name.__init__` that is a
+  direct base is counted once, as `W0231` counts it. `super().__init__` ends
+  the check.
+* `W0236` `invalid-overridden-method`: a method overridden as a property, or a
+  property as a method, `classmethod` or `staticmethod`, and a method
+  overridden as `async` or the reverse. `property`, `functools.cached_property`,
+  `abc.abstractproperty`, a subclass of `property` and `@x.setter` count as
+  properties.
+* `W0246` `useless-parent-delegation`: a method whose only statement (after
+  the docstring) calls the same method of `super()` with its own parameters,
+  and that adds no decorator, default, annotation or `*args` the parent lacks.
+  `__new__`, `__init_subclass__`, `__class_getitem__` and an `__hash__` next to
+  an `__eq__` are left out. `super(Class, self)` and `super(self.__class__,
+  self)` count.
+* `R0901` `too-many-ancestors`: more ancestors than `max-parents` (default 7),
+  the classes in Pylint's list of standard classes and in `ignored-parents`
+  (and what they inherit) not counted. The builtin exceptions, `ABC`,
+  `Generic`, `Protocol` and the builtin types count as Pylint counts them, and
+  so does the `NoneType` astroid adds to a class that derives from `Enum` or
+  `Flag`.
+
+Known divergences:
+
+* A method of a builtin parent is not judged by `W0222`, `W0236` and `W0246`
+  (Pylint reads its signature from the interpreter, `dict.__iter__` for
+  instance); only a class with no base but the project's own and `object`,
+  `ABC`, `Generic` or `Protocol` is compared with `object`, for `__init__`,
+  `__repr__`, `__str__`, `__dir__`, `__sizeof__`, `__reduce__` and
+  `__getstate__` written with `self` alone.
+* `W0236` takes a decorator that is a function returning a property for an
+  ordinary method.
+* `W0246` compares default values as written: `1`, `1.0` and `True` differ here
+  and are equal in Python.
+* `W0233` needs every base to be known, and skips a call whose target it
+  cannot resolve.
+* `R0901` leaves out a base it cannot read, as Pylint does for one it cannot
+  infer, so a count can fall short; a module name bound by an import and again
+  by an assignment (`try: import x` / `except ImportError: x = None`) is such a
+  base.
+
+## Batch U: final classes and methods, inheritance and instantiation
+
+The bases are those of Batch G (see its divergences for what is read).
+
+* `E0240` `inconsistent-mro`: bases that cannot be merged into a method
+  resolution order, as `class C(A, B)` with `B` derived from `A`, and a class
+  that derives from one that is inconsistent. `object` before another base
+  counts. A base that cannot be read is left out, as Pylint leaves out one it
+  cannot infer, so the rule still reports the bases it can read. Duplicate
+  bases are `E0241`, which is not ported.
+* `E0244` `invalid-enum-extension`: a direct base that derives from `Enum`
+  (`IntEnum`, `Flag`, `StrEnum` included) and holds a member. A member is any
+  name of its body bound only by assignments, the first with a value, other
+  than `_ignore_`; so `_order_ = ...` counts, and `kind: int` does not.
+* `W0240` `subclassed-final-class`: one message per direct base decorated
+  with `typing.final` (or `typing_extensions.final`, called or not), also for
+  `Base[int]`.
+* `W0239` `overridden-final-method`: a method that overrides the one that its
+  closest ancestor binds, when that one is decorated with `typing.final`.
+  `W0239` and `W0240` stay silent for `py-version` below 3.8.
+* `E0110` `abstract-class-instantiated`: a call of a class that still has a
+  method decorated with `abc.abstractmethod`, `abstractproperty`,
+  `abstractclassmethod` or `abstractstaticmethod` after the overrides of its
+  MRO, when its metaclass is `ABCMeta` itself, declared or by deriving from
+  `ABC`. A call inside the body of that class, or of a function in it, is
+  left alone, and so is a `Protocol`.
+
+Known divergences:
+
+* `E0240` does not know the builtin classes other than `object`, so
+  `class A(int, bool)` and `class A(dict, OrderedDict)` pass.
+* `E0110` and `W0239` name a class only as an import, a class of the file or an
+  attribute chain resolves it; a class held by a variable (`Alias = Base`), a
+  parameter or a re-export (`from .compat import final`) is not seen. A class
+  with a base it cannot read has no MRO, so `E0110` skips it.
+* `E0244` finds a member in plain assignments, the way astroid's `Enum`
+  support does, and does not follow a `for`, `with` or `except` that binds one.
+  An enum the standard library builds without an `Enum` base in its source
+  (`http.HTTPStatus`, made by `@_simple_enum`, and `signal.Signals`, made by
+  `_convert_`) is not seen.

@@ -1,0 +1,55 @@
+38:E1120:No value for argument 'b' in method call
+41:E1120:No value for argument 'b' in method call
+42:E1120:No value for argument 'b' in staticmethod call
+43:E1121:Too many positional arguments for staticmethod call
+45:E1121:Too many positional arguments for method call
+46:E1120:No value for argument 'b' in method call
+46:E1124:Argument 'a' passed by position and keyword in method call
+47:E1123:Unexpected keyword argument 'c' in method call
+48:E1120:No value for argument 'b' in staticmethod call
+51:E1121:Too many positional arguments for method call
+52:E1120:No value for argument 'a' in method call
+55:E1120:No value for argument 'b' in method call
+55:E1120:No value for argument 'b' in method call
+61:E1120:No value for argument 'a' in function call
+63:E1120:No value for argument 'b' in method call
+100:E1120:No value for argument 'a' in method call
+112:E1123:Unexpected keyword argument 'a2' in method call
+113:E1124:Argument 'a' passed by position and keyword in method call
+114:E1120:No value for argument 'a' in method call
+114:E1124:Argument 'self' passed by position and keyword in method call
+153:E1120:No value for argument 'b' in function call
+165:E1120:No value for argument 'b' in function call
+170:E1120:No value for argument 'b' in function call
+173:E1120:No value for argument 'a' in constructor call
+173:E1125:Missing mandatory keyword argument 'k' in constructor call
+174:E1125:Missing mandatory keyword argument 'k' in constructor call
+175:E1121:Too many positional arguments for constructor call
+176:E1120:No value for argument 'b' in constructor call
+178:E1120:No value for argument 'a' in constructor call
+181:E1120:No value for argument 'a' in function call
+181:E1125:Missing mandatory keyword argument 'c' in function call
+182:E1121:Too many positional arguments for function call
+182:E1125:Missing mandatory keyword argument 'c' in function call
+183:E1124:Argument 'a' passed by position and keyword in function call
+184:E1123:Unexpected keyword argument 'd' in function call
+184:E1125:Missing mandatory keyword argument 'c' in function call
+186:E1120:No value for argument 'b' in function call
+187:E1121:Too many positional arguments for function call
+187:E1125:Missing mandatory keyword argument 'a' in function call
+188:E1125:Missing mandatory keyword argument 'a' in function call
+189:E1123:Unexpected keyword argument 'c' in function call
+192:E1120:No value for argument 'a' in function call
+192:E1125:Missing mandatory keyword argument 'c' in function call
+193:E1120:No value for argument 'a' in function call
+193:E1125:Missing mandatory keyword argument 'c' in function call
+194:E1124:Argument 'a' passed by position and keyword in function call
+197:E1120:No value for argument 'a' in function call
+197:E1120:No value for argument 'self' in function call
+198:E1120:No value for argument 'a' in function call
+198:E1124:Argument 'self' passed by position and keyword in function call
+199:E1120:No value for argument 'b' in function call
+201:E1121:Too many positional arguments for function call
+202:E1120:No value for argument 'a' in function call
+204:E1124:Argument 'b' passed by position and keyword in function call
+206:E1120:No value for argument 'b' in function call

@@ -1,0 +1,15 @@
+20:W3201:Bad or misspelled dunder method name __add_alias__.
+46:W3201:Bad or misspelled dunder method name __init_.
+52:W3201:Bad or misspelled dunder method name __lenn__.
+55:W3201:Bad or misspelled dunder method name _.
+58:W3201:Bad or misspelled dunder method name __.
+61:W3201:Bad or misspelled dunder method name _spam_.
+65:W3201:Bad or misspelled dunder method name __static__.
+69:W3201:Bad or misspelled dunder method name __cls__.
+73:W3201:Bad or misspelled dunder method name __prop__.
+77:W3201:Bad or misspelled dunder method name __cached__.
+85:W3201:Bad or misspelled dunder method name __branch__.
+90:W3201:Bad or misspelled dunder method name __other_branch__.
+95:W3201:Bad or misspelled dunder method name __in_try__.
+102:W3201:Bad or misspelled dunder method name __inner__.
+118:W3201:Bad or misspelled dunder method name __local__.

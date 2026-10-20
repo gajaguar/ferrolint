@@ -1,0 +1,12 @@
+4:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+6:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+8:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+10:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+12:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+20:E4703:Iterated set 'empty' is being modified inside for loop body, iterate through a copy of it instead.
+23:E4703:Iterated set 'full' is being modified inside for loop body, iterate through a copy of it instead.
+27:E4703:Iterated set 'names' is being modified inside for loop body, iterate through a copy of it instead.
+33:E4703:Iterated set 's' is being modified inside for loop body, iterate through a copy of it instead.
+61:W4701:Iterated list 's' is being modified inside for loop body, consider iterating through a copy of it instead.
+69:E4702:Iterated dict 'd' is being modified inside for loop body, iterate through a copy of it instead.
+72:W4701:Iterated list 'lst' is being modified inside for loop body, consider iterating through a copy of it instead.

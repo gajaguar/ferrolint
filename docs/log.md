@@ -2,6 +2,39 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `W0614` skips a module whose compiled `.so` sits next to
+  its `.py` (astroid loads the compiled one and finds it empty), as Pylint does.
+
+* **native-rules.md**: `W0614` no longer counts a read of a name that a
+  function, class or comprehension binds itself as a use of the wildcard's name.
+
+* **native-rules.md**: Added Batch O - `E4703`, `R0202`, `R0203`, `W0244` and
+  `W3201`, the Pylint messages that Ruff has only as preview rules (ferrolint
+  does not run Ruff, so no setting turns them on); `W3201` needs
+  `pylint.extensions.dunder` in `load-plugins`.
+
+* **native-rules.md**: Added Batch P - `W4901`, `W4902` and `W4904`, the
+  deprecated modules, methods and classes of Pylint's tables, dumped by
+  `make pylint-deprecated`.
+* **native-rules.md**: Added Batch Q - `W4903`, `W4905` and `W4906`, the
+  deprecated arguments, decorators and attributes of the same tables.
+
+* **native-rules.md**: Added Batch S - `W0238`, `R0903`, `E0239`, `E0243` and
+  `W0143`, private members, public methods and the rules that ask what an
+  expression stands for, without type inference.
+* **native-rules.md**: Added Batch R - `E1120`, `E1121`, `E1123`, `E1124`
+  and `E1125`, the arity of a call, on the callees that `W1114` resolves.
+
+* **native-rules.md**: Added Batch U - `E0110`, `E0240`, `E0244`, `W0239` and
+  `W0240`, on abstract instantiation, inconsistent MROs, enumerations that
+  already have members and `typing.final` classes and methods. A package
+  directory is no longer a module root, so a sibling `collections.py` does not
+  hide the standard library's, and `collections.abc` reads as
+  `_collections_abc`.
+* **native-rules.md**: Added Batch T - `W0222`, `W0233`, `W0236`, `W0246` and
+  `R0901`, the override and ancestor-count messages that read the MRO of
+  Batch G; removed the stale line that listed `W0237` and `E0203` as not
+  ported.
 * **suppression-comments.md**: A `skip-file`, `disable-all` or `disable=all`
   comment now ends the file: only the pragma messages and a syntax error
   remain, plugin findings included. **native-rules.md**: Batch N follows.

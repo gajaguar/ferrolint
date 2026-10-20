@@ -15,6 +15,7 @@ mod infer;
 mod native;
 mod pragma;
 mod pylint;
+mod pylint_deprecated;
 mod pylint_names;
 mod report;
 mod selection;
