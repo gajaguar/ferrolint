@@ -45,5 +45,7 @@ import sys  # noqa: IMP001
 * A module-level `disable=too-many-lines` silences C0302, which is reported
   on line 1, wherever it stands.
 
-Pylint's other directives suppress nothing here: `enable=`, `skip-file`,
-and `disable-all`.
+A `skip-file`, `disable-all` or `disable=all` comment ends the file as it does
+in Pylint: no finding is reported for it, a plugin's included, except the
+messages about the pragmas (Batch N of [native rules](native-rules.md)) and a
+syntax error. Pylint's other directive, `enable=`, suppresses nothing here.

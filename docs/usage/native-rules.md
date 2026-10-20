@@ -801,8 +801,8 @@ up to the next `;` or `#`, so `# pylint: disable=a; enable=b` is only the
   one finding for each of its messages. A legacy id or symbol gives the
   current message.
 * `I0013` `file-ignored`: `skip-file`, `disable-all` or `disable=all`. Pylint
-  stops reading the pragmas of the file there, and so do these five rules;
-  ferrolint still lints the file.
+  stops reading the pragmas of the file there, and so do these five rules.
+  It reports nothing else for the file, and neither does ferrolint.
 * `I0022` `deprecated-pragma`: `disable-msg`, `enable-msg`, `disable-all` or
   `disable=all`, with the pragma to use instead.
 * `I0023` `use-symbolic-message-instead`: a message named by its id in a

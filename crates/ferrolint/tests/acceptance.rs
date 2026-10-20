@@ -613,6 +613,16 @@ fn ac_12_pylint_disable_suppresses() {
 }
 
 #[test]
+fn a_pragma_that_ends_the_file_hides_every_other_finding_like_pylint() {
+    let project = sample_project("");
+    project.write("a.py", "import os\n# pylint: skip-file\nimport sys\n");
+    project.write("b.py", "import os\n# pylint: disable=all\n");
+    project.write("c.py", "import os\n");
+    assert_eq!(reported(&project, &["c.py"]), [(1, "IMP001".to_owned())]);
+    assert_eq!(reported(&project, &["a.py", "b.py"]), []);
+}
+
+#[test]
 fn ac_13_noqa_suppresses() {
     let project = probe_project(&["PRB002", "PRB004"]);
     project.write(
