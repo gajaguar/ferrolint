@@ -1101,9 +1101,24 @@ Known divergences:
   builtin exceptions and the classes of the file; `builtins.X`, `os.error`,
   `select.error` and `socket.error` are `OSError`, and `socket.timeout` is
   `TimeoutError`. `bad-except-order` (`E0701`) reads the same names now.
+* `E1111` `assignment-from-no-return` and `E1128` `assignment-from-none`:
+  `x = f()` where `f` is a function of the file with no `return`, or with
+  `return` statements that all return nothing or `None`. Like Pylint it
+  leaves out a decorated function, an `async` one, a generator, one whose body
+  is a lone `raise` or ends in a `raise` with no `return`, and one whose first
+  statement raises `NotImplementedError`. `E1111` names the function and
+  suggests `sorted(...)` or `reversed(...)` after `sort` and `reverse`, or what
+  `known-side-effects-only-functions` pairs. Only an `Assign` counts: an
+  annotated assignment and `x += f()` do not.
 
-Known divergences from Pylint, where Pylint infers a class:
+Known divergences from Pylint, where Pylint infers a class or a callee:
 
 * `W0714` leaves out a class held by a variable (`Alias = ValueError`), a
   class the file defines twice and one imported from another module; a local
   class counts the builtin and local bases it can read as its ancestors.
+* `E1111` and `E1128` take the callee that `W1114` resolves (see Batch B and
+  Batch R), a constructor aside: a name bound once to a function of the file
+  or `self.method` of the enclosing class. A method called as `Class.method(x)`,
+  a method that only a base class defines, a name that the function binds
+  again further down and a builtin method such as `lst.sort()` are not
+  followed, where Pylint infers the callee.

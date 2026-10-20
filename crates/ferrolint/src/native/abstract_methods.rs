@@ -276,7 +276,7 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 /// Whether the first statement after the docstring raises
 /// `NotImplementedError`, named anywhere in the raised expression.
-fn raises_not_implemented(func: &StmtFunctionDef) -> bool {
+pub(super) fn raises_not_implemented(func: &StmtFunctionDef) -> bool {
     struct Find(bool);
     impl Visitor<'_> for Find {
         fn visit_expr(&mut self, expr: &Expr) {

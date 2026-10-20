@@ -822,7 +822,7 @@ impl<'a> Walk<'a, '_> {
     }
 }
 
-fn is_generator(func: &StmtFunctionDef) -> bool {
+pub(super) fn is_generator(func: &StmtFunctionDef) -> bool {
     struct Yields(bool);
     impl<'a> Visitor<'a> for Yields {
         fn visit_stmt(&mut self, stmt: &'a Stmt) {

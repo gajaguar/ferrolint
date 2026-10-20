@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: Batch V adds `E1111` assignment-from-no-return and
+  `E1128` assignment-from-none, for the functions of the file that `W1114`
+  resolves.
+
 * **native-rules.md**: Added Batch V - `W0714` overlapping-except, on the
   builtin exception tree and the classes of the file; it needs
   `pylint.extensions.overlapping_exceptions`. `E0701` follows `builtins.X`,
