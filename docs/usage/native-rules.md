@@ -286,7 +286,9 @@ Imports:
   star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
   and a star in a function or class, and counts the names in the file's own
-  literal `__all__` as read. Divergences: a module is found as base
+  literal `__all__` as read; a name that a function, class or comprehension
+  binds itself (a variable, a parameter) and reads there is not a use of the
+  wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
   and packages of `VIRTUAL_ENV`), so a module that is not found is skipped
   (a module is also matched by the case it is spelled in, even where the

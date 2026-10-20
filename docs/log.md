@@ -2,6 +2,9 @@
 
 ## 2026-10-19
 
+* **native-rules.md**: `W0614` no longer counts a read of a name that a
+  function, class or comprehension binds itself as a use of the wildcard's name.
+
 * **native-rules.md**: Added Batch O - `E4703`, `R0202`, `R0203`, `W0244` and
   `W3201`, the Pylint messages that Ruff has only as preview rules (ferrolint
   does not run Ruff, so no setting turns them on); `W3201` needs

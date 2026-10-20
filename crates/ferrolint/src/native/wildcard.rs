@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{self as ast, Expr, ExprContext, Stmt};
+use ruff_python_ast::{self as ast, Expr, ExprContext, HasNodeIndex, Stmt};
 use ruff_text_size::{Ranged, TextSize};
 
 use super::project::Project;
@@ -40,6 +40,7 @@ impl Checker for Wildcard {
             return;
         }
         let mut walk = Walk {
+            ctx,
             stars: Vec::new(),
             imports: Vec::new(),
             nested: 0,
@@ -101,6 +102,7 @@ impl Checker for Wildcard {
 }
 
 struct Walk<'a> {
+    ctx: &'a Ctx<'a>,
     /// Each `from m import *`, its module as written and whether it is in
     /// the scope of the module (not of a function or a class).
     stars: Vec<(&'a Stmt, String, bool)>,
@@ -109,6 +111,16 @@ struct Walk<'a> {
     nested: usize,
     /// The names the file reads, and those its `__all__` lists.
     read: BTreeSet<String>,
+}
+
+impl Walk<'_> {
+    fn is_local(&self, name: &ast::ExprName) -> bool {
+        HasNodeIndex::node_index(name)
+            .load()
+            .as_u32()
+            .and_then(|id| self.ctx.model.resolve(self.ctx.flat, id))
+            .is_some_and(|binding| binding.scope != 0)
+    }
 }
 
 impl<'a> Visitor<'a> for Walk<'a> {
@@ -158,6 +170,8 @@ impl<'a> Visitor<'a> for Walk<'a> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         if let Expr::Name(name) = expr
             && name.ctx != ExprContext::Store
+            // a name bound in a function, class or comprehension is read there, not from the module
+            && !self.is_local(name)
         {
             self.read.insert(name.id.to_string());
         }
@@ -216,6 +230,31 @@ mod tests {
             run(&files, "pkg/user.py", "pkg.user"),
             "1:W0614:Unused import(s) os, b, f and K from wildcard import of pkg.m\n\
              2:W0614:Unused import(s) y and z from wildcard import of listed"
+        );
+    }
+
+    #[test]
+    fn a_local_variable_is_not_a_use_of_the_name() {
+        let files = [
+            ("pkg/m.py", "cost = 1\nother = 2\nthird = 3\n"),
+            (
+                "pkg/user.py",
+                "from pkg.m import *\n\ndef f(cost):\n    return cost\n\ndef g():\n    other = 0\n    return other\n\n\
+                 print([third for third in range(3)])\n",
+            ),
+            (
+                "pkg/global_.py",
+                "from pkg.m import *\n\ndef f():\n    global cost\n    cost = 0\n\nprint(other, third)\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, "pkg/user.py", "pkg.user"),
+            "1:W0614:Unused import(s) cost, other and third from wildcard import of pkg.m"
+        );
+        // a `global` write binds in the module but reads nothing
+        assert_eq!(
+            run(&files, "pkg/global_.py", "pkg.global_"),
+            "1:W0614:Unused import(s) cost from wildcard import of pkg.m"
         );
     }
 
