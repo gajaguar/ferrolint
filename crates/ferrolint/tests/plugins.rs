@@ -53,15 +53,63 @@ fn undefined_variable() {
 
 #[test]
 fn redefined_builtin() {
-    let source = "from builtins import str\nlist = []\nlist = [1]\n\ndef f(id, value):\n    max = value\n    return id, max\n\nclass C:\n    type = 1\n";
+    let source = "from builtins import str\nfrom six.moves import range\nfrom os import (\n    path,\n    open,\n)\nlist = []\nlist = [1]\n__doc__ = ''\n\ndef sorted(): ...\n\ndef f(id, value, sorted):\n    max = value\n    squares = [map for map in value]\n    return id, max, lambda input: input\n\ndef g(point):\n    match point:\n        case Point(type=type):\n            return type\n\nclass C:\n    format = 1\n\ndef h():\n    global input\n    input = 1\n\nstr = 1\n";
+    // The import is reported at its statement, not at the name; the first
+    // binding of `str` is an import Pylint lets be, so a later one is too; `sorted` is
+    // the module's, so a parameter of it is the native `W0621`, not this rule.
     assert_eq!(
         findings("ferrolint-plugin-redefined-builtin", source),
         [
-            "2: Redefining built-in 'list'",
-            "5: Redefining built-in 'id'",
-            "6: Redefining built-in 'max'",
+            "3: Redefining built-in 'open'",
+            "7: Redefining built-in 'list'",
+            "11: Redefining built-in 'sorted'",
+            "13: Redefining built-in 'id'",
+            "13: Redefining name 'sorted' from outer scope (line 11)",
+            "14: Redefining built-in 'max'",
+            "20: Redefining built-in 'type'",
+            "27: Global variable 'input' undefined at the module level",
+            "28: Redefining built-in 'input'",
         ]
     );
+}
+
+#[test]
+fn redefined_builtin_override() {
+    let source = "class Base(Generic[T]):\n    def run(self, id, input):\n        return id, input\n\nclass Child(Base[int]):\n    def run(self, id, value):\n        return id, value\n\nclass Grand(Child):\n    def run(self, id, input):\n        return id, input\n\nclass Other(Missing):\n    def run(self, id):\n        return id\n";
+    // Pylint excuses a parameter that the method of the first ancestor with
+    // that method repeats: `Child.run` has `id` but not `input`, and `Missing`
+    // is not a class of the file.
+    assert_eq!(
+        findings("ferrolint-plugin-redefined-builtin", source)
+            .into_iter()
+            .filter(|line| line.contains("built-in"))
+            .collect::<Vec<_>>(),
+        [
+            "2: Redefining built-in 'id'",
+            "2: Redefining built-in 'input'",
+            "10: Redefining built-in 'input'",
+            "14: Redefining built-in 'id'",
+        ]
+    );
+}
+
+#[test]
+fn redefined_builtin_options() {
+    let source = "from six.moves import range\nfrom os import open\n\ndef f(id, input):\n    return id, input\n";
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-plugin-redefined-builtin", "plugin.wasm");
+    let options =
+        "[options]\nredefining-builtins-modules = \"os\"\nallowed-redefined-builtins = \"id\"\n";
+    project
+        .write("ferrolint.toml", format!("{options}{plugin}"))
+        .write("case.py", source);
+    let run = project.run(&["--no-cache"]);
+    let lines = run.finding_lines();
+    let found = |text: &str| lines.iter().any(|line| line.contains(text));
+    assert!(found("Redefining built-in 'range'"), "{lines:?}");
+    assert!(found("Redefining built-in 'input'"), "{lines:?}");
+    assert!(!found("Redefining built-in 'open'"), "{lines:?}");
+    assert!(!found("Redefining built-in 'id'"), "{lines:?}");
 }
 
 #[test]

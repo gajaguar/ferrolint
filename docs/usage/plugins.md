@@ -32,6 +32,15 @@ answers to its Pylint msg-id and symbol as well as its code.
   doc comment lists what it leaves out, such as loop variables for
   `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
+* `redefined-builtin` checks a module and a function, once per name at its
+  first binding, and reads `redefining-builtins-modules` and
+  `allowed-redefined-builtins`. A function name the module also binds is
+  left to `W0621`, as Pylint does. A parameter that a method of an ancestor
+  repeats is excused (Pylint's `overridden_method`) only when the ancestor is
+  a class of the same file, so a method that overrides an imported class
+  (`argparse.Action`, `codecs.IncrementalDecoder`) is still reported. It does
+  not know the names a star import binds, so it misses a builtin that one
+  binds, and it ignores `global __doc__`.
 * `singleton-comparison` quotes the operands as Pylint does in the simple
   cases (double-quoted strings print single-quoted, the operands keep their
   order, `bool(...)` appears outside a test condition) and is compared with
@@ -51,7 +60,8 @@ table: `select` and `ignore` work on their codes and Pylint spellings
 alone. `make release-build` and `make wheel` build the binary this way.
 A binary from `cargo build`, such as the one the tests run, bundles none.
 
-None of the eleven reads an option or a comment range. A plugin's own
+None of the eleven reads a plugin option or a comment range (`redefined-builtin`
+reads two Pylint options, which every plugin receives). A plugin's own
 `options` table in `[[plugins]]` and the comment query are for external
 plugins (see [Configuration file](configuration-file.md) and
 [Writing a plugin](writing-a-plugin.md)); a bundled plugin always gets an
