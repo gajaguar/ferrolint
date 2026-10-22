@@ -1,6 +1,33 @@
 # Directory Update Log
 
+## 2026-10-22
+
+* **native-rules.md**: the per-file rules run on a `.pyi` stub found under a
+  directory, except `W0231`, `W0233`, `E1111` and `E1128`, which Pylint skips
+  there; the `W0614` of a wildcard import of a stub-only module is left out.
+  A stub-only directory (`__init__.pyi` with no `__init__.py`) is noted.
+
+* **plugins.md**: `bare-except` skips an `except:` that re-raises, as Pylint
+  does.
+
+* **native-rules.md**: `W0631` takes `range` from `six.moves` as the builtin and
+  names the attribute inference it lacks.
+
+* **native-rules.md**: `C0103` knows the methods of the builtin and standard
+  library classes from `tools/class-methods.py`, so a method that overrides
+  one is not judged; the known divergences list the inference Pylint runs
+  that is left out.
+
+* **native-rules.md**: `W0201` follows the nearest binding of a name, a class
+  bound in the method's class (`self._Result()`), a call on a local in a
+  defining method, and skips the attributes of `object`; the divergences list
+  what stays missed.
+
 ## 2026-10-20
+
+* **native-rules.md**: `R1710` knows a `self.method()` annotated `NoReturn`
+  or `Never` in the class or in a base of the file, also when the base is
+  written `Base[T]`.
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the
   msg-id of a native rule of an opt-in Pylint extension (`W9006` of docparams)

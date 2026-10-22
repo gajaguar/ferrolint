@@ -85,7 +85,14 @@ impl<'a> Env<'a> {
     pub fn qualified(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::Name(name) => {
-                let binding = self.binding(name)?;
+                let mut binding = self.binding(name)?;
+                // `try: import m` / `except ImportError: m = None`: Pylint
+                // infers the module among the values of `m`.
+                if binding.kind == BindingKind::Assignment {
+                    binding = self.ctx.model.same_name(binding.id).into_iter().find(|b| {
+                        matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
+                    })?;
+                }
                 match binding.kind {
                     BindingKind::Builtin => Some(binding.name),
                     BindingKind::FromImport => binding.origin,

@@ -44,6 +44,11 @@ fn undefined_variable() {
             "6: Undefined variable 'missing'"
         ]
     );
+    let guarded = "try:\n    buffer\nexcept (OSError, NameError):\n    pass\ntry:\n    other\nexcept:\n    pass\n";
+    assert_eq!(
+        findings("ferrolint-plugin-undefined-variable", guarded),
+        ["6: Undefined variable 'other'"]
+    );
     let star = "from os import *\nprint(sep)\n";
     assert_eq!(
         findings("ferrolint-plugin-undefined-variable", star),
@@ -53,15 +58,63 @@ fn undefined_variable() {
 
 #[test]
 fn redefined_builtin() {
-    let source = "from builtins import str\nlist = []\nlist = [1]\n\ndef f(id, value):\n    max = value\n    return id, max\n\nclass C:\n    type = 1\n";
+    let source = "from builtins import str\nfrom six.moves import range\nfrom os import (\n    path,\n    open,\n)\nlist = []\nlist = [1]\n__doc__ = ''\n\ndef sorted(): ...\n\ndef f(id, value, sorted):\n    max = value\n    squares = [map for map in value]\n    return id, max, lambda input: input\n\ndef g(point):\n    match point:\n        case Point(type=type):\n            return type\n\nclass C:\n    format = 1\n\ndef h():\n    global input\n    input = 1\n\nstr = 1\n";
+    // The import is reported at its statement, not at the name; the first
+    // binding of `str` is an import Pylint lets be, so a later one is too; `sorted` is
+    // the module's, so a parameter of it is the native `W0621`, not this rule.
     assert_eq!(
         findings("ferrolint-plugin-redefined-builtin", source),
         [
-            "2: Redefining built-in 'list'",
-            "5: Redefining built-in 'id'",
-            "6: Redefining built-in 'max'",
+            "3: Redefining built-in 'open'",
+            "7: Redefining built-in 'list'",
+            "11: Redefining built-in 'sorted'",
+            "13: Redefining built-in 'id'",
+            "13: Redefining name 'sorted' from outer scope (line 11)",
+            "14: Redefining built-in 'max'",
+            "20: Redefining built-in 'type'",
+            "27: Global variable 'input' undefined at the module level",
+            "28: Redefining built-in 'input'",
         ]
     );
+}
+
+#[test]
+fn redefined_builtin_override() {
+    let source = "class Base(Generic[T]):\n    def run(self, id, input):\n        return id, input\n\nclass Child(Base[int]):\n    def run(self, id, value):\n        return id, value\n\nclass Grand(Child):\n    def run(self, id, input):\n        return id, input\n\nclass Other(Missing):\n    def run(self, id):\n        return id\n";
+    // Pylint excuses a parameter that the method of the first ancestor with
+    // that method repeats: `Child.run` has `id` but not `input`, and `Missing`
+    // is not a class of the file.
+    assert_eq!(
+        findings("ferrolint-plugin-redefined-builtin", source)
+            .into_iter()
+            .filter(|line| line.contains("built-in"))
+            .collect::<Vec<_>>(),
+        [
+            "2: Redefining built-in 'id'",
+            "2: Redefining built-in 'input'",
+            "10: Redefining built-in 'input'",
+            "14: Redefining built-in 'id'",
+        ]
+    );
+}
+
+#[test]
+fn redefined_builtin_options() {
+    let source = "from six.moves import range\nfrom os import open\n\ndef f(id, input):\n    return id, input\n";
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-plugin-redefined-builtin", "plugin.wasm");
+    let options =
+        "[options]\nredefining-builtins-modules = \"os\"\nallowed-redefined-builtins = \"id\"\n";
+    project
+        .write("ferrolint.toml", format!("{options}{plugin}"))
+        .write("case.py", source);
+    let run = project.run(&["--no-cache"]);
+    let lines = run.finding_lines();
+    let found = |text: &str| lines.iter().any(|line| line.contains(text));
+    assert!(found("Redefining built-in 'range'"), "{lines:?}");
+    assert!(found("Redefining built-in 'input'"), "{lines:?}");
+    assert!(!found("Redefining built-in 'open'"), "{lines:?}");
+    assert!(!found("Redefining built-in 'id'"), "{lines:?}");
 }
 
 #[test]
@@ -79,6 +132,30 @@ fn unused_variable() {
 }
 
 #[test]
+fn unused_variable_follows_pylint_targets_and_dummy_names() {
+    let source = "def f(items, ctx, p):\n    for i in items:\n        pass\n    with ctx as c:\n        pass\n    try:\n        pass\n    except ValueError as e:\n        pass\n    (n := 5)\n    dummy = _x_ = xdummy = __tracebackhide__ = unused_a = _ok = 1\n    p = 2\n    for k in items:\n        pass\n    [k for k in items]\n    def inner():\n        pass\n    class Inner:\n        pass\n    @items\n    def decorated():\n        pass\n    match items:\n        case [m, *rest]:\n            print(m)\n\ndef g(items):\n    before = 1\n    after = 2\n    return locals(), items\n\ndef h():\n    try:\n        pass\n    except OSError as e:\n        pass\n    try:\n        pass\n    except KeyError as e:\n        print(e)\n";
+    assert_eq!(
+        findings("ferrolint-plugin-unused-variable", source),
+        [
+            "1: Too many local variables (19/15)",
+            "2: Unused variable 'i'",
+            "4: Unused variable 'c'",
+            "8: Unused variable 'e'",
+            "10: Unused variable 'n'",
+            "11: Unused variable '_x_'",
+            "11: Unused variable 'xdummy'",
+            "11: Unused variable '__tracebackhide__'",
+            "16: Unused variable 'inner'",
+            "18: Unused variable 'Inner'",
+            "24: Unused variable 'rest'",
+            "28: Possibly unused variable 'before'",
+            "29: Possibly unused variable 'after'",
+            "35: Unused variable 'e'",
+        ]
+    );
+}
+
+#[test]
 fn global_statement() {
     let source = "global top\ncounter = 0\n\ndef bump():\n    global counter\n    counter += 1\n";
     assert_eq!(
@@ -89,11 +166,13 @@ fn global_statement() {
 
 #[test]
 fn bare_except() {
-    let source =
-        "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept ValueError:\n    pass\n";
+    let source = "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept ValueError:\n    pass\n\ntry:\n    pass\nexcept:\n    cleanup()\n    raise\n\ntry:\n    pass\nexcept:\n    if x:\n        raise\n";
     assert_eq!(
         findings("ferrolint-plugin-bare-except", source),
-        ["3: No exception type(s) specified"]
+        [
+            "3: No exception type(s) specified",
+            "19: No exception type(s) specified"
+        ]
     );
 }
 

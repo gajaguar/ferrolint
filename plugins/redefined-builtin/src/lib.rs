@@ -1,7 +1,13 @@
 //! A port of Pylint's `redefined-builtin` (W0622): a module or function
 //! binds a name that shadows a builtin, such as `list = []` or a
-//! parameter named `id`. Each name reports once per scope, and imports
-//! from `builtins` or `__future__` are left alone.
+//! parameter named `id`. Each name reports once per scope, at its first
+//! binding; only a module and a function are checked, as Pylint does, and
+//! imports from `redefining-builtins-modules` are left alone.
+//!
+//! shortcut: a parameter that a method of an ancestor repeats is excused
+//! (as Pylint does) only when the ancestor is a class of the file named
+//! plainly, and its position-only parameters count as any; a name that a
+//! star import binds counts as no module name. Upgrade with a class model.
 
 use std::collections::HashSet;
 
@@ -86,7 +92,16 @@ const BUILTINS: &[&str] = &[
     "ValueError",
     "Warning",
     "ZeroDivisionError",
+    "_IncompleteInputError",
+    "__build_class__",
+    "__builtins__",
+    "__debug__",
+    "__doc__",
     "__import__",
+    "__loader__",
+    "__name__",
+    "__package__",
+    "__spec__",
     "abs",
     "aiter",
     "all",
@@ -180,16 +195,7 @@ impl Checker for RedefinedBuiltin {
     }
 
     fn visit(&mut self, node: &Node<'_>, cx: &mut Context<'_>) {
-        let binds = match node.kind {
-            NodeKind::Name => node.context == ExprContext::Store,
-            NodeKind::FunctionDef
-            | NodeKind::ClassDef
-            | NodeKind::Parameter
-            | NodeKind::Alias
-            | NodeKind::ExceptHandler => true,
-            _ => false,
-        };
-        if !binds {
+        if !binds(node) {
             return;
         }
         let Some(binding) = cx.resolve(node) else {
@@ -199,26 +205,133 @@ impl Checker for RedefinedBuiltin {
         {
             return;
         }
-        if cx.scope(node).kind == ScopeKind::Class {
-            return;
-        }
-        // `from builtins import str` and `from __future__ import ...` keep
-        // the builtin, so Pylint lets them be.
-        if node.kind == NodeKind::Alias
-            && cx.parent(node).is_some_and(|statement| {
-                statement.kind == NodeKind::ImportFrom
-                    && matches!(statement.detail, Some("builtins" | "__future__"))
-            })
+        // A name that a `global` statement binds belongs to the module.
+        let module = cx.nodes().first().map(|root| cx.scope(root).id);
+        let kind = if Some(binding.scope) == module {
+            ScopeKind::Module
+        } else {
+            cx.scope(node).kind
+        };
+        // Pylint's `visit_module` skips `__doc__`; its `visit_functiondef`
+        // leaves a name the module binds to `redefined-outer-name`.
+        if !matches!(kind, ScopeKind::Module | ScopeKind::Function)
+            || (kind == ScopeKind::Module && binding.name == "__doc__")
+            || (kind == ScopeKind::Function
+                && (module_binds(cx, module, &binding.name)
+                    || cx
+                        .option("allowed-redefined-builtins")
+                        .is_some_and(|names| {
+                            names.split(',').any(|name| name.trim() == binding.name)
+                        })))
         {
             return;
         }
+        // Pylint judges only the first binding of a name in a scope.
         if !self.reported.insert((binding.scope, binding.name.clone())) {
             return;
         }
+        if node.kind == NodeKind::Parameter && overridden(cx, node) {
+            return;
+        }
+        // An import from one of these modules keeps the builtin; Pylint
+        // reports any other at its statement.
+        let mut range = binding.range.unwrap_or(node.range);
+        if node.kind == NodeKind::Alias
+            && let Some(statement) = cx.parent(node)
+        {
+            let modules = cx
+                .option("redefining-builtins-modules")
+                .unwrap_or("six.moves,past.builtins,future.builtins,builtins,io");
+            if statement.kind == NodeKind::ImportFrom
+                && statement
+                    .detail
+                    .is_some_and(|source| modules.split(',').any(|name| name.trim() == source))
+            {
+                return;
+            }
+            range = statement.range;
+        }
         let message = format!("Redefining built-in '{}'", binding.name);
-        let range = binding.range.unwrap_or(node.range);
         cx.report(Diagnostic::new(CODE, message, range));
     }
+}
+
+/// Whether `node` may bind a name.
+fn binds(node: &Node<'_>) -> bool {
+    match node.kind {
+        NodeKind::Name => node.context == ExprContext::Store,
+        NodeKind::FunctionDef
+        | NodeKind::ClassDef
+        | NodeKind::Parameter
+        | NodeKind::Alias
+        | NodeKind::ExceptHandler
+        | NodeKind::Pattern => true,
+        _ => false,
+    }
+}
+
+/// Pylint's `overridden_method` test: the parameter belongs to a method that
+/// an ancestor class of the file defines with a parameter of the same name.
+fn overridden(cx: &Context<'_>, parameter: &Node<'_>) -> bool {
+    let mut up = cx.ancestors(parameter);
+    let (_, Some(method), Some(class)) = (up.next(), up.next(), up.next()) else {
+        return false;
+    };
+    if method.kind != NodeKind::FunctionDef || class.kind != NodeKind::ClassDef {
+        return false;
+    }
+    let (Some(method), Some(name)) = (method.name, parameter.name) else {
+        return false;
+    };
+    let mut seen = vec![class.id];
+    // The first ancestor with the method decides, in astroid's depth-first order.
+    let mut stack: Vec<_> = class_bases(cx, class).into_iter().rev().collect();
+    while let Some(ancestor) = stack.pop() {
+        if seen.contains(&ancestor.id) {
+            continue;
+        }
+        seen.push(ancestor.id);
+        let defined = cx
+            .children(ancestor)
+            .find(|node| node.kind == NodeKind::FunctionDef && node.name == Some(method));
+        if let Some(defined) = defined {
+            return cx
+                .children(defined)
+                .filter(|node| node.kind == NodeKind::Parameters)
+                .flat_map(|parameters| cx.children(parameters))
+                .any(|node| node.name == Some(name));
+        }
+        stack.extend(class_bases(cx, ancestor).into_iter().rev());
+    }
+    false
+}
+
+/// The bases of `class` that are classes of the file, named plainly or
+/// subscripted (`Base[int]`).
+fn class_bases<'a>(cx: &Context<'a>, class: &Node<'_>) -> Vec<&'a Node<'a>> {
+    cx.children(class)
+        .filter(|node| node.kind == NodeKind::Arguments)
+        .flat_map(|arguments| cx.children(arguments))
+        .filter_map(|base| match base.kind {
+            NodeKind::Subscript => cx.children(base).next(),
+            _ => Some(base),
+        })
+        .filter(|base| base.kind == NodeKind::Name)
+        .filter_map(|base| cx.resolve(base)?.node.and_then(|id| cx.node(id)))
+        .filter(|node| node.kind == NodeKind::ClassDef)
+        .collect()
+}
+
+/// Whether the module `scope` binds `name`, so a function binding it is `W0621`.
+fn module_binds(cx: &Context<'_>, module: Option<u32>, name: &str) -> bool {
+    // An alias names the module imported, not the name it binds.
+    cx.nodes().iter().any(|node| {
+        (node.name == Some(name) || node.kind == NodeKind::Alias)
+            && binds(node)
+            && cx
+                .resolve(node)
+                .is_some_and(|binding| binding.name == name && Some(binding.scope) == module)
+    })
 }
 
 export_checker!(RedefinedBuiltin);

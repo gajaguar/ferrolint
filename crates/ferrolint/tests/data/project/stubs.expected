@@ -1,0 +1,8 @@
+pkg/a.py:2:E0611:No name 'missing' in module 'pkg'
+pkg/a.py:3:E0611:No name 'y' in module 'pkg.stub2'
+pkg/a.py:4:E0401:Unable to import 'pkg.nope'
+pkg/b.py:1:E0611:No name 'Q' in module 'pkg.both'
+pkg/stub.pyi:2:E0401:Unable to import 'pkg.gone'
+pkg/stub.pyi:3:E0611:No name 'nope' in module 'pkg'
+pyionly/use.py:2:E0611:No name 'nope' in module 'pyionly'
+pyionly/use.py:3:E0611:No name 'T' in module 'pyionly.sub'

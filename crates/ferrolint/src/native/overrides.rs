@@ -414,23 +414,24 @@ fn differences(
 
 impl<'a> Walk<'a, '_> {
     fn class(&mut self, class: &'a StmtClassDef) {
-        let own = Class::Local(class);
-        let Some(mro) = self.hierarchy.mro(&own) else {
-            return;
-        };
+        // The constructor check reads the bases one by one, so it does not need an MRO.
+        let mro = self.hierarchy.mro(&Class::Local(class));
         for method in methods(&class.body) {
-            if self.enabled.contains(USELESS_DELEGATION) {
-                self.delegation(class, &mro, method);
+            if let Some(mro) = &mro
+                && self.enabled.contains(USELESS_DELEGATION)
+            {
+                self.delegation(class, mro, method);
             }
             if method.name.as_str() == "__init__" {
                 if self.enabled.contains(SUPER_INIT) || self.enabled.contains(NON_PARENT_INIT) {
                     self.constructor(class, method);
                 }
-            } else if [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE, FINAL_METHOD]
-                .iter()
-                .any(|id| self.enabled.contains(*id))
+            } else if let Some(mro) = &mro
+                && [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE, FINAL_METHOD]
+                    .iter()
+                    .any(|id| self.enabled.contains(*id))
             {
-                self.signature(class, &mro, method);
+                self.signature(class, mro, method);
             }
         }
     }
@@ -775,7 +776,7 @@ impl<'a> Walk<'a, '_> {
     /// class the project reads and not abstract: Pylint's `_ancestors_to_call`.
     fn init_of(&self, base: &Class<'a>) -> Option<String> {
         let mro = self.hierarchy.mro(base)?;
-        let (owner, init) = mro.iter().find_map(|class| {
+        let found = mro.iter().find_map(|class| {
             let def = class.def()?;
             locals(&def.body)
                 .iter()
@@ -786,7 +787,14 @@ impl<'a> Walk<'a, '_> {
                         .find(|f| f.name.as_str() == "__init__");
                     (class.key(), init)
                 })
-        })?;
+        });
+        // astroid finds an `__init__` on a class derived from a protocol.
+        let Some((owner, init)) = found else {
+            return mro
+                .iter()
+                .any(|class| self.is_protocol(class))
+                .then(|| "typing.Protocol".to_owned());
+        };
         let init = init?;
         // astroid's `is_abstract`: the first statement after the docstring
         // is `pass` or raises `NotImplementedError`, or there is none.
@@ -834,19 +842,11 @@ impl<'a> Walk<'a, '_> {
 
     /// `W0231` and `W0233`, Pylint's `_check_init`.
     fn constructor(&mut self, class: &'a StmtClassDef, init: &StmtFunctionDef) {
-        if self
-            .env
-            .ctx
-            .path
-            .extension()
-            .is_some_and(|ext| ext == "pyi")
-        {
+        if self.env.ctx.is_stub() {
             return;
         }
         let own = Class::Local(class);
-        let Some(bases) = self.hierarchy.bases(&own) else {
-            return;
-        };
+        let bases = self.hierarchy.known_bases(&own);
         let direct = self.direct_bases(class);
         // (base, the class that gives it its `__init__`), in base order.
         let mut not_called: Vec<(Class<'a>, String)> = Vec::new();
@@ -1121,7 +1121,9 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::native::classes::render;
+    use std::path::Path;
+
+    use crate::native::classes::{render, render_at};
 
     #[test]
     fn overridden_signatures() {
@@ -1135,6 +1137,17 @@ mod tests {
         let source = include_str!("fixtures/super_init_not_called.py");
         let expected = include_str!("fixtures/super_init_not_called.expected").trim_end();
         assert_eq!(render(source, &[], &["W0231"]), expected);
+    }
+
+    #[test]
+    fn a_stub_is_not_checked_for_super_init() {
+        let source = "class A:\n    def __init__(self):\n        self.a = 1\n\n\nclass B(A):\n    def __init__(self):\n        self.b = 1\n";
+        let at = |name| render_at(source, Path::new(name), "mod", &[], &["W0231"]);
+        assert_eq!(
+            at("mod.py"),
+            "7:W0231:__init__ method from base class 'A' is not called"
+        );
+        assert_eq!(at("mod.pyi"), "");
     }
 
     #[test]

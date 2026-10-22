@@ -117,3 +117,26 @@ def outer():
         def m(self):
             camelInM = 1
     return inner
+
+
+import logging
+
+
+class Handler(logging.Handler):
+    def handleError(self, record): pass
+    def ownMethod(self, Arg): pass
+    def emit(self, Record): pass
+
+
+class Plain(dict):
+    def getItem(self, Key): pass
+    def setdefault(self, Key, Default): pass
+
+
+@dataclass
+class Fields:
+    camelField: int = 0
+
+    def __init__(self):
+        self.camelField = 1
+        self.otherCamel = 2

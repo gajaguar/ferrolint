@@ -24,6 +24,31 @@ const MODULE_GLOBALS: &[&str] = &[
     "__spec__",
 ];
 
+/// Whether the nearest `try` around `node` has a handler that names
+/// `NameError`, as Pylint's `node_ignores_exception` reads it.
+/// shortcut: a `contextlib.suppress(NameError)` is not read, add it when seen.
+fn catches_name_error(node: &Node<'_>, cx: &Context<'_>) -> bool {
+    for parent in cx.ancestors(node) {
+        match parent.kind {
+            NodeKind::ExceptHandler => return false,
+            NodeKind::Try => {
+                return cx.children(parent).any(|handler| {
+                    // the handler's type is its first child when that is an expression
+                    handler.kind == NodeKind::ExceptHandler
+                        && cx.children(handler).next().is_some_and(|ty| {
+                            !Context::is_statement(ty)
+                                && cx.nodes()[ty.id as usize..=ty.last as usize]
+                                    .iter()
+                                    .any(|n| n.name == Some("NameError"))
+                        })
+                });
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 #[derive(Default)]
 struct UndefinedVariable {
     star_import: bool,
@@ -50,7 +75,10 @@ impl Checker for UndefinedVariable {
                 let Some(name) = node.name else {
                     return;
                 };
-                if MODULE_GLOBALS.contains(&name) || cx.resolve(node).is_some() {
+                if MODULE_GLOBALS.contains(&name)
+                    || cx.resolve(node).is_some()
+                    || catches_name_error(node, cx)
+                {
                     return;
                 }
                 self.undefined.push((name.to_owned(), node.range));

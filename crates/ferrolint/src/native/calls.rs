@@ -47,7 +47,68 @@ const REDUNDANT: &str = "E1124";
 const MISSING_KWOA: &str = "E1125";
 const NO_RETURN: &str = "E1111";
 const NONE_RETURNED: &str = "E1128";
+/// The `ctypes` types that astroid's ctypes brain redefines with `__init__(self, value)`.
+const CTYPES_VALUE: [&str; 26] = [
+    "c_bool",
+    "c_byte",
+    "c_char",
+    "c_double",
+    "c_float",
+    "c_int",
+    "c_int16",
+    "c_int32",
+    "c_int64",
+    "c_int8",
+    "c_long",
+    "c_longdouble",
+    "c_longlong",
+    "c_short",
+    "c_size_t",
+    "c_ssize_t",
+    "c_ubyte",
+    "c_uint",
+    "c_uint16",
+    "c_uint32",
+    "c_uint64",
+    "c_uint8",
+    "c_ulong",
+    "c_ulonglong",
+    "c_ushort",
+    "c_wchar",
+];
+/// The `ctypes.wintypes` names that are plain aliases of those types (`DWORD = c_ulong`).
+// shortcut: a fixed list of the aliases, not read from `wintypes.py`; upgrade with inference.
+const WINTYPES_VALUE: [&str; 17] = [
+    "BOOL",
+    "BOOLEAN",
+    "BYTE",
+    "CHAR",
+    "DOUBLE",
+    "DWORD",
+    "FLOAT",
+    "INT",
+    "LONG",
+    "SHORT",
+    "UINT",
+    "ULONG",
+    "USHORT",
+    "WCHAR",
+    "WORD",
+    "LARGE_INTEGER",
+    "ULARGE_INTEGER",
+];
 const ARITY: [&str; 5] = [MISSING, TOO_MANY, UNEXPECTED, REDUNDANT, MISSING_KWOA];
+
+/// Whether `name` is a `ctypes` type (or a `wintypes` alias of one) built from a `value`.
+fn ctypes_value(name: &str) -> bool {
+    match name.strip_prefix("ctypes.") {
+        Some(rest) => match rest.strip_prefix("wintypes.") {
+            Some(alias) => WINTYPES_VALUE.contains(&alias),
+            None => CTYPES_VALUE.contains(&rest),
+        },
+        None => false,
+    }
+}
 
 pub struct Calls;
 
@@ -242,6 +303,25 @@ impl<'a> Walk<'a, '_> {
                     "threading.Thread needs the target function",
                 ));
             }
+        }
+        // Pylint reads `c_int()` off the brain's constructor, which requires `value`.
+        if self.on(MISSING)
+            && call.arguments.args.is_empty()
+            && call
+                .arguments
+                .keywords
+                .iter()
+                .all(|k| k.arg.as_ref().is_some_and(|a| a != "value"))
+            && self
+                .env
+                .qualified(&call.func)
+                .is_some_and(|name| ctypes_value(&name))
+        {
+            self.out.push(ctx.report(
+                MISSING,
+                call,
+                "No value for argument 'value' in constructor call",
+            ));
         }
         if self.on(UNITTEST) {
             self.unittest(call);
@@ -460,6 +540,10 @@ impl<'a> Walk<'a, '_> {
         let Expr::Call(call) = &*assign.value else {
             return;
         };
+        // Pylint skips a callee of a module that is not fully defined, as a stub is.
+        if self.env.ctx.is_stub() {
+            return;
+        }
         let Some(func) = function_called(self.env, &self.classes, call)
             .filter(|func| func.decorator_list.is_empty() && !func.is_async)
         else {
@@ -774,7 +858,9 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::classes::render;
+    use std::path::Path;
+
+    use super::super::classes::{render, render_at};
 
     #[test]
     fn single_call_and_assignment_rules() {
@@ -799,6 +885,17 @@ mod tests {
         let source = include_str!("fixtures/assignment_from_no_return.py");
         let expected = include_str!("fixtures/assignment_from_no_return.expected").trim_end();
         assert_eq!(render(source, &[], &["E1111", "E1128"]), expected);
+    }
+
+    #[test]
+    fn a_stub_is_not_fully_defined() {
+        let source = "def f():\n    return None\n\n\nx = f()\n";
+        let at = |name| render_at(source, Path::new(name), "mod", &[], &["E1128"]);
+        assert_eq!(
+            at("mod.py"),
+            "5:E1128:Assigning result of a function call, where the function returns None"
+        );
+        assert_eq!(at("mod.pyi"), "");
     }
 
     #[test]

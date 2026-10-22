@@ -1,5 +1,5 @@
 //! A port of Pylint's `bare-except` (W0702): an `except:` clause that
-//! names no exception type.
+//! names no exception type and does not re-raise.
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -29,7 +29,8 @@ impl Checker for BareExcept {
             .children(node)
             .next()
             .is_some_and(|first| !Context::is_statement(first));
-        if !typed {
+        // Pylint's `_is_raising`: a top-level `raise` in the body is no finding.
+        if !typed && !cx.children(node).any(|child| child.kind == NodeKind::Raise) {
             let header = Range {
                 start: node.range.start,
                 end: node.range.start,

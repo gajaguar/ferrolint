@@ -1,0 +1,11 @@
+2:0:W0611:unused-import:Unused import a1
+3:0:W0611:unused-import:Unused import a2
+5:0:W0611:unused-import:Unused import a4
+9:0:W0611:unused-import:Unused Any imported from typing
+10:0:W0611:unused-import:Unused wraps imported from functools
+11:0:W0611:unused-import:Unused loads imported from json as first
+26:4:W0611:unused-import:Unused curdir imported from os as keep
+78:4:W0611:unused-import:Unused sep imported from os
+79:4:W0611:unused-import:Unused sep imported from os as sep_again
+81:8:W0611:unused-import:Unused dumps imported from json
+87:4:W0611:unused-import:Unused import pathlib
