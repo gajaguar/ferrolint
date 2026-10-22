@@ -69,6 +69,8 @@ enum Fail {
 pub struct Hierarchy<'a, 'e> {
     pub env: &'e Env<'a>,
     pub project: Project,
+    /// The modules the file imports with `from m import *`.
+    stars: Vec<String>,
     /// The MRO of each class met, by key; `None` when it cannot be built.
     cache: RefCell<HashMap<String, Option<Vec<Class<'a>>>>>,
     /// The same, with the bases the project cannot read left out.
@@ -77,9 +79,11 @@ pub struct Hierarchy<'a, 'e> {
 
 impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn new(env: &'e Env<'a>) -> Self {
+        let project = Project::with_packages(env.ctx.path, env.ctx.module);
         Self {
             env,
-            project: Project::with_packages(env.ctx.path, env.ctx.module),
+            stars: project.stars(&env.ctx.parsed.syntax().body),
+            project,
             cache: RefCell::default(),
             known: RefCell::default(),
         }
@@ -126,10 +130,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn resolve(&self, class: &Class<'a>, expr: &Expr) -> Option<Class<'a>> {
         match class {
             Class::Local(_) => self.resolve_here(expr),
-            Class::Remote(_) => {
-                let qualified = self.qualify(class, expr)?;
-                self.project.class(&qualified).map(Class::Remote)
-            }
+            Class::Remote(remote) => remote.resolve(&self.project, expr)?.ok().map(Class::Remote),
         }
     }
 
@@ -138,8 +139,20 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
         if let Some(local) = self.env.class_of(expr) {
             return Some(Class::Local(local));
         }
-        let qualified = self.project.absolute(&self.env.qualified(expr)?);
-        self.project.class(&qualified).map(Class::Remote)
+        let Some(qualified) = self.env.qualified(expr) else {
+            return self.star(expr).map(Class::Remote);
+        };
+        self.project
+            .class(&self.project.absolute(&qualified))
+            .map(Class::Remote)
+    }
+
+    /// The class a name of this file stands for through `from m import *`.
+    fn star(&self, expr: &Expr) -> Option<ClassRef> {
+        let Expr::Name(name) = expr else { return None };
+        self.stars
+            .iter()
+            .find_map(|star| self.project.class(&format!("{star}.{}", name.id)))
     }
 
     /// The bases of `class` as written, each as the MRO reads it.
@@ -149,15 +162,17 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                 .iter()
                 .map(|base| {
                     // `Base[T]` derives from `Base`.
-                    let base = match base {
-                        Expr::Subscript(s) => &*s.value,
-                        other => other,
+                    let (base, subscripted) = match base {
+                        Expr::Subscript(s) => (&*s.value, true),
+                        other => (other, false),
                     };
                     if let Some(local) = self.env.class_of(base) {
                         return Entry::Class(Class::Local(local));
                     }
                     let Some(qualified) = self.env.qualified(base) else {
-                        return Entry::Unknown;
+                        return self
+                            .star(base)
+                            .map_or(Entry::Unknown, |class| Entry::Class(Class::Remote(class)));
                     };
                     if qualified == "object" {
                         return Entry::Object;
@@ -169,7 +184,14 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                     let qualified = self.project.absolute(&qualified);
                     self.project
                         .class(&qualified)
-                        .map_or(Entry::Unknown, |class| Entry::Class(Class::Remote(class)))
+                        .map_or(Entry::Unknown, |class| {
+                            // astroid infers `typing.X[...]` as an empty class.
+                            if subscripted && class.is_typing() {
+                                Entry::Empty
+                            } else {
+                                Entry::Class(Class::Remote(class))
+                            }
+                        })
                 })
                 .collect(),
             Class::Remote(remote) => remote
@@ -304,5 +326,110 @@ fn merge(mut seqs: Vec<Vec<Class<'_>>>) -> Option<Vec<Class<'_>>> {
                 seq.remove(0);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::classes::render_at;
+
+    /// Lints `pkg/main.py` of a project made of `files`.
+    fn run(files: &[(&str, &str)], ids: &[&str]) -> String {
+        let root = tempfile::tempdir().unwrap();
+        for (path, text) in files {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let main = root.path().join("pkg/main.py");
+        let source = std::fs::read_to_string(&main).unwrap();
+        render_at(&source, &main, "pkg.main", &[], ids)
+    }
+
+    #[test]
+    fn a_base_of_another_module_reads_the_names_of_its_own_module() {
+        // `Mid` derives from `Old` (defined beside it, the way `object` is
+        // implied), which a module-level alias also names.
+        let files = [
+            ("pkg/__init__.py", "from .base import *\n"),
+            (
+                "pkg/base.py",
+                "class Old(object):\n    def run(self): ...\n\nclass Mid(Old):\n    pass\n\nAlias = Mid\n",
+            ),
+            (
+                "pkg/main.py",
+                "from . import Alias\n\nclass Child(Alias):\n    pass\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, &["R0903"]),
+            "3:R0903:Too few public methods (1/2)"
+        );
+    }
+
+    #[test]
+    fn a_module_bound_beside_a_fallback_assignment_still_names_the_base() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/base.py",
+                "import abc\n\nclass Base(abc.ABC):\n    @abc.abstractmethod\n    def run(self): ...\n",
+            ),
+            (
+                "pkg/main.py",
+                "try:\n    from pkg import base\nexcept ImportError:\n    base = None\n\nclass Child(base.Base):\n    pass\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, &["W0223"]),
+            "6:W0223:Method 'run' is abstract in class 'Base' but is not overridden in child class 'Child'"
+        );
+    }
+
+    #[test]
+    fn a_base_bound_by_a_star_import_of_the_file_is_found() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/base.py",
+                "class Base:\n    def __init__(self):\n        self.x = 1\n",
+            ),
+            (
+                "pkg/main.py",
+                "from .base import *\n\nclass Child(Base):\n    def __init__(self):\n        pass\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, &["W0231"]),
+            "4:W0231:__init__ method from base class 'Base' is not called"
+        );
+    }
+
+    #[test]
+    fn a_class_derived_from_a_protocol_has_an_init_to_call() {
+        let source = "from typing import Protocol\n\nclass P(Protocol):\n    def f(self): ...\n\nclass Q(P):\n    pass\n\nclass R(Q):\n    def __init__(self):\n        pass\n\nclass S(P):\n    def __init__(self):\n        pass\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", source)],
+                &["W0231"]
+            ),
+            "10:W0231:__init__ method from base class 'Q' is not called"
+        );
+    }
+
+    #[test]
+    fn a_subscripted_typing_base_is_an_empty_class() {
+        let typing = "import abc\n\nclass IO:\n    @abc.abstractmethod\n    def run(self): ...\n";
+        let main =
+            "from typing import IO\n\nclass A(IO[str]):\n    pass\n\nclass B(IO):\n    pass\n";
+        let files = [
+            ("typing.py", typing),
+            ("pkg/__init__.py", ""),
+            ("pkg/main.py", main),
+        ];
+        assert_eq!(
+            run(&files, &["W0223"]),
+            "6:W0223:Method 'run' is abstract in class 'IO' but is not overridden in child class 'B'"
+        );
     }
 }

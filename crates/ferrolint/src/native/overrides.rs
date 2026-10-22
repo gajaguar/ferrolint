@@ -775,7 +775,7 @@ impl<'a> Walk<'a, '_> {
     /// class the project reads and not abstract: Pylint's `_ancestors_to_call`.
     fn init_of(&self, base: &Class<'a>) -> Option<String> {
         let mro = self.hierarchy.mro(base)?;
-        let (owner, init) = mro.iter().find_map(|class| {
+        let found = mro.iter().find_map(|class| {
             let def = class.def()?;
             locals(&def.body)
                 .iter()
@@ -786,7 +786,14 @@ impl<'a> Walk<'a, '_> {
                         .find(|f| f.name.as_str() == "__init__");
                     (class.key(), init)
                 })
-        })?;
+        });
+        // astroid finds an `__init__` on a class derived from a protocol.
+        let Some((owner, init)) = found else {
+            return mro
+                .iter()
+                .any(|class| self.is_protocol(class))
+                .then(|| "typing.Protocol".to_owned());
+        };
         let init = init?;
         // astroid's `is_abstract`: the first statement after the docstring
         // is `pass` or raises `NotImplementedError`, or there is none.

@@ -512,6 +512,13 @@ Known divergences:
   rather than guessed. Without an active environment the base classes of
   the dependencies (a serializer's `create`, for instance) are unknown,
   and those findings go missing.
+* A base is followed through the imports of its module (`import m`, `from m
+  import X`, also `from m import *` and a `try: import m` whose `except`
+  assigns `m = None`) and through a top-level `Alias = Class` of the module
+  that defines it. `typing.X[...]` is an empty class, as in astroid. A base
+  that a function returns, a class bound under `if` or `try` by a plain
+  assignment, a C class (`ctypes.Structure`, `types.ModuleType`, `io.IOBase`
+  through `_io`) and a dataclass's generated `__init__` are not read.
 * A cached result does not track the environment: after switching it,
   lint with `--no-cache`.
 * In an ancestor other than the class itself, a name bound by an import
