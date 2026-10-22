@@ -44,6 +44,11 @@ fn undefined_variable() {
             "6: Undefined variable 'missing'"
         ]
     );
+    let guarded = "try:\n    buffer\nexcept (OSError, NameError):\n    pass\ntry:\n    other\nexcept:\n    pass\n";
+    assert_eq!(
+        findings("ferrolint-plugin-undefined-variable", guarded),
+        ["6: Undefined variable 'other'"]
+    );
     let star = "from os import *\nprint(sep)\n";
     assert_eq!(
         findings("ferrolint-plugin-undefined-variable", star),
