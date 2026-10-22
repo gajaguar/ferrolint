@@ -23,6 +23,7 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::py_repr;
 use super::misc::py_match;
+use super::project::Project;
 use super::unassigned;
 use super::{Checker, Ctx, rule};
 
@@ -247,6 +248,8 @@ pub(super) struct Info<'a> {
     /// `except ... as name` clauses inside another one binding the same
     /// name: the inner clause and the outer line.
     pub nested_handlers: Vec<(&'a str, TextRange, u32)>,
+    /// Each `from m import *` of the module's scope: `m` as written and the line.
+    pub stars: Vec<(String, u32)>,
     pub typing: HashSet<&'a str>,
 }
 
@@ -274,6 +277,7 @@ impl<'a> Info<'a> {
                 globals: Vec::new(),
                 loops: Vec::new(),
                 nested_handlers: Vec::new(),
+                stars: Vec::new(),
                 typing,
             },
             cur: 0,
@@ -653,6 +657,11 @@ impl<'a> Collect<'a, '_> {
                         .module
                         .as_ref()
                         .is_some_and(|m| m.as_str() == "__future__");
+                if self.cur == 0 && import.names.iter().any(|alias| &alias.name == "*") {
+                    let origin = import.module.as_ref().map_or("", |m| m.as_str());
+                    let origin = format!("{}{origin}", ".".repeat(import.level as usize));
+                    self.info.stars.push((origin, self.stmt_line));
+                }
                 for alias in import
                     .names
                     .iter()
@@ -982,6 +991,17 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
     for def in &module.defs {
         first_module.entry(def.name).or_default().push(def);
     }
+    // The names of a star import, with the line of the first star that binds each.
+    let mut starred: HashMap<String, u32> = HashMap::new();
+    if !info.stars.is_empty() {
+        let project = Project::with_packages(ctx.path, ctx.module);
+        for (origin, line) in &info.stars {
+            let names = project.public_names(&project.absolute(origin));
+            for name in names.into_iter().flatten() {
+                starred.entry(name).or_insert(*line);
+            }
+        }
+    }
     for scope in &info.scopes {
         if scope.kind != Kind::Function {
             continue;
@@ -992,16 +1012,18 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
             if !seen.insert(def.name) || scope.globals.contains(def.name) {
                 continue;
             }
-            let Some(outer) = first_module.get(def.name) else {
+            let outer = first_module.get(def.name);
+            if outer.is_some_and(|o| o.iter().any(|d| d.type_checking)) {
                 continue;
+            }
+            // astroid sorts the locals of a name by line, so a star import above wins.
+            let line = match (outer.map(|o| o[0]), starred.get(def.name)) {
+                (Some(d), Some(&star)) if star < d.line => star,
+                (Some(d), _) if d.future || d.kind == DefKind::ExceptName => continue,
+                (Some(d), _) => d.line,
+                (None, Some(&star)) => star,
+                (None, None) => continue,
             };
-            let definition = outer[0];
-            if definition.future || outer.iter().any(|d| d.type_checking) {
-                continue;
-            }
-            if definition.kind == DefKind::ExceptName {
-                continue;
-            }
             if !ignored(ctx, def.kind, def.name) {
                 out.push(ctx.report_at(
                     REDEFINED,
@@ -1009,7 +1031,7 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
                     format!(
                         "Redefining name {} from outer scope (line {})",
                         py_repr(def.name),
-                        definition.line
+                        line
                     ),
                 ));
             }
@@ -1231,7 +1253,7 @@ fn find_function<'a>(ctx: &Ctx<'a>, range: TextRange) -> Option<&'a StmtFunction
 
 #[cfg(test)]
 mod tests {
-    use super::super::classes::render;
+    use super::super::classes::{render, render_at};
 
     #[test]
     fn global_statements() {
@@ -1245,6 +1267,20 @@ mod tests {
         let source = include_str!("fixtures/redefined_outer_name.py");
         let expected = include_str!("fixtures/redefined_outer_name.expected").trim_end();
         assert_eq!(render(source, &[], &["W0621"]), expected);
+    }
+
+    #[test]
+    fn a_star_import_binds_the_outer_name() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("m.py"), "Loader = 1\nother = 2\n").unwrap();
+        let path = root.path().join("main.py");
+        let source = "from m import *\n\ndef load(stream, Loader=Loader):\n    return stream\n\n\
+                      def late(other):\n    return other\n\nother = 3\n\ndef fine(unrelated):\n    return unrelated\n";
+        assert_eq!(
+            render_at(source, &path, "main", &[], &["W0621"]),
+            "3:W0621:Redefining name 'Loader' from outer scope (line 1)\n\
+             6:W0621:Redefining name 'other' from outer scope (line 1)"
+        );
     }
 
     #[test]

@@ -309,7 +309,8 @@ Variables and scopes:
 * `W0601` `global-variable-undefined`.
 * `W0621` `redefined-outer-name`: a name of a function (a parameter
   included) that the module also binds, and an `except ... as name` inside
-  another one with that name. `dummy-variables-rgx` and
+  another one with that name, or that a star import of the module binds.
+  `dummy-variables-rgx` and
   `ignored-argument-names` excuse names, read as real regular expressions.
 * `W0631` `undefined-loop-variable`.
 * `W0641` `possibly-unused-variable`: the unused names of a function that
@@ -342,8 +343,10 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   statement imports twice, with Pylint's wording.
 * `W0621` finds the names of a function's scope from the syntax, like
   astroid's locals, so an assignment under `nonlocal` counts as a local. The
-  names that a `from module import *` binds are not known, since the module
-  is not read; Pylint knows them and reports a function that redefines one.
+  names that a `from module import *` binds are the public names of the
+  module when it is found (the same list as `W0614`), and the message names
+  the line of the first star import or definition of the name; a module that
+  is not found binds none.
 * `W0631` reports a read after a loop only when the loop variable is the one
   binding of the name read (a binding inside the loop does not count, nor
   one in another branch of an `if` or `try`), and the loop may not run:
