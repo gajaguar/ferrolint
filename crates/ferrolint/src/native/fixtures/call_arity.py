@@ -218,3 +218,67 @@ from ctypes.wintypes import DWORD
 ctypes.wintypes.WORD()
 DWORD()
 DWORD(1)
+
+
+from helpers import wrapper
+
+
+@wrapper
+def decorated(a, b):
+    pass
+
+
+class Decorated:
+    @wrapper
+    def __init__(self, a):
+        pass
+
+    @wrapper
+    def m(self, a):
+        pass
+
+    @property
+    def p(self):
+        pass
+
+    def call(self):
+        self.m()
+        self.m(b=1)
+        self.p()
+
+
+decorated()
+decorated(1, 2, 3)
+decorated(1, 2, c=3)
+Decorated()
+Decorated(b=1)
+
+
+class NewOfObject:
+    def copy(self):
+        return self.__new__(NewOfObject)
+
+    def two(self):
+        return self.__new__(NewOfObject, 1)
+
+    def own(self):
+        return object.__new__(NewOfObject)
+
+
+class Factory:
+    def __init__(self, a):
+        pass
+
+    @classmethod
+    def make(cls):
+        return cls(), cls(1), cls(b=2)
+
+    @classmethod
+    def nested(cls):
+        def inner(cls):
+            return cls()
+
+        return inner
+
+    def instance(cls):
+        return cls()

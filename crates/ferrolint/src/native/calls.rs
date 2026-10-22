@@ -26,7 +26,7 @@ use ruff_python_ast::{
 };
 
 use super::abstract_methods::raises_not_implemented;
-use super::classes::{Env, Local, const_repr, is_static, locals, py_repr};
+use super::classes::{Env, Local, const_repr, is_classmethod, is_static, locals, py_repr};
 use super::flow::own_returns;
 use super::misc::csv;
 use super::statements::is_generator;
@@ -212,6 +212,7 @@ impl Checker for Calls {
             out,
             frames: Vec::new(),
             classes: Vec::new(),
+            defs: Vec::new(),
             annotated: HashSet::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
@@ -233,6 +234,8 @@ struct Walk<'a, 'e> {
     frames: Vec<Frame>,
     /// The enclosing classes, with whether each derives from a `TestCase`.
     classes: Vec<(&'a StmtClassDef, bool)>,
+    /// The enclosing functions.
+    defs: Vec<&'a StmtFunctionDef>,
     /// The values of the annotated assignments met, by address.
     annotated: HashSet<usize>,
 }
@@ -323,12 +326,43 @@ impl<'a> Walk<'a, '_> {
                 "No value for argument 'value' in constructor call",
             ));
         }
+        if self.on(MISSING) && self.object_new(call) {
+            self.out.push(ctx.report(
+                MISSING,
+                call,
+                "No value for argument 'cls' in classmethod call",
+            ));
+        }
         if self.on(UNITTEST) {
             self.unittest(call);
         }
         if self.on(OUT_OF_ORDER) || self.on(SUPERSEDED) || ARITY.iter().any(|id| self.on(id)) {
             self.arguments(call);
         }
+    }
+
+    /// `self.__new__(X)` in a class that derives from nothing but `object`: astroid reads
+    /// `object.__new__` as `(self, cls)`, so the one argument leaves `cls` without a value.
+    // shortcut: a class of the file only; a base from another module may define `__new__`.
+    fn object_new(&self, call: &ExprCall) -> bool {
+        let Expr::Attribute(method) = &*call.func else {
+            return false;
+        };
+        let Expr::Name(receiver) = &*method.value else {
+            return false;
+        };
+        let (positional, keywords) = (call.arguments.args.len(), call.arguments.keywords.len());
+        method.attr.as_str() == "__new__"
+            && (positional, keywords) == (1, 0)
+            && !matches!(call.arguments.args[0], Expr::Starred(_))
+            && receiver.id.as_str() == "self"
+            && self
+                .env
+                .binding(receiver)
+                .is_some_and(|b| b.kind == BindingKind::Parameter)
+            && self.classes.last().is_some_and(|(class, _)| {
+                self.env.plain(class, 0) && constructible(self.env, class, 0)
+            })
     }
 
     fn unittest(&mut self, call: &ExprCall) {
@@ -374,7 +408,29 @@ impl<'a> Walk<'a, '_> {
 
     /// The function a call calls, with how Pylint names the call.
     fn callee(&self, call: &ExprCall) -> Option<Callee<'a>> {
-        callee(self.env, &self.classes, call)
+        callee(self.env, &self.classes, call).or_else(|| self.cls_constructor(call))
+    }
+
+    /// `cls(...)` in a classmethod, which builds the class that defines it.
+    fn cls_constructor(&self, call: &ExprCall) -> Option<Callee<'a>> {
+        let Expr::Name(name) = &*call.func else {
+            return None;
+        };
+        let (class, _) = self.classes.last()?;
+        let method = self.defs.last()?;
+        let first = method.parameters.args.first()?;
+        let direct = super::classes::methods(&class.body)
+            .into_iter()
+            .any(|m| std::ptr::eq(m, *method));
+        (direct
+            && is_classmethod(method)
+            && name.id.as_str() == named(first)
+            && self
+                .env
+                .binding(name)
+                .is_some_and(|b| b.kind == BindingKind::Parameter))
+        .then(|| constructor(class))
+        .flatten()
     }
 
     /// Whether the arity rules can trust `callee`: Pylint reads the
@@ -492,7 +548,12 @@ impl<'a> Walk<'a, '_> {
             } else if let Some(i) = p.kwonlyargs.iter().position(|a| named(a) == name) {
                 &mut kw_given[i]
             } else {
-                if p.kwarg.is_none() {
+                // Pylint lets a decorator of a function or constructor take the keyword.
+                // shortcut: any decorator, not the signature of what it returns; upgrade with inference.
+                let decorators = callee.func.decorator_list.len();
+                let wrapped =
+                    callee.kind != "method" && decorators > usize::from(is_static(callee.func));
+                if p.kwarg.is_none() && !wrapped {
                     say(
                         UNEXPECTED,
                         format!("Unexpected keyword argument {shown} {at}"),
@@ -652,24 +713,13 @@ pub(super) fn callee<'a>(
     match &*call.func {
         Expr::Name(name) => {
             if let Some(func) = env.func_of(name) {
-                return func.decorator_list.is_empty().then_some(Callee {
+                return (!rebinds(func)).then_some(Callee {
                     func,
                     kind: "function",
                     class: None,
                 });
             }
-            let class = env.class_of(&call.func)?;
-            let plain = class.decorator_list.is_empty()
-                && class
-                    .arguments
-                    .as_ref()
-                    .is_none_or(|a| a.keywords.is_empty());
-            let init = own_method(class, "__init__")?;
-            (plain && own_method(class, "__new__").is_none()).then_some(Callee {
-                func: init,
-                kind: "constructor",
-                class: Some(class),
-            })
+            constructor(env.class_of(&call.func)?)
         }
         Expr::Attribute(attribute) => {
             let Expr::Name(receiver) = &*attribute.value else {
@@ -693,6 +743,21 @@ pub(super) fn callee<'a>(
         }
         _ => None,
     }
+}
+
+/// The `__init__` that building `class` calls.
+fn constructor(class: &StmtClassDef) -> Option<Callee<'_>> {
+    let plain = class.decorator_list.is_empty()
+        && class
+            .arguments
+            .as_ref()
+            .is_none_or(|a| a.keywords.is_empty());
+    let init = own_method(class, "__init__")?;
+    (plain && own_method(class, "__new__").is_none()).then_some(Callee {
+        func: init,
+        kind: "constructor",
+        class: Some(class),
+    })
 }
 
 /// Whether the arity rules can trust `callee`: Pylint reads the
@@ -750,7 +815,29 @@ pub(super) fn function_called<'a>(
     call: &ExprCall,
 ) -> Option<&'a StmtFunctionDef> {
     let callee = callee(env, classes, call).filter(|callee| callee.class.is_none())?;
-    settled(env, classes, call, &callee).then_some(callee.func)
+    // The result of a decorated function is not the one of its body (static: as before).
+    (settled(env, classes, call, &callee)
+        && (callee.func.decorator_list.is_empty() || callee.kind == "staticmethod"))
+        .then_some(callee.func)
+}
+
+/// Whether a decorator makes Pylint read the function as a classmethod or a
+/// property, not by its signature. Any other decorator leaves the signature as written.
+// shortcut: a property by the name of its decorator (`...property`, `setter`), not inferred.
+fn rebinds(func: &StmtFunctionDef) -> bool {
+    func.decorator_list.iter().any(|d| {
+        let expr = match &d.expression {
+            Expr::Call(call) => &*call.func,
+            other => other,
+        };
+        let name = match expr {
+            Expr::Name(n) => n.id.as_str(),
+            Expr::Attribute(a) => a.attr.as_str(),
+            _ => return false,
+        };
+        name.ends_with("property")
+            || matches!(name, "classmethod" | "setter" | "getter" | "deleter")
+    })
 }
 
 fn named(a: &ParameterWithDefault) -> &str {
@@ -780,7 +867,7 @@ impl Visitor<'_> for Stores<'_> {
     }
 }
 
-/// The method `name` the class binds once in its body, undecorated or static.
+/// The method `name` the class binds once in its body, read by its signature.
 fn own_method<'a>(class: &'a StmtClassDef, name: &str) -> Option<&'a StmtFunctionDef> {
     let bound: Vec<Local> = locals(&class.body)
         .into_iter()
@@ -793,7 +880,7 @@ fn own_method<'a>(class: &'a StmtClassDef, name: &str) -> Option<&'a StmtFunctio
     super::classes::methods(&class.body)
         .into_iter()
         .find(|f| f.name.as_str() == name)
-        .filter(|f| f.decorator_list.is_empty() || is_static(f))
+        .filter(|f| !rebinds(f))
 }
 
 impl<'a> Visitor<'a> for Walk<'a, '_> {
@@ -816,6 +903,11 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
                 self.visit_body(&class.body);
                 self.classes.pop();
                 self.frames.pop();
+            }
+            Stmt::FunctionDef(func) => {
+                self.defs.push(func);
+                visitor::walk_stmt(self, stmt);
+                self.defs.pop();
             }
             Stmt::AnnAssign(assign) => {
                 if let Some(value) = &assign.value {

@@ -57,3 +57,15 @@
 211:E1120:No value for argument 'value' in constructor call
 218:E1120:No value for argument 'value' in constructor call
 219:E1120:No value for argument 'value' in constructor call
+245:E1120:No value for argument 'a' in method call
+246:E1120:No value for argument 'a' in method call
+246:E1123:Unexpected keyword argument 'b' in method call
+250:E1120:No value for argument 'a' in function call
+250:E1120:No value for argument 'b' in function call
+251:E1121:Too many positional arguments for function call
+253:E1120:No value for argument 'a' in constructor call
+254:E1120:No value for argument 'a' in constructor call
+259:E1120:No value for argument 'cls' in classmethod call
+274:E1120:No value for argument 'a' in constructor call
+274:E1120:No value for argument 'a' in constructor call
+274:E1123:Unexpected keyword argument 'b' in constructor call
