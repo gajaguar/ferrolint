@@ -102,6 +102,16 @@ fn stub_imports_are_edges_to_the_package() {
     assert_eq!(found, expected("cycles_stub"));
 }
 
+/// A directory run lints the stubs and knows them as modules; explicit `.py` files do not.
+#[test]
+fn stubs_are_modules_of_a_directory_run() {
+    let project = project("stubs");
+    assert_eq!(findings(&project, &["--no-cache"]), expected("stubs"));
+    let files = findings(&project, &["--no-cache", "pkg/a.py", "pkg/__init__.py"]);
+    assert!(files.contains(&"pkg/a.py:1:E0401:Unable to import 'pkg.stub'".to_owned()));
+    assert!(files.iter().all(|line| !line.contains(".pyi")));
+}
+
 #[test]
 fn duplicates_match_pylint() {
     let project = project("duplicates");

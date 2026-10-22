@@ -147,7 +147,6 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         let prepared = project_phase::prepare_all(&units);
         let linted = units
             .iter()
-            .filter(|u| !crate::discover::is_stub(&u.path))
             .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
             .collect();
         let environment = crate::native::environment();

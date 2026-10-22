@@ -632,24 +632,14 @@ impl Project {
     }
 
     /// Whether the module `name` is a file or directory of the search path:
-    /// not one that astroid makes up (`six.moves`), which `file_from_modpath` cannot find.
+    /// not one that astroid makes up (`six.moves`), which `file_from_modpath` cannot find,
+    /// nor a linted `.pyi` stub, which it does not look for (an edge goes to the package).
     pub fn on_disk(&self, name: &str) -> bool {
-        self.spec(name)
-            .is_some_and(|spec| !matches!(spec.kind, Kind::Made))
-    }
-
-    /// Whether `name` is a module with only a `.pyi` stub, beside the modules of its parent package.
-    /// shortcut: a top-level stub is not looked for, since no parent package lists it.
-    pub fn has_stub(&self, name: &str) -> bool {
-        let Some((parent, last)) = name.rsplit_once('.') else {
-            return false;
-        };
-        let Some(spec) = self.spec(parent) else {
-            return false;
-        };
-        spec.dirs
-            .iter()
-            .any(|dir| self.listing(dir).entry(&format!("{last}.pyi")) == Some(false))
+        self.spec(name).is_some_and(|spec| match &spec.kind {
+            Kind::Made => false,
+            Kind::Source { file, .. } => file.extension().is_none_or(|ext| ext != "pyi"),
+            _ => true,
+        })
     }
 
     /// The directories listed and the files read so far, for a cache to stamp.
