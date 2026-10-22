@@ -400,12 +400,6 @@ impl File<'_> {
             .ok_or(Failure::Missing)
     }
 
-    /// Whether the `level`-dotted `name` is a module that only a `.pyi` stub holds.
-    fn stub(&self, level: u32, name: &str) -> Option<String> {
-        let absolute = self.absolute(level, name).ok()?;
-        self.project.has_stub(&absolute).then_some(absolute)
-    }
-
     /// Whether a missing `name` goes unreported here.
     fn forgiven(&self, import: &Import, name: &str) -> bool {
         self.opts.is_ignored(name)
@@ -576,31 +570,29 @@ impl File<'_> {
                 import
                     .names
                     .iter()
-                    .filter(|name| self.find(0, name).is_ok() || self.stub(0, name).is_some())
+                    .filter(|name| self.find(0, name).is_ok())
                     .cloned()
                     .collect(),
             ),
-            Some((module, level)) => match self
-                .find(*level, module)
-                .map(|(absolute, _)| absolute)
-                .or_else(|_| self.stub(*level, module).ok_or(Failure::Missing))
-            {
-                Ok(absolute) => (
-                    *level,
-                    import
-                        .names
-                        .iter()
-                        .map(|name| {
-                            if name == "*" {
-                                absolute.clone()
-                            } else {
-                                format!("{absolute}.{name}")
-                            }
-                        })
-                        .collect(),
-                ),
-                Err(_) => return Vec::new(),
-            },
+            Some((module, level)) => {
+                match self.find(*level, module).map(|(absolute, _)| absolute) {
+                    Ok(absolute) => (
+                        *level,
+                        import
+                            .names
+                            .iter()
+                            .map(|name| {
+                                if name == "*" {
+                                    absolute.clone()
+                                } else {
+                                    format!("{absolute}.{name}")
+                                }
+                            })
+                            .collect(),
+                    ),
+                    Err(_) => return Vec::new(),
+                }
+            }
         };
         let context = (level > 0)
             .then(|| self.unit.path.parent().map(Path::to_path_buf))
@@ -684,7 +676,10 @@ pub fn module_name(path: &Path, bases: &[PathBuf], namespace: bool) -> Option<St
         if !packages && !namespace {
             continue;
         }
-        let stem = file.strip_suffix(".py").unwrap_or(&file).to_owned();
+        let stem = file
+            .rsplit_once('.')
+            .map_or(&*file, |(stem, _)| stem)
+            .to_owned();
         if stem != "__init__" {
             parts.push(stem);
         }

@@ -834,13 +834,7 @@ impl<'a> Walk<'a, '_> {
 
     /// `W0231` and `W0233`, Pylint's `_check_init`.
     fn constructor(&mut self, class: &'a StmtClassDef, init: &StmtFunctionDef) {
-        if self
-            .env
-            .ctx
-            .path
-            .extension()
-            .is_some_and(|ext| ext == "pyi")
-        {
+        if self.env.ctx.is_stub() {
             return;
         }
         let own = Class::Local(class);
@@ -1121,7 +1115,9 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::native::classes::render;
+    use std::path::Path;
+
+    use crate::native::classes::{render, render_at};
 
     #[test]
     fn overridden_signatures() {
@@ -1135,6 +1131,17 @@ mod tests {
         let source = include_str!("fixtures/super_init_not_called.py");
         let expected = include_str!("fixtures/super_init_not_called.expected").trim_end();
         assert_eq!(render(source, &[], &["W0231"]), expected);
+    }
+
+    #[test]
+    fn a_stub_is_not_checked_for_super_init() {
+        let source = "class A:\n    def __init__(self):\n        self.a = 1\n\n\nclass B(A):\n    def __init__(self):\n        self.b = 1\n";
+        let at = |name| render_at(source, Path::new(name), "mod", &[], &["W0231"]);
+        assert_eq!(
+            at("mod.py"),
+            "7:W0231:__init__ method from base class 'A' is not called"
+        );
+        assert_eq!(at("mod.pyi"), "");
     }
 
     #[test]

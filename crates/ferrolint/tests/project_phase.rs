@@ -102,6 +102,16 @@ fn stub_imports_are_edges_to_the_package() {
     assert_eq!(found, expected("cycles_stub"));
 }
 
+/// A directory run lints the stubs and knows them as modules; explicit `.py` files do not.
+#[test]
+fn stubs_are_modules_of_a_directory_run() {
+    let project = project("stubs");
+    assert_eq!(findings(&project, &["--no-cache"]), expected("stubs"));
+    let files = findings(&project, &["--no-cache", "pkg/a.py", "pkg/__init__.py"]);
+    assert!(files.contains(&"pkg/a.py:1:E0401:Unable to import 'pkg.stub'".to_owned()));
+    assert!(files.iter().all(|line| !line.contains(".pyi")));
+}
+
 #[test]
 fn duplicates_match_pylint() {
     let project = project("duplicates");
@@ -144,6 +154,16 @@ fn a_cached_run_replays_until_the_search_path_changes() {
             .iter()
             .all(|line| !line.contains("No name 'nope' in module 'pkg'"))
     );
+}
+
+#[test]
+fn an_edit_to_a_stub_changes_the_cached_result() {
+    let project = project("stubs");
+    let first = findings(&project, &[]);
+    assert_eq!(first, expected("stubs"));
+    project.write("pkg/stub2.pyi", "x = 1\ny = 1\n");
+    let after = findings(&project, &[]);
+    assert_eq!(after.len(), first.len() - 1, "{after:?}");
 }
 
 #[test]
@@ -227,4 +247,16 @@ fn diff_mode_drops_a_cycle_whose_files_did_not_change() {
         findings(&project, &["--diff-base", "HEAD"]),
         Vec::<String>::new()
     );
+}
+
+/// Pylint lints a stub as a module, so a per-file rule reports on it.
+#[test]
+fn a_stub_gets_the_per_file_rules() {
+    let project = Project::new();
+    project
+        .write("ferrolint.toml", "select = [\"C0103\"]\n")
+        .write("pkg/__init__.py", "")
+        .write("pkg/stub.pyi", "class bad_name: ...\n");
+    let found = project.run(&["--no-cache"]).stdout;
+    assert!(found.contains("pkg/stub.pyi:1:7: info C0103"), "{found}");
 }

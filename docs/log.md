@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-10-22
+
+* **native-rules.md**: the per-file rules run on a `.pyi` stub found under a
+  directory, except `W0231`, `W0233`, `E1111` and `E1128`, which Pylint skips
+  there; the `W0614` of a wildcard import of a stub-only module is left out.
+
 ## 2026-10-20
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the

@@ -292,7 +292,7 @@ fn units(
                         .unwrap_or_default()
                 });
             Unit {
-                is_package: real.file_name().is_some_and(|name| name == "__init__.py"),
+                is_package: real.file_stem().is_some_and(|stem| stem == "__init__"),
                 path: real,
                 display: display.clone(),
                 module,
