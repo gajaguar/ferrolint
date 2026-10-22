@@ -84,6 +84,30 @@ fn unused_variable() {
 }
 
 #[test]
+fn unused_variable_follows_pylint_targets_and_dummy_names() {
+    let source = "def f(items, ctx, p):\n    for i in items:\n        pass\n    with ctx as c:\n        pass\n    try:\n        pass\n    except ValueError as e:\n        pass\n    (n := 5)\n    dummy = _x_ = xdummy = __tracebackhide__ = unused_a = _ok = 1\n    p = 2\n    for k in items:\n        pass\n    [k for k in items]\n    def inner():\n        pass\n    class Inner:\n        pass\n    @items\n    def decorated():\n        pass\n    match items:\n        case [m, *rest]:\n            print(m)\n\ndef g(items):\n    before = 1\n    after = 2\n    return locals(), items\n\ndef h():\n    try:\n        pass\n    except OSError as e:\n        pass\n    try:\n        pass\n    except KeyError as e:\n        print(e)\n";
+    assert_eq!(
+        findings("ferrolint-plugin-unused-variable", source),
+        [
+            "1: Too many local variables (19/15)",
+            "2: Unused variable 'i'",
+            "4: Unused variable 'c'",
+            "8: Unused variable 'e'",
+            "10: Unused variable 'n'",
+            "11: Unused variable '_x_'",
+            "11: Unused variable 'xdummy'",
+            "11: Unused variable '__tracebackhide__'",
+            "16: Unused variable 'inner'",
+            "18: Unused variable 'Inner'",
+            "24: Unused variable 'rest'",
+            "28: Possibly unused variable 'before'",
+            "29: Possibly unused variable 'after'",
+            "35: Unused variable 'e'",
+        ]
+    );
+}
+
+#[test]
 fn global_statement() {
     let source = "global top\ncounter = 0\n\ndef bump():\n    global counter\n    counter += 1\n";
     assert_eq!(
