@@ -939,6 +939,11 @@ impl<'a> Walk<'a, '_> {
         let protocols = ["typing.Protocol", "typing_extensions.Protocol"];
         class.def().is_some_and(|def| {
             super::classes::bases(def).iter().any(|base| {
+                // `Protocol[T]` is a protocol too.
+                let base = match base {
+                    Expr::Subscript(s) => &*s.value,
+                    other => other,
+                };
                 self.hierarchy
                     .qualify(class, base)
                     .is_some_and(|name| protocols.contains(&name.as_str()))

@@ -457,6 +457,18 @@ mod tests {
     }
 
     #[test]
+    fn a_subscripted_protocol_base_has_no_init_to_call() {
+        let source = "from typing import Protocol, TypeVar\n\nT = TypeVar(\"T\")\n\nclass P(Protocol[T]):\n    def __init__(self, a):\n        self.a = a\n\nclass C(P[int]):\n    def __init__(self):\n        self.b = 1\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", source)],
+                &["W0231"]
+            ),
+            ""
+        );
+    }
+
+    #[test]
     fn a_subscripted_typing_base_is_an_empty_class() {
         let typing = "import abc\n\nclass IO:\n    @abc.abstractmethod\n    def run(self): ...\n";
         let main =
