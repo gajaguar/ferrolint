@@ -1165,10 +1165,10 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
 The messages of `pylint.extensions.docparams`. They report only when
 `load-plugins` names that module, and only then do their msg-ids (`W9005`,
 `W9006`, `W9008`, `W9010` to `W9021`) answer to them: otherwise a plugin rule
-declaring one of them as an alias owns it (see Batch K). A docstring is read in the Sphinx, Epytext, Google or
-NumPy style, whichever has the most matching sections (ties go to the first of
-that list, and no match to `default-docstring-type`), with Pylint's own
-patterns.
+declaring one of them as an alias owns it (see Batch K). A docstring is read in
+the Sphinx, Epytext, Google or NumPy style, whichever has the most matching
+sections (ties go to the first of that list, and no match to
+`default-docstring-type`), with Pylint's own patterns.
 
 * `W9015` `missing-param-doc` and `W9016` `missing-type-doc`: a parameter that
   the parameter section has no description (or no type, and no annotation) for.
