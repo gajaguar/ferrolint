@@ -8,6 +8,9 @@
 
 ## 2026-10-20
 
+* **native-rules.md**: `R1710` knows a `self.method()` annotated `NoReturn` or `Never` in the class
+  or in a base of the file, also when the base is written `Base[T]`.
+
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the
   msg-id of a native rule of an opt-in Pylint extension (`W9006` of docparams)
   is valid while `load-plugins` leaves the extension out and the plugin owns

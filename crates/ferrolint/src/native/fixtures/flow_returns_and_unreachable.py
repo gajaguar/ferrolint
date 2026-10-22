@@ -295,3 +295,41 @@ def docstring_c():
 
 def docstring_d():
     "doc"
+
+
+class Param:
+    def fail(self, message) -> NoReturn:
+        raise SystemExit(message)
+
+    def keep(self, message):
+        raise SystemExit(message)
+
+
+class Choice(Param):
+    def convert_fails(self, value):
+        try:
+            return int(value)
+        except ValueError:
+            self.fail("bad")
+
+    def convert_keeps(self, value):
+        try:
+            return int(value)
+        except ValueError:
+            self.keep("bad")
+
+
+class Generic:
+    def __class_getitem__(cls, item):
+        return cls
+
+    def fail(self, message) -> NoReturn:
+        raise SystemExit(message)
+
+
+class Typed(Generic[int]):
+    def convert_generic(self, value):
+        try:
+            return int(value)
+        except ValueError:
+            self.fail("bad")
