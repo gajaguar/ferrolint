@@ -50,3 +50,21 @@ class SessionMaker:
 
 
 SessionMaker = SessionMaker()
+
+
+CamelComp = [i for i in range(3)]
+CamelGen = (i for i in range(3))
+
+
+class Local:
+    pass
+
+
+class Maker:
+    pass
+
+
+def make():
+    Alias = Local
+    Other = Maker()
+    return Alias, Other

@@ -162,3 +162,12 @@ class CLASS: pass
 class C: pass
 class Class1: pass
 class A1b2: pass
+
+
+from typing import TypeVar
+
+
+def generic():
+    FooT = TypeVar("FooT")
+    BadT = 1
+    return FooT, BadT

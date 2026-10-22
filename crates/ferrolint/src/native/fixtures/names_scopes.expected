@@ -54,3 +54,4 @@
 157:C0103:Class name "lower_class" doesn't conform to PascalCase naming style
 159:C0103:Class name "__PrivateClass" doesn't conform to PascalCase naming style
 160:C0103:Class name "Class_Name" doesn't conform to PascalCase naming style
+172:C0103:Variable name "BadT" doesn't conform to snake_case naming style

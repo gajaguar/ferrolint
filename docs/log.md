@@ -1,5 +1,12 @@
 # Directory Update Log
 
+## 2026-10-22
+
+* **native-rules.md**: `C0103` knows the methods of the builtin and standard
+  library classes from `tools/class-methods.py`, so a method that overrides
+  one is not judged; the known divergences list the inference Pylint runs
+  that is left out.
+
 ## 2026-10-20
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the
