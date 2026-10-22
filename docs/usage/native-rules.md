@@ -583,7 +583,9 @@ Known divergences:
   `super().__init__` (anywhere in its body) nor `Base.__init__` of a base
   whose `__init__`, found along the base's MRO, is not abstract (a `pass`,
   a docstring alone or `raise NotImplementedError`). A protocol base or a
-  called `__init__` that another base shares ends the check.
+  called `__init__` that another base shares ends the check. A dataclass with
+  a field of its own and no `init=False` has the `__init__` astroid builds for
+  it, so a subclass that skips it is reported.
 
 Known divergences:
 
@@ -1055,7 +1057,9 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   builtin exception, `object` or `type`. A class with another builtin base
   (`dict`, `list`), a base that is not found (an import from outside the
   project, `Generic[...]`, a starred base) is never reported, where Pylint
-  counts the methods of the base.
+  counts the methods of the base. A base from a module the environment does
+  not hold (a missing optional dependency) is left out of the count, as
+  astroid cannot import it, unless the name is bound more than once.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
   class, a module, a call of a class of the file and a name bound once to one
   of those. A call of a function, a name bound twice, an imported name, a

@@ -277,6 +277,12 @@ impl<'a> Hierarchy<'a, '_> {
         matches!(self.known_mro(class, 0), Err(Fail::Inconsistent))
     }
 
+    /// The C3 linearization of `class` without the bases the project cannot
+    /// read, `None` when the rest cannot be merged.
+    pub fn known_order(&self, class: &Class<'a>) -> Option<Vec<Class<'a>>> {
+        self.known_mro(class, 0).ok()
+    }
+
     fn known_mro(&self, class: &Class<'a>, depth: u8) -> Result<Vec<Class<'a>>, Fail> {
         let key = class.key();
         if let Some(found) = self.known.borrow().get(&key) {
