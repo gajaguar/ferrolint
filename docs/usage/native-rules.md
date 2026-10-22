@@ -1334,10 +1334,12 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   tells the cases apart it is an edge to `pkg`, as Pylint finds it there.
 * Pylint lints `.pyi` files and knows a linted module by its name. A stub is
   not linted here, so the imports of the stub are not edges; `import
-  pkg.stub` and `from pkg.stub import x` are an edge to `pkg`, as in Pylint.
-  Nor is a stub-only module known to `E0401` and `E0611`, which Pylint
-  answers from the stub's names. An `import __main__` is not an edge (Pylint
-  has the module of the run).
+  pkg.stub` and `from pkg.stub import x` are an edge to `pkg`, as when Pylint
+  is given the directory (given only the `.py` files, it finds no stub and
+  adds no edge). Nor is a stub-only module known to `E0401` and `E0611`:
+  Pylint answers them from the stub's names when it lints the stub, and as
+  ferrolint does when it lints the `.py` files alone. An `import __main__`
+  is not an edge (Pylint has the module of the run).
 * A file with `raise;` or `except E:raise;stmt` (a `raise` ended by a `;`) is a
   syntax error to the parser of ruff 0.17.1, so it has no imports in the
   graph; Python and Pylint accept it.

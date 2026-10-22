@@ -174,6 +174,27 @@ fn self_assigning_variable() {
     );
 }
 
+#[test]
+fn self_assigning_variable_pairs_a_tuple_target() {
+    let source = "a = b = 1\na, b = a, 2\nc, d = 3, d\n";
+    assert_eq!(
+        findings("ferrolint-plugin-self-assigning-variable", source),
+        [
+            "2: Assigning the same variable 'a' to itself",
+            "3: Assigning the same variable 'd' to itself"
+        ]
+    );
+}
+
+#[test]
+fn self_assigning_variable_skips_a_class_body() {
+    let source = "x = 1\nclass A:\n    x = x\n\n\ndef f(y):\n    y = y\n";
+    assert_eq!(
+        findings("ferrolint-plugin-self-assigning-variable", source),
+        ["7: Assigning the same variable 'y' to itself"]
+    );
+}
+
 /// The unused-import component with every `@0.4.0` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
