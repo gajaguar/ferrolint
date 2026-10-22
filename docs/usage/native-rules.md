@@ -357,8 +357,10 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   whose first branch is safe, or a name whose first binding is any of these.
   `range` may come from `from six.moves import range`, as in Pylint's six
   brain. A loop over a call or an attribute is judged not safe, as Pylint does
-  when it cannot infer; Pylint does infer `self.items`, or `self.items + [x]`,
-  from the first `self.items = [...]` of the class, so it stays silent there.
+  when it cannot infer. Pylint infers `self.items` from the first
+  `self.items = [...]` of the class, as this port does for a non-empty display
+  (not for an attribute an ancestor assigns, or a `cls.items`); it also infers
+  `self.items + [x]`, which is judged not safe here.
 * `W0641` counts a name as read when any read of it resolves to the
   function, in any nested scope; `@overload` stubs and abstract methods are
   not excused.
@@ -373,7 +375,12 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   (`isinstance`, `len`, `print`, ...); the list in `unassigned.rs` is what
   Pylint 4 does for each builtin function. A `break` anywhere in an `if`
   makes it permissive (Pylint passes `Continue` as the class to skip, so a
-  `continue` does not).
+  `continue` does not). `hasattr(self, "x")` is true here when a method of the
+  class assigns `self.x`, as astroid infers it (the negated test then leaves
+  only the `else`, and Pylint reports `E0601`); an attribute that only an
+  ancestor defines, or that nothing defines, leaves the test unknown. A star
+  import of a module that is not found, such as `from _ast import *`, binds
+  nothing here, where Pylint knows its names.
 * `C0104` checks a module-level name only when it gets a literal constant,
   which is all Pylint checks for the default bad names. An overridden method
   and an attribute that an ancestor defines are looked up among the classes
@@ -615,8 +622,11 @@ Known divergences:
   `inst.prepare()`; `prepare = _prepare` in the class names `_prepare`), where
   Pylint asks that the callee infer to that bound method. A call on a
   `self.helper` or on another parameter does not count. `W0201` skips what
-  every class has from `object` (`self.__class__ = C`); a base such as
-  `Exception` adds no `args` or `__cause__` here.
+  every class has from `object` (`self.__class__ = C`) and, for a class
+  that derives from a builtin exception through bases of the file, what every
+  builtin exception has (`args`, `__cause__`, `with_traceback`, ...); the
+  attributes of one exception (`errno`, `msg`) are not known here. `E0203`
+  skips the `object` attributes too.
 * `W0201` is missed where Pylint drops a base it cannot infer and the class
   here has an unknown MRO: a base that is a call (`getTableClass("glyf")`),
   a `Base[Missing[T]]` whose argument is unresolvable, or a name Pylint

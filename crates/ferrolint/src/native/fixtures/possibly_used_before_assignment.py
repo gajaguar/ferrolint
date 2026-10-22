@@ -418,3 +418,18 @@ def handler_name(flag):
     if flag:
         error = 1
     return error
+
+
+class Cache:
+    def __init__(self):
+        self.store = {}
+
+    def assigned(self, key):
+        if not hasattr(self, "store"):
+            store = {}
+        return store[key]
+
+    def missing(self, key):
+        if not hasattr(self, "absent"):
+            absent = {}
+        return absent[key]

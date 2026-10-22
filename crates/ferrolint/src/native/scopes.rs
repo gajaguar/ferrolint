@@ -17,11 +17,11 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     AnyParameterRef, Comprehension, ElifElseClause, ExceptHandler, Expr, ExprContext, Pattern,
-    Stmt, StmtFunctionDef, StmtIf, StmtTry,
+    Stmt, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry,
 };
 use ruff_text_size::{Ranged, TextRange};
 
-use super::classes::{Env, py_repr};
+use super::classes::{Env, is_classmethod, is_static, py_repr};
 use super::misc::py_match;
 use super::project::Project;
 use super::unassigned;
@@ -186,6 +186,8 @@ pub(super) struct Scope<'a> {
     pub globals: HashSet<&'a str>,
     pub nonlocals: HashSet<&'a str>,
     pub func: Option<&'a StmtFunctionDef>,
+    /// The class of a class scope.
+    pub class: Option<&'a StmtClassDef>,
     /// The lines of the `locals()` calls of a function.
     pub locals_calls: Vec<u32>,
 }
@@ -350,6 +352,7 @@ impl<'a> Scope<'a> {
             globals: HashSet::new(),
             nonlocals: HashSet::new(),
             func,
+            class: None,
             locals_calls: Vec::new(),
         }
     }
@@ -630,6 +633,7 @@ impl<'a> Collect<'a, '_> {
                 self.bind(class.name.as_str(), DefKind::Class, range, true, false);
                 let comps = std::mem::take(&mut self.comp_depth);
                 self.push_scope(Kind::Class, None);
+                self.info.scopes[self.cur].class = Some(class);
                 self.visit_body(&class.body);
                 self.pop_scope();
                 self.comp_depth = comps;
@@ -1075,6 +1079,13 @@ fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, dept
         Expr::Tuple(t) => !t.elts.is_empty(),
         Expr::Set(s) => !s.elts.is_empty(),
         Expr::Dict(d) => !d.items.is_empty(),
+        Expr::Attribute(attr) => match &*attr.value {
+            Expr::Name(receiver) => {
+                first_self_assign(info, scope, receiver.id.as_str(), attr.attr.as_str())
+                    .is_some_and(|value| safe_iterable(ctx, info, scope, value, 4))
+            }
+            _ => false,
+        },
         Expr::Name(name) if depth < 4 => {
             let Some(found) = info.lookup(scope, name.id.as_str()) else {
                 return false;
@@ -1088,6 +1099,58 @@ fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, dept
                 .is_some_and(|value| safe_iterable(ctx, info, scope, value, depth + 1))
         }
         _ => false,
+    }
+}
+
+/// The value of the first `receiver.attr = value` of the class around the method
+/// `scope`, in source order as astroid orders instance attributes, when `receiver`
+/// is the method's first parameter.
+/// shortcut: an `attr` an ancestor assigns, or `cls.attr`, is not followed.
+pub(super) fn first_self_assign<'a>(
+    info: &Info<'a>,
+    scope: usize,
+    receiver: &str,
+    attr: &str,
+) -> Option<&'a Expr> {
+    let func = info.scopes[scope]
+        .func
+        .filter(|f| !is_static(f) && !is_classmethod(f))?;
+    let class = info.scopes[info.scopes[scope].parent?].class?;
+    let this = func.parameters.iter_non_variadic_params().next()?;
+    if this.name().as_str() != receiver {
+        return None;
+    }
+    let mut first = FirstAssign {
+        receiver,
+        attr,
+        value: None,
+    };
+    class.body.iter().for_each(|stmt| first.visit_stmt(stmt));
+    first.value
+}
+
+/// The value of the first `receiver.attr = value` in source order.
+struct FirstAssign<'s, 'a> {
+    receiver: &'s str,
+    attr: &'s str,
+    value: Option<&'a Expr>,
+}
+
+impl<'a> Visitor<'a> for FirstAssign<'_, 'a> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if self.value.is_some() {
+            return;
+        }
+        if let Stmt::Assign(assign) = stmt
+            && assign.targets.iter().any(|t| {
+                matches!(t, Expr::Attribute(a)
+                if a.attr.as_str() == self.attr
+                    && matches!(&*a.value, Expr::Name(n) if n.id.as_str() == self.receiver))
+            })
+        {
+            self.value = Some(&assign.value);
+        }
+        visitor::walk_stmt(self, stmt);
     }
 }
 

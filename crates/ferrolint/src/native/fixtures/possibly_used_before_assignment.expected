@@ -25,3 +25,4 @@
 349:E0606:Possibly using variable 'value' before assignment
 381:E0606:Possibly using variable 'number' before assignment
 400:E0606:Possibly using variable 'before' before assignment
+435:E0606:Possibly using variable 'absent' before assignment
