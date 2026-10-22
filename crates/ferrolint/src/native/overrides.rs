@@ -1138,6 +1138,15 @@ mod tests {
     }
 
     #[test]
+    fn a_base_bound_by_an_alias_is_a_class() {
+        let source = "class A:\n    def f(self, a):\n        pass\n\n\nB = A\n\n\nclass C(B):\n    def f(self, b):\n        pass\n";
+        assert_eq!(
+            render(source, &[], &["W0237"]),
+            "10:W0237:Parameter 'a' has been renamed to 'b' in overriding 'C.f' method"
+        );
+    }
+
+    #[test]
     fn super_init_not_called() {
         let source = include_str!("fixtures/super_init_not_called.py");
         let expected = include_str!("fixtures/super_init_not_called.expected").trim_end();
