@@ -5,6 +5,7 @@
 * **native-rules.md**: the per-file rules run on a `.pyi` stub found under a
   directory, except `W0231`, `W0233`, `E1111` and `E1128`, which Pylint skips
   there; the `W0614` of a wildcard import of a stub-only module is left out.
+  A stub-only directory (`__init__.pyi` with no `__init__.py`) is noted.
 
 * **plugins.md**: `bare-except` skips an `except:` that re-raises, as Pylint
   does.

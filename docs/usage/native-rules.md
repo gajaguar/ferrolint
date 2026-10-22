@@ -1367,6 +1367,10 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   `pkg`, not to `pkg.stub`. Given only `.py` files, Pylint finds no stub, and
   neither does ferrolint. A `.py` shadows a `.pyi` of the same name. An
   `import __main__` is not an edge (Pylint has the module of the run).
+  A directory with only `__init__.pyi` is a namespace package, as in Pylint
+  (a `.pyi` there is a module by its own name), checked on a directory run;
+  with the directory itself as an argument, Pylint answers `E0401` for
+  `import d.sub` and ferrolint differs (not reproduced).
   A stub's `from m import *` of a module that only a stub holds gets no
   `W0614` here; Pylint reports it or not by the order of its run.
 * A file with `raise;` or `except E:raise;stmt` (a `raise` ended by a `;`) is a
