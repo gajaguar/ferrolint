@@ -581,18 +581,20 @@ Known divergences:
 
 * Pylint infers what `x` in `x.name = value` stands for. Here it is the
   first parameter of a method of the class (or of a function or lambda
-  nested in it that does not rebind it), or a name bound once in its
-  scope to that parameter (`me = self`), to a call of a class of the file
+  nested in it that does not rebind it), or a name whose nearest binding in
+  its scope is that parameter (`me = self`), a call of a class of the file
   (`x = Model()`, also annotated), of `cls` in a classmethod, of
-  `self.__class__`, of `C.__new__(...)` (a class without a `__new__` of its
-  own) or of `object.__new__(C)`, or to a name bound once to such a class
+  `self.__class__`, of a class the method's class binds in its body
+  (`self._Result()`), of `C.__new__(...)` (a class without a `__new__` of its
+  own) or of `object.__new__(C)`, or a name bound to such a class
   or to a call of a function of the file that returns one. An instance
   reached any other way gives the class nothing, so its `W0201` is missed
   and its `R0902` count is short: through an attribute or a property
   (`self.root.x = 1`, `self.fixup.worker = w`, `cls.manager.model = ...`),
-  through a parameter or another module, through `type(self)`, from a name
-  bound twice (Pylint follows the binding in force at that line) or from a
-  class whose own `__new__` makes the instance.
+  through a parameter, a list element, a loop variable or another module,
+  through `type(self)`, from a name rebound in a branch (the nearest binding
+  wins here, where Pylint follows every one that can reach the line) or from
+  a class whose own `__new__` makes the instance.
 * The ancestors are those of Batch G: a class whose MRO is unknown is not
   checked by `E0202`, `E0203`, `W0221`, `W0237` and `W0231`, nor by the
   ancestor tests of `W0201`. A builtin base such as `dict` or
@@ -600,9 +602,17 @@ Known divergences:
   reads from a running interpreter.
 * `E0202` treats a decorator that is a function as one that returns no
   data descriptor, where Pylint infers the value it returns.
-* A method that a defining method calls excuses `W0201` when any call in
-  that method has its name as an attribute (`x.prepare()`), where Pylint
-  asks that the callee infer to that bound method.
+* A method that a defining method calls excuses `W0201` when that method
+  calls it on its first parameter or on a local (`self.prepare()`,
+  `inst.prepare()`; `prepare = _prepare` in the class names `_prepare`), where
+  Pylint asks that the callee infer to that bound method. A call on a
+  `self.helper` or on another parameter does not count. `W0201` skips what
+  every class has from `object` (`self.__class__ = C`); a base such as
+  `Exception` adds no `args` or `__cause__` here.
+* `W0201` is missed where Pylint drops a base it cannot infer and the class
+  here has an unknown MRO: a base that is a call (`getTableClass("glyf")`),
+  a `Base[Missing[T]]` whose argument is unresolvable, or a name Pylint
+  follows to a class.
 * `__slots__` keeps astroid from recording an attribute outside them, for
   `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
   ancestor of the file or project give plain slots (a string, list, tuple,
