@@ -6,12 +6,19 @@
 //! the check is by name, not by binding, so `import json; json = 1;
 //! print(json)` uses the import. On top of name reads it counts `del`,
 //! the target of an augmented assignment, names listed in a module's
-//! `__all__`, and names inside string annotations. It leaves alone what Pylint leaves alone with its default
-//! options: `__future__` imports, imports bound to `_`, imports in a class
-//! body, imports under `if TYPE_CHECKING:`, and every import of an
-//! `__init__.py`.
+//! `__all__`. A read in a class body
+//! (or in the class's own decorators) of a name the class also binds is the
+//! class's, not the import's, as in Pylint. It leaves alone what Pylint
+//! leaves alone with its default options: `__future__` imports, imports
+//! bound to a dummy name (`_`, `_x`, `unused_x`, ...), imports in a class
+//! body, imports under `if TYPE_CHECKING:` (`else` included), imports of a
+//! name that a string annotation (a union excepted) or a `# type:` comment
+//! mentions, the module-level imports of an `__init__.py`, and at module
+//! level every import of a name after the first unused one (by bound name
+//! in a function). A name a star import of another file may bind is not
+//! known: Pylint then leaves the import alone, this port reports it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -22,9 +29,9 @@ struct UnusedImport {
     imports: Vec<Import>,
     /// (scope, name) pairs some read reached.
     used: HashSet<(u32, String)>,
-    /// The bindings visible in each scope, fetched once per scope for the
-    /// string annotations in it.
-    visible: HashMap<u32, Vec<Binding>>,
+    /// The names in string annotations and `# type:` comments: like Pylint,
+    /// they excuse an import of that name anywhere in the file.
+    type_names: HashSet<String>,
 }
 
 /// An import alias that binds a name.
@@ -33,6 +40,11 @@ struct Import {
     alias: u32,
     scope: u32,
     name: String,
+    dotted: String,
+    asname: Option<String>,
+    /// A dummy name or an `if TYPE_CHECKING:` import: kept so it still
+    /// counts as the first unused import of its name, but never reported.
+    skip: bool,
     message: String,
 }
 
@@ -49,7 +61,9 @@ impl Checker for UnusedImport {
             NodeKind::Alias => self.collect(node, cx),
             NodeKind::Name if matches!(node.context, ExprContext::Load | ExprContext::Del) => {
                 if let (Some(name), Some(binding)) = (node.name, cx.resolve(node)) {
-                    self.used.insert((binding.scope, name.to_owned()));
+                    if !class_shadows(node, name, cx) {
+                        self.used.insert((binding.scope, name.to_owned()));
+                    }
                 }
             }
             // Pylint reads the target of `name += ...` as a use of `name`.
@@ -69,15 +83,16 @@ impl Checker for UnusedImport {
                 }
             }
             NodeKind::StringLiteral if in_annotation(node, cx) => {
-                let scope = cx.scope(node).id;
-                let visible = self
-                    .visible
-                    .entry(scope)
-                    .or_insert_with(|| cx.visible_bindings(node));
-                for name in annotation_names(cx.text(node)) {
-                    if let Some(binding) = visible.iter().find(|binding| binding.name == name) {
-                        self.used.insert((binding.scope, name));
-                    }
+                let text = cx.text(node);
+                // Pylint reads a string annotation that is a union (`"A | B"`) as no use.
+                let union = text.chars().try_fold(0_i32, |depth, c| match c {
+                    '(' | '[' | '{' => Ok(depth + 1),
+                    ')' | ']' | '}' => Ok(depth - 1),
+                    '|' if depth == 0 => Err(()),
+                    _ => Ok(depth),
+                });
+                if union.is_ok() {
+                    self.type_names.extend(annotation_names(text));
                 }
             }
             NodeKind::Assign if cx.scope(node).kind == ScopeKind::Module => {
@@ -90,11 +105,29 @@ impl Checker for UnusedImport {
     }
 
     fn end_file(&mut self, cx: &mut Context<'_>) {
-        if cx.path() == "__init__.py" || cx.path().ends_with("/__init__.py") {
-            return;
-        }
+        let in_init = cx.path() == "__init__.py" || cx.path().ends_with("/__init__.py");
+        self.type_names.extend(type_comment_names(cx));
+        let mut checked = HashSet::new();
         for import in &self.imports {
             if self.used.contains(&(import.scope, import.name.clone())) {
+                continue;
+            }
+            // Pylint reports the first unused import of an imported name in a
+            // module, and of a bound name in a function.
+            let key = if import.scope == 0 {
+                &import.dotted
+            } else {
+                &import.name
+            };
+            if (import.scope == 0 && in_init) || !checked.insert((import.scope, key)) {
+                continue;
+            }
+            if import.skip
+                || [Some(&import.dotted), import.asname.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|name| self.type_names.contains(name))
+            {
                 continue;
             }
             let (Some(statement), Some(alias)) = (cx.node(import.statement), cx.node(import.alias))
@@ -119,16 +152,23 @@ impl UnusedImport {
             NodeKind::ImportFrom => Some(statement.detail.unwrap_or("")),
             _ => return,
         };
-        if module == Some("__future__") || dotted == "*" || asname == Some("_") {
+        if module == Some("__future__") || dotted == "*" {
             return;
         }
         let scope = cx.scope(alias);
-        if scope.kind == ScopeKind::Class || type_checking_only(statement, cx) {
+        if scope.kind == ScopeKind::Class {
             return;
         }
         let Some(binding) = cx.resolve(alias) else {
             return;
         };
+        // Pylint tests the alias at module level and the bound name in a function.
+        let dummy_name = if scope.kind == ScopeKind::Module {
+            asname
+        } else {
+            Some(asname.unwrap_or(dotted))
+        };
+        let skip = dummy_name.is_some_and(is_dummy) || type_checking_only(statement, cx);
         // Pylint words a relative import with no module ("from . import x")
         // as "import x" in a module and as "x imported from " in a function.
         let imported = match module.map(|module| module.trim_start_matches('.')) {
@@ -147,9 +187,85 @@ impl UnusedImport {
             alias: alias.id,
             scope: binding.scope,
             name: binding.name,
+            dotted: dotted.to_owned(),
+            asname: asname.map(str::to_owned),
+            skip,
             message: format!("Unused {imported}"),
         });
     }
+}
+
+/// Pylint's default `dummy-variables-rgx`, matched from the start of the name.
+/// shortcut: the option is not read, when a project sets its own, thread it in.
+fn is_dummy(name: &str) -> bool {
+    let word = name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric());
+    name.starts_with("dummy")
+        || name.starts_with("ignored_")
+        || name.starts_with("unused_")
+        || (name.starts_with('_')
+            && word
+            && (name.ends_with(|c: char| c.is_ascii_alphanumeric())
+                || name.trim_matches('_').is_empty()))
+}
+
+/// The names in the `# type:` comments of the file. Pylint only reads the
+/// ones on assignments, `for`, `with` and function signatures.
+/// shortcut: every `# type:` comment counts, wherever it sits.
+fn type_comment_names(cx: &Context<'_>) -> HashSet<String> {
+    cx.comments()
+        .iter()
+        .filter_map(|comment| {
+            comment
+                .text
+                .trim_start_matches('#')
+                .trim_start()
+                .strip_prefix("type:")
+        })
+        .filter(|rest| !rest.trim_start().starts_with("ignore"))
+        .flat_map(annotation_names)
+        .collect()
+}
+
+/// The ids spanned by the node's statement (the node itself when it is one).
+fn statement_range(node: &Node<'_>, cx: &Context<'_>) -> Option<(u32, u32)> {
+    if Context::is_statement(node) {
+        return Some((node.id, node.last));
+    }
+    let statement = cx.ancestors(node).find(|n| Context::is_statement(n))?;
+    Some((statement.id, statement.last))
+}
+
+/// Whether Pylint looks the name up in a class first: the read is in the
+/// class body, or in the class's own decorators, and the class binds the
+/// name in another statement, even a later one (`name = name` reads the
+/// outer name).
+/// shortcut: only assignments and `def`/`class` count as the class's bindings.
+fn class_shadows(node: &Node<'_>, name: &str, cx: &Context<'_>) -> bool {
+    let mut ancestors = cx.ancestors(node);
+    let decorated = ancestors
+        .find(|ancestor| ancestor.kind == NodeKind::Decorator)
+        .and_then(|_| ancestors.next())
+        .filter(|def| def.kind == NodeKind::ClassDef);
+    let class = match decorated {
+        Some(class) => class,
+        None => match cx.node(cx.scope(node).node) {
+            Some(class) if class.kind == NodeKind::ClassDef => class,
+            _ => return false,
+        },
+    };
+    let (start, end) = match decorated {
+        Some(_) => (node.id, node.id),
+        None => statement_range(node, cx).unwrap_or((node.id, node.id)),
+    };
+    (class.id + 1..=class.last)
+        .filter_map(|id| cx.node(id))
+        .any(|other| {
+            other.name == Some(name)
+                && (matches!(other.kind, NodeKind::FunctionDef | NodeKind::ClassDef)
+                    || (other.kind == NodeKind::Name && other.context == ExprContext::Store))
+                && cx.scope(other).node == class.id
+                && statement_range(other, cx).is_some_and(|(id, _)| !(start..=end).contains(&id))
+        })
 }
 
 /// Whether a string literal is (part of) an annotation: of a parameter, of
@@ -230,14 +346,12 @@ fn dunder_all(assign: &Node<'_>, cx: &Context<'_>) -> Vec<String> {
         .collect()
 }
 
-/// Whether the import sits in the body of an `if TYPE_CHECKING:` or
-/// `elif TYPE_CHECKING:` block.
+/// Whether the import sits in an `if TYPE_CHECKING:` or `elif TYPE_CHECKING:`
+/// block, its `else` included, as in Pylint.
 fn type_checking_only(statement: &Node<'_>, cx: &Context<'_>) -> bool {
     let mut child = statement;
     for parent in cx.ancestors(statement) {
-        if matches!(parent.kind, NodeKind::If | NodeKind::ElifElseClause)
-            && Context::is_statement(child)
-        {
+        if matches!(parent.kind, NodeKind::If | NodeKind::ElifElseClause) {
             let guard = cx.children(parent).next();
             if guard.is_some_and(|test| test.id != child.id && test.name == Some("TYPE_CHECKING")) {
                 return true;
