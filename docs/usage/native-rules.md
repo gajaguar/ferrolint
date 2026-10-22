@@ -207,9 +207,11 @@ call:
   `sys.exit`, `os._exit`, `os.abort`, `pytest.fail` and its kin, an
   `assert_never`, `self.fail` of a class with a `...TestCase` base that does
   not define `fail`, a function of the file annotated `NoReturn` or `Never`,
-  or a name of `never-returning-functions`. A function imported from
-  another module that is annotated `NoReturn`, and a method called on a
-  value that is not `self` (click's `ctx.exit()`), are not known. Only a
+  a `self.method()` that the class or a base of the file (`Base[T]` too)
+  annotates so, or a name of `never-returning-functions`. A function
+  imported from another module that is annotated `NoReturn`, a method of a
+  base from another module, and a method called on a value that is not
+  `self` (click's `ctx.exit()`), are not known. Only a
   call written as a statement ends a block for `W0101`.
 * `R1710` follows a `raise` inside a `try` as Pylint does: the exception is
   the class named by the call, and a handler that names it must end in a

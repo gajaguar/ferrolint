@@ -7,7 +7,7 @@
 //!
 //! shortcut: Pylint infers what a call calls and what a raised or caught
 //! name stands for. Here a terminating call is `exit`, `quit`, `sys.exit`,
-//! `os._exit`, `self.fail` of a `...TestCase`, a function of this file
+//! `os._exit`, `self.fail` of a `...TestCase`, a function or `self` method of this file
 //! annotated `NoReturn`/`Never`, or a name of `never-returning-functions`;
 //! the exception hierarchy is the builtins plus the classes of this file.
 //! Upgrade with a call and class inference.
@@ -934,6 +934,30 @@ impl<'a> Ender<'_, 'a> {
         }))
     }
 
+    /// The `def name` of `class` or, failing that, of its bases in this file.
+    fn method(
+        &self,
+        class: &'a StmtClassDef,
+        name: &str,
+        depth: u8,
+    ) -> Option<&'a StmtFunctionDef> {
+        let own = class.body.iter().find_map(|s| match s {
+            Stmt::FunctionDef(f) if f.name.as_str() == name => Some(f),
+            _ => None,
+        });
+        if own.is_some() || depth >= 16 {
+            return own;
+        }
+        bases(class)
+            .iter()
+            // `Base[T]` is the class `Base`
+            .filter_map(|b| match b {
+                Expr::Subscript(s) => self.env.class_of(&s.value),
+                b => self.env.class_of(b),
+            })
+            .find_map(|b| self.method(b, name, depth + 1))
+    }
+
     /// Pylint's `_is_function_def_never_returning`: a name of
     /// `never-returning-functions`, or a function annotated `NoReturn`.
     fn never_returns(&self, call: &ExprCall) -> bool {
@@ -949,10 +973,16 @@ impl<'a> Ender<'_, 'a> {
         {
             return true;
         }
-        let Expr::Name(n) = &*call.func else {
-            return false;
+        let func = match &*call.func {
+            Expr::Name(n) => self.env.func_of(n),
+            // `self.method()`, found in the class or in a base of this file
+            // shortcut: a base from another module is not followed, upgrade with import resolution
+            Expr::Attribute(a) if matches!(&*a.value, Expr::Name(n) if n.id.as_str() == "self") => {
+                self.class.and_then(|c| self.method(c, a.attr.as_str(), 0))
+            }
+            _ => None,
         };
-        self.env.func_of(n).is_some_and(|f| {
+        func.is_some_and(|f| {
             matches!(f.returns.as_deref(), Some(Expr::Name(r)) if matches!(r.id.as_str(), "NoReturn" | "Never"))
                 || matches!(f.returns.as_deref(), Some(Expr::Attribute(r)) if matches!(r.attr.as_str(), "NoReturn" | "Never"))
         })
