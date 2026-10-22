@@ -14,8 +14,9 @@
 //! import, say) is taken as uninferable and is not checked, which is what
 //! Pylint does when it fails to infer it. Pylint also infers across modules
 //! the base classes whose methods a class overrides: here only the classes
-//! of the file are followed, and a base named `...TestCase` is taken to
-//! define the `unittest` hooks. `name-group` is not read, and a pattern in
+//! of the file, the project and the table in `class_methods` are followed,
+//! and a base named `...TestCase` is taken to define the `unittest` hooks.
+//! `name-group` is not read, and a pattern in
 //! `*-rgx` that Rust's regex engine rejects (a look-around) is not applied.
 //! Upgrade with a cross-module class model.
 
@@ -39,6 +40,7 @@ use super::misc::{Names as Lists, catches_import_error, csv, imported_names};
 use super::project::{ClassRef, Project};
 use super::scopes::{Step, exclusive};
 use super::{Checker, Ctx, rule};
+use crate::class_methods;
 use crate::wit::BindingKind;
 
 const INVALID: &str = "C0103";
@@ -782,12 +784,16 @@ const DJANGO_TEST_CASE: [&str; 17] = [
     "assertWarnsMessage",
 ];
 
-/// Whether a class outside the project and the file defines `name`. Only
-/// test cases are known: a class whose name ends in `TestCase` is taken to
-/// derive from `unittest.TestCase`, and from Django's `TestCase`, which owns
+/// Whether a class outside the project and the file defines `name`. The
+/// methods of the classes in `class_methods` are known; of the rest only
+/// test cases are: a class whose name ends in `TestCase` is taken to derive
+/// from `unittest.TestCase`, and from Django's `TestCase`, which owns
 /// `setUpTestData`, unless it is a unittest, transaction, simple or live
 /// server one.
 fn external_defines(qualified: &str, name: &str, method: bool) -> bool {
+    if method && let Some(found) = class_methods::methods(qualified) {
+        return found.binary_search(&name).is_ok();
+    }
     if !qualified.ends_with("TestCase") {
         return false;
     }
@@ -1082,18 +1088,16 @@ impl<'a> Walk<'a, '_> {
             Expr::BoolOp(b) if all(&b.values.iter().collect::<Vec<_>>()) => Val::Const,
             Expr::Compare(c) if all(&c.operands.iter().collect::<Vec<_>>()) => Val::Const,
             Expr::If(i) if all(&[&*i.body, &*i.orelse]) => Val::Const,
-            Expr::List(_)
-            | Expr::Tuple(_)
-            | Expr::Set(_)
-            | Expr::Dict(_)
-            | Expr::ListComp(_)
-            | Expr::SetComp(_)
-            | Expr::DictComp(_)
-            | Expr::Generator(_) => Val::Other,
+            Expr::List(_) | Expr::Tuple(_) | Expr::Set(_) | Expr::Dict(_) => Val::Other,
+            // astroid has no inference for a comprehension.
+            Expr::ListComp(_) | Expr::SetComp(_) | Expr::DictComp(_) | Expr::Generator(_) => {
+                Val::Unknown
+            }
             Expr::Lambda(_) => Val::Func,
             Expr::Name(name) => self.name_val(name, value, depth),
             Expr::Attribute(_) => {
-                if typing_class(self.qualified(value).as_deref()) {
+                let qualified = self.qualified(value);
+                if typing_class(qualified.as_deref()) || self.is_class(qualified.as_deref()) {
                     Val::Class
                 } else {
                     Val::Unknown
@@ -1101,7 +1105,13 @@ impl<'a> Walk<'a, '_> {
             }
             Expr::Subscript(s) => match self.qualified(&s.value).as_deref() {
                 Some("typing.Union" | "typing_extensions.Union") => Val::Other,
-                Some(q) if q.starts_with("typing.") => Val::Class,
+                Some(q)
+                    if q.starts_with("typing.")
+                        || q.starts_with("collections.abc.")
+                        || self.is_class(Some(q)) =>
+                {
+                    Val::Class
+                }
                 Some(q) if !q.contains('.') && builtin_class(q) => Val::Class,
                 _ => Val::Unknown,
             },
@@ -1132,7 +1142,7 @@ impl<'a> Walk<'a, '_> {
                 let last = origin
                     .and_then(|o| o.rsplit('.').next())
                     .unwrap_or_default();
-                if typing_class(origin) {
+                if typing_class(origin) || self.is_class(origin) {
                     Val::Class
                 } else if last.starts_with(|c: char| c.is_ascii_lowercase()) {
                     // A lower-case import is most often a function.
@@ -1151,6 +1161,15 @@ impl<'a> Walk<'a, '_> {
             }
             _ => Val::Unknown,
         }
+    }
+
+    /// Whether `qualified` names a class that the project defines, once.
+    fn is_class(&self, qualified: Option<&str>) -> bool {
+        qualified.is_some_and(|q| {
+            self.project
+                .class(&self.project.absolute(q))
+                .is_some_and(|class| class.is_sole())
+        })
     }
 
     /// Whether `expr` names a module class that is the only binding of its
@@ -1263,7 +1282,9 @@ impl<'a> Walk<'a, '_> {
                 {
                     self.check("typealias", name, range, None);
                 } else if !(matches!(parent, Parent::Direct)
-                    && site.value.is_some_and(|v| self.val(v, 0) == Val::Class))
+                    && site.value.is_some_and(|v| {
+                        self.val(v, 0) == Val::Class || self.typevar_kind(v).is_some()
+                    }))
                 {
                     self.check("variable", name, range, None);
                 }
@@ -1647,7 +1668,23 @@ impl<'a> Walk<'a, '_> {
                 }
             }
         }
-        let mut found = Vec::new();
+        let mut found: Vec<Attr> = Vec::new();
+        // astroid adds the fields of a dataclass before what the methods assign.
+        if self.is_dataclass(class) {
+            for stmt in &class.body {
+                if let Stmt::AnnAssign(a) = stmt
+                    && let Expr::Name(target) = &*a.target
+                    && !is_class_var(&a.annotation)
+                    && !found.iter().any(|f| f.name == target.id.as_str())
+                {
+                    found.push(Attr {
+                        name: target.id.to_string(),
+                        range: target.range,
+                        is_final: names_final(&a.annotation),
+                    });
+                }
+            }
+        }
         for method in super::classes::methods(&class.body) {
             if super::classes::is_static(method) || super::classes::is_classmethod(method) {
                 continue;
@@ -1664,21 +1701,6 @@ impl<'a> Walk<'a, '_> {
                     found: &mut found,
                 }
                 .visit_body(&method.body);
-            }
-        }
-        if self.is_dataclass(class) {
-            for stmt in &class.body {
-                if let Stmt::AnnAssign(a) = stmt
-                    && let Expr::Name(target) = &*a.target
-                    && !is_class_var(&a.annotation)
-                    && !found.iter().any(|f| f.name == target.id.as_str())
-                {
-                    found.push(Attr {
-                        name: target.id.to_string(),
-                        range: target.range,
-                        is_final: names_final(&a.annotation),
-                    });
-                }
             }
         }
         found
@@ -2019,10 +2041,10 @@ mod tests {
         std::fs::write(package.join("__init__.py"), "from .base import Base\n").unwrap();
         std::fs::write(
             package.join("base.py"),
-            "import unittest\n\nclass Root(unittest.TestCase):\n    attr = 1\n    def getName(self): pass\n\n\nclass Base(Root):\n    def getTitle(self): pass\n",
+            "import unittest\n\nclass Root(unittest.TestCase):\n    attr = 1\n    def getName(self): pass\n\n\nclass Base(Root):\n    def getTitle(self): pass\n\n\nclass Mapped(dict):\n    pass\n\n\nclass Twice:\n    pass\n\n\ntry:\n    import x\nexcept ImportError:\n    Twice = None\n",
         )
         .unwrap();
-        let source = "from . import base\nfrom pkg import Base\nfrom .base import Root\nfrom unknown import Other\n\n\nclass A(Base):\n    attr = 2\n    def getName(self): pass\n    def getTitle(self): pass\n    def getOther(self): pass\n    def setUp(self): pass\n    def setUpTestData(cls): pass\n\n\nclass B(base.Root):\n    def getName(self): pass\n\n\nclass C(Other):\n    def getName(self): pass\n\n\nclass D:\n    def setUp(self): pass\n";
+        let source = "from . import base\nfrom pkg import Base\nfrom .base import Root\nfrom unknown import Other\n\n\nclass A(Base):\n    attr = 2\n    def getName(self): pass\n    def getTitle(self): pass\n    def getOther(self): pass\n    def setUp(self): pass\n    def setUpTestData(cls): pass\n\n\nclass B(base.Root):\n    def getName(self): pass\n\n\nclass C(Other):\n    def getName(self): pass\n\n\nclass D:\n    def setUp(self): pass\n\n\nclass E(base.Mapped):\n    def setdefault(self, Key): pass\n    def setDefault(self, Key): pass\n\n\ndef make():\n    Alias = base.Root\n    Other = Root\n    Twice = base.Twice\n    return Alias, Other, Twice\n";
         let path = package.join("child.py");
         let found = lint_at(source, &path, "pkg.child");
         let names: Vec<_> = found
@@ -2036,6 +2058,9 @@ mod tests {
                 (13, "setUpTestData".to_owned()),
                 (21, "getName".to_owned()),
                 (25, "setUp".to_owned()),
+                (30, "setDefault".to_owned()),
+                (30, "Key".to_owned()),
+                (36, "Twice".to_owned()),
             ],
             "{found:?}"
         );

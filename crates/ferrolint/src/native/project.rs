@@ -30,8 +30,9 @@ use ruff_python_parser::Parsed;
 
 use ferrolint_core::LineIndex;
 
-use super::classes::bases;
+use super::classes::{bases, locals};
 use crate::c_module_names;
+use crate::class_methods;
 
 /// How far up from the linted file a project root is looked for.
 const LEVELS: usize = 8;
@@ -981,6 +982,13 @@ impl ClassRef {
         find_class(&self.module.parsed.syntax().body, &self.name)
     }
 
+    /// Whether the module binds the class's name only once, as astroid needs
+    /// to infer a single class from it.
+    pub fn is_sole(&self) -> bool {
+        let bound = locals(&self.module.parsed.syntax().body);
+        bound.iter().filter(|(name, _)| *name == self.name).count() == 1
+    }
+
     /// The dotted name `expr` stands for in the class's module.
     pub fn qualify(&self, expr: &Expr) -> Option<String> {
         self.module.qualify(expr)
@@ -1009,7 +1017,7 @@ impl ClassRef {
                     }));
                 }
                 let Some(qualified) = self.module.qualify(base) else {
-                    // A name that `from module import *` binds.
+                    // A name that `from module import *` binds, else a builtin class.
                     let Expr::Name(name) = base else {
                         return None;
                     };
@@ -1018,7 +1026,10 @@ impl ClassRef {
                         .stars
                         .iter()
                         .find_map(|star| project.class(&format!("{star}.{}", name.id)))
-                        .map(Ok);
+                        .map(Ok)
+                        .or_else(|| {
+                            class_methods::methods(&name.id).map(|_| Err(name.id.to_string()))
+                        });
                 };
                 Some(project.class(&qualified).ok_or(qualified))
             })

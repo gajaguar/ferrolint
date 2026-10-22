@@ -5,6 +5,7 @@ mod bundle;
 mod c_module_names;
 mod cache;
 mod checks;
+mod class_methods;
 mod config;
 mod diff;
 mod discover;

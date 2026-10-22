@@ -11,6 +11,11 @@
 * **native-rules.md**: `W0631` takes `range` from `six.moves` as the builtin and
   names the attribute inference it lacks.
 
+* **native-rules.md**: `C0103` knows the methods of the builtin and standard
+  library classes from `tools/class-methods.py`, so a method that overrides
+  one is not judged; the known divergences list the inference Pylint runs
+  that is left out.
+
 ## 2026-10-20
 
 * **native-rules.md**: `R1710` knows a `self.method()` annotated `NoReturn` or `Never` in the class

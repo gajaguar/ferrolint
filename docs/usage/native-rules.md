@@ -485,9 +485,26 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   cases are known, a class named `...TestCase` standing for
   `unittest.TestCase`, and for Django's `TestCase` (which owns
   `setUpTestData`) unless its name holds `Transaction`, `Simple` or
-  `LiveServer`. Because the answer depends on other files, a cached result
-  is stale until the file changes or the cache is cleared with
-  `--no-cache`.
+  `LiveServer`. The builtin and standard library classes in
+  `src/class_methods.rs` (the exceptions, `dict`, `logging.Handler`,
+  `threading.Thread`, `json.JSONEncoder`, `argparse.Action`, ...) are known
+  with every method of theirs and of their ancestors, from a table that
+  `tools/class-methods.py` dumps from Python 3.14 through astroid; a class
+  missing from it counts as having no methods. Because the answer depends
+  on other files, a cached result is stale until the file changes or the
+  cache is cleared with `--no-cache`.
+* Left to the inference Pylint runs: a name bound to a class of the
+  project is a class (and not judged) only when the project binds it once,
+  as astroid infers one value; a class bound twice (a fallback in
+  `try`/`except` or `if`), a class returned by a call
+  (`Model = make_model()`), a standard library class under an alias
+  (`_Fraction = Fraction`), the value of a standard library attribute
+  (`sys.platform`, `math.pi`, `os.sep`), the result of a `str` method or
+  of `%` formatting, a name read through `getattr` or `hasattr`, and the
+  attribute that `obj = Cls(); obj.attr = 1` adds to `Cls` from outside
+  its body are not followed, so the names Pylint infers differently stay
+  as differences. A comprehension is not inferred by astroid and its name
+  is not judged.
 * `name-group` is not read, and a `*-rgx` pattern that Rust's regex engine
   rejects (a look-around or a back-reference) is not applied.
 * `E0710`, `E0712` and `E0705` judge a class only when all its bases are
