@@ -4,7 +4,7 @@
 
 #![allow(dead_code)] // shortcut: the context fields wait for the rules that read them; drop this with the first model-based rule
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use ferrolint_core::{Diagnostic, LineIndex, RuleInfo, Severity};
 use ruff_python_ast::ModModule;
@@ -32,7 +32,7 @@ mod docparams;
 mod docstring;
 mod duplicate_args;
 mod exceptions;
-mod extensions;
+pub mod extensions;
 mod finally;
 mod flow;
 mod formats;
@@ -145,6 +145,23 @@ pub fn rules() -> Vec<RuleInfo> {
         .iter()
         .flat_map(|checker| checker.rules())
         .chain(project_phase::rules())
+        .collect()
+}
+
+/// The native rules a run reaches: those of an opt-in Pylint extension that
+/// `load-plugins` leaves out, and whose code or symbol a plugin rule answers
+/// to, are dropped, as Pylint never has both (see `docs/usage/native-rules.md`).
+pub fn rules_for(load_plugins: Option<&str>, taken: &HashSet<String>) -> Vec<RuleInfo> {
+    rules()
+        .into_iter()
+        .filter(|rule| {
+            let idle = extensions::needed(rule)
+                .is_some_and(|module| !extensions::listed(load_plugins, module));
+            !(idle
+                && std::iter::once(&rule.code)
+                    .chain(&rule.aliases())
+                    .any(|s| taken.contains(s)))
+        })
         .collect()
 }
 

@@ -40,6 +40,8 @@ pub enum RegistryError {
         first: String,
         second: String,
     },
+    /// A rule declares as an alias the code of another rule; no owner can settle it.
+    AliasIsCode { alias: String, rule: String },
     /// An owner names a rule that does not declare the alias.
     BadOwner { alias: String, code: String },
 }
@@ -55,6 +57,10 @@ impl fmt::Display for RegistryError {
             } => write!(
                 f,
                 "{spelling} names both rule {first} and rule {second}; pick one in pylint-aliases"
+            ),
+            Self::AliasIsCode { alias, rule } => write!(
+                f,
+                "rule {rule} declares {alias} as an alias, but {alias} is the code of another rule"
             ),
             Self::BadOwner { alias, code } => {
                 write!(
@@ -115,10 +121,9 @@ impl Registry {
             for alias in rule.aliases() {
                 // A rule's own code is never an alias of another rule.
                 if registry.rules.contains_key(&alias) && alias != rule.code {
-                    return Err(RegistryError::AmbiguousSpelling {
-                        spelling: alias.clone(),
-                        first: alias,
-                        second: rule.code.clone(),
+                    return Err(RegistryError::AliasIsCode {
+                        alias,
+                        rule: rule.code.clone(),
                     });
                 }
                 if let Some(owner) = owners.get(&alias) {
@@ -226,6 +231,19 @@ mod tests {
         let owners = BTreeMap::from([("W0611".to_owned(), "X2".to_owned())]);
         let rules = [rule("W0611", None, None), rule("X2", Some("W0611"), None)];
         assert!(Registry::with_owners(rules, &owners).is_err());
+    }
+
+    #[test]
+    fn an_alias_equal_to_another_rules_code_is_an_error() {
+        let error = Registry::new([rule("W9006", None, None), rule("X2", Some("W9006"), None)])
+            .unwrap_err();
+        assert_eq!(
+            error,
+            RegistryError::AliasIsCode {
+                alias: "W9006".into(),
+                rule: "X2".into()
+            }
+        );
     }
 
     #[test]
