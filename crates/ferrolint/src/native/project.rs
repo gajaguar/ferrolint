@@ -250,6 +250,13 @@ impl Project {
         project
     }
 
+    /// The modules that `from m import *` names at the top level of `body`.
+    pub fn stars(&self, body: &[Stmt]) -> Vec<String> {
+        let mut stars = Vec::new();
+        collect_imports(body, &self.package, &mut HashMap::new(), &mut stars);
+        stars
+    }
+
     /// `origin` of the linted file's imports with a relative module made
     /// absolute.
     pub fn absolute(&self, origin: &str) -> String {
@@ -361,6 +368,9 @@ impl Project {
         }
         if let Some(origin) = loaded.imports.get(name) {
             return self.class_at(origin, depth + 1);
+        }
+        if let Some(target) = alias(&loaded.parsed.syntax().body, name) {
+            return self.class_at(&format!("{module}.{target}"), depth + 1);
         }
         loaded
             .stars
@@ -1004,43 +1014,65 @@ impl ClassRef {
             .iter()
             .filter_map(|base| {
                 // `Base[T]` derives from `Base`.
-                let base = match base {
-                    Expr::Subscript(s) => &*s.value,
-                    other => other,
+                let (base, subscripted) = match base {
+                    Expr::Subscript(s) => (&*s.value, true),
+                    other => (other, false),
                 };
-                if let Expr::Name(name) = base
-                    && find_class(&self.module.parsed.syntax().body, name.id.as_str()).is_some()
-                {
-                    return Some(Ok(Self {
-                        module: self.module.clone(),
-                        name: name.id.to_string(),
-                    }));
-                }
-                let Some(qualified) = self.module.qualify(base) else {
-                    // A name that `from module import *` binds, else a builtin class.
+                let found = self.resolve(project, base).or_else(|| {
+                    // A builtin class no import names.
                     let Expr::Name(name) = base else {
                         return None;
                     };
-                    return self
-                        .module
-                        .stars
-                        .iter()
-                        .find_map(|star| project.class(&format!("{star}.{}", name.id)))
-                        .map(Ok)
-                        .or_else(|| {
-                            class_methods::methods(&name.id).map(|_| Err(name.id.to_string()))
-                        });
-                };
-                Some(project.class(&qualified).ok_or(qualified))
+                    class_methods::methods(&name.id).map(|_| Err(name.id.to_string()))
+                })?;
+                // astroid infers `typing.X[...]` as an empty class.
+                (!(subscripted && found.as_ref().is_ok_and(Self::is_typing))).then_some(found)
             })
             .collect()
+    }
+
+    /// Whether the class is one of the `typing` module, `Generic` apart.
+    pub fn is_typing(&self) -> bool {
+        self.module.name == "typing" && self.name != "Generic"
+    }
+
+    /// The class `expr` names in the class's module: one the module defines,
+    /// one it imports, or one a `from m import *` binds; otherwise the
+    /// qualified name, or `None` when `expr` has none.
+    pub fn resolve(&self, project: &Project, expr: &Expr) -> Option<Result<ClassRef, String>> {
+        if let Expr::Name(name) = expr
+            && find_class(&self.module.parsed.syntax().body, name.id.as_str()).is_some()
+        {
+            return Some(Ok(Self {
+                module: self.module.clone(),
+                name: name.id.to_string(),
+            }));
+        }
+        let Some(qualified) = self.module.qualify(expr) else {
+            // A name that `from module import *` binds.
+            let Expr::Name(name) = expr else {
+                return None;
+            };
+            return self
+                .module
+                .stars
+                .iter()
+                .find_map(|star| project.class(&format!("{star}.{}", name.id)))
+                .map(Ok);
+        };
+        Some(project.class(&qualified).ok_or(qualified))
     }
 }
 
 impl Module {
     fn qualify(&self, expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Name(name) => self.imports.get(name.id.as_str()).cloned(),
+            // `object` is the one builtin a base names without importing it.
+            Expr::Name(name) => self
+                .imports
+                .get(name.id.as_str())
+                .cloned()
+                .or_else(|| (name.id.as_str() == "object").then(|| "object".to_owned())),
             Expr::Attribute(attribute) => Some(format!(
                 "{}.{}",
                 self.qualify(&attribute.value)?,
@@ -1049,6 +1081,24 @@ impl Module {
             _ => None,
         }
     }
+}
+
+/// `Y` of the last `name = Y` of the top level, a name that may be a class.
+///
+/// shortcut: a name bound in the module itself, not under `if` or `try`;
+/// upgrade with inference.
+fn alias<'m>(body: &'m [Stmt], name: &str) -> Option<&'m str> {
+    body.iter().rev().find_map(|stmt| match stmt {
+        Stmt::Assign(a)
+            if matches!(&a.targets[..], [Expr::Name(target)] if target.id.as_str() == name) =>
+        {
+            match &*a.value {
+                Expr::Name(value) => Some(value.id.as_str()),
+                _ => None,
+            }
+        }
+        _ => None,
+    })
 }
 
 /// The last class `name` of the top level, also under `if` and `try`.

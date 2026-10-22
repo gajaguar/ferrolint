@@ -536,6 +536,14 @@ Known divergences:
   rather than guessed. Without an active environment the base classes of
   the dependencies (a serializer's `create`, for instance) are unknown,
   and those findings go missing.
+* A base is followed through the imports of its module (`import m`, `from m
+  import X`, also `from m import *` and a `try: import m` whose `except`
+  assigns `m = None`) and through a top-level `Alias = Class` of the module
+  that defines it. `typing.X[...]` is an empty class, as in astroid. A base
+  that a function returns, a class bound under `if` or `try` by a plain
+  assignment, a C class (`types.ModuleType`, `io.IOBase` through `_io`; but
+  `ctypes.Structure` and `ctypes.Union` add no method) and a dataclass's
+  generated `__init__` are not read.
 * A cached result does not track the environment: after switching it,
   lint with `--no-cache`.
 * In an ancestor other than the class itself, a name bound by an import
@@ -1013,6 +1021,11 @@ Known divergences from Pylint, where Pylint infers the callee:
   constructor of an imported base too.
 * A call with a starred argument or a `**` is skipped, where Pylint unpacks a
   literal list, tuple or dict written in the call.
+* A call to a `ctypes` type that astroid's brain gives a `__init__(self,
+  value)` (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the
+  other `wintypes` names of those types) reports the missing `value`. A call
+  that a decorator rewrites (a `click` command), `self.__new__(Cls)` and a
+  method of an instance that a call returns are not judged.
 
 ## Batch S: private members, public methods and what an expression stands for
 

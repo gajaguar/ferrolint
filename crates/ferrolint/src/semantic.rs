@@ -166,6 +166,20 @@ impl Model {
             .is_some_and(|ids| ids.len() == 1)
     }
 
+    /// The bindings that `binding`'s scope holds for its name, in source order.
+    pub fn same_name(&self, binding: u32) -> Vec<Binding> {
+        let Some(data) = self.bindings.get(binding as usize) else {
+            return Vec::new();
+        };
+        self.scopes[data.scope as usize]
+            .names
+            .get(&data.name)
+            .into_iter()
+            .flatten()
+            .map(|&id| self.binding(id))
+            .collect()
+    }
+
     pub fn visible_bindings(&self, flat: &Flat, node: u32) -> Vec<Binding> {
         let (Some(scope), Some(target)) = (self.scope_of_node(node), flat.nodes.get(node as usize))
         else {

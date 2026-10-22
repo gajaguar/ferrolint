@@ -53,3 +53,7 @@
 202:E1120:No value for argument 'a' in function call
 204:E1124:Argument 'b' passed by position and keyword in function call
 206:E1120:No value for argument 'b' in function call
+210:E1120:No value for argument 'value' in constructor call
+211:E1120:No value for argument 'value' in constructor call
+218:E1120:No value for argument 'value' in constructor call
+219:E1120:No value for argument 'value' in constructor call

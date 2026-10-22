@@ -204,3 +204,17 @@ two(1, b=2)
 two(1, 2, b=3)
 cond(1, 2, 3)
 x = lambda a: two(a)
+import ctypes
+from ctypes import c_ulong
+
+ctypes.c_int()
+c_ulong()
+c_ulong(3)
+c_ulong(value=3)
+ctypes.c_char_p()
+import ctypes.wintypes
+from ctypes.wintypes import DWORD
+
+ctypes.wintypes.WORD()
+DWORD()
+DWORD(1)
