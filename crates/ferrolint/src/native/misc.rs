@@ -59,6 +59,9 @@ impl Checker for Misc {
             fallbacks: HashSet::new(),
             classes: collect.0,
         };
+        // Pylint checks the module name too, at the top of the file.
+        let module = ctx.module.rsplit('.').next().unwrap_or_default();
+        walk.report_name(module, TextRange::default());
         walk.visit_body(&ctx.parsed.syntax().body);
     }
 }
@@ -637,6 +640,15 @@ mod tests {
         let source = include_str!("fixtures/disallowed_names.py");
         let expected = include_str!("fixtures/disallowed_names.expected").trim_end();
         assert_eq!(render(source, &[], &["C0104"]), expected);
+    }
+
+    #[test]
+    fn disallowed_module_name() {
+        // the unit tests lint a module named `mod`
+        assert_eq!(
+            render("x = 1\n", &[("bad-names", "mod")], &["C0104"]),
+            "1:C0104:Disallowed name \"mod\""
+        );
     }
 
     #[test]
