@@ -414,23 +414,24 @@ fn differences(
 
 impl<'a> Walk<'a, '_> {
     fn class(&mut self, class: &'a StmtClassDef) {
-        let own = Class::Local(class);
-        let Some(mro) = self.hierarchy.mro(&own) else {
-            return;
-        };
+        // The constructor check reads the bases one by one, so it does not need an MRO.
+        let mro = self.hierarchy.mro(&Class::Local(class));
         for method in methods(&class.body) {
-            if self.enabled.contains(USELESS_DELEGATION) {
-                self.delegation(class, &mro, method);
+            if let Some(mro) = &mro
+                && self.enabled.contains(USELESS_DELEGATION)
+            {
+                self.delegation(class, mro, method);
             }
             if method.name.as_str() == "__init__" {
                 if self.enabled.contains(SUPER_INIT) || self.enabled.contains(NON_PARENT_INIT) {
                     self.constructor(class, method);
                 }
-            } else if [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE, FINAL_METHOD]
-                .iter()
-                .any(|id| self.enabled.contains(*id))
+            } else if let Some(mro) = &mro
+                && [DIFFER, SIGNATURE, RENAMED, INVALID_OVERRIDE, FINAL_METHOD]
+                    .iter()
+                    .any(|id| self.enabled.contains(*id))
             {
-                self.signature(class, &mro, method);
+                self.signature(class, mro, method);
             }
         }
     }
@@ -851,9 +852,7 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         let own = Class::Local(class);
-        let Some(bases) = self.hierarchy.bases(&own) else {
-            return;
-        };
+        let bases = self.hierarchy.known_bases(&own);
         let direct = self.direct_bases(class);
         // (base, the class that gives it its `__init__`), in base order.
         let mut not_called: Vec<(Class<'a>, String)> = Vec::new();

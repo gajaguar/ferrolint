@@ -17,8 +17,11 @@ use super::classes::{Env, bases};
 use super::project::{ClassRef, Project};
 
 /// Bases that add no method to the MRO, though the project cannot read them.
-pub(super) const EMPTY_BASES: [&str; 6] = [
+pub(super) const EMPTY_BASES: [&str; 8] = [
     "object",
+    // C classes with no method of their own that a rule reads.
+    "ctypes.Structure",
+    "ctypes.Union",
     "typing.Generic",
     // `typing` imports `Generic` from this C module.
     "_typing.Generic",
@@ -215,6 +218,18 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                 Entry::Class(base) => Some(Some(base)),
                 Entry::Unknown => Some(None),
                 Entry::Object | Entry::Empty => None,
+            })
+            .collect()
+    }
+
+    /// The direct bases of `class` that the project can read; astroid skips
+    /// an uninferable one the same way.
+    pub fn known_bases(&self, class: &Class<'a>) -> Vec<Class<'a>> {
+        self.entries(class)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Entry::Class(base) => Some(base),
+                _ => None,
             })
             .collect()
     }
@@ -430,6 +445,30 @@ mod tests {
         assert_eq!(
             run(&files, &["W0223"]),
             "6:W0223:Method 'run' is abstract in class 'IO' but is not overridden in child class 'B'"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_base_does_not_hide_the_readable_ones() {
+        let main = "from nowhere import Mystery\n\nclass Base:\n    def __init__(self):\n        self.x = 1\n\nclass Child(Mystery, Base):\n    def __init__(self):\n        Mystery.__init__(self)\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["W0231", "W0233"]
+            ),
+            "8:W0231:__init__ method from base class 'Base' is not called"
+        );
+    }
+
+    #[test]
+    fn a_ctypes_structure_adds_no_method_to_count() {
+        let main = "import ctypes\n\nclass S(ctypes.Structure):\n    _fields_ = []\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["R0903"]
+            ),
+            "3:R0903:Too few public methods (0/2)"
         );
     }
 }
