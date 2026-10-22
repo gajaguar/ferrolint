@@ -29,8 +29,8 @@ answers to its Pylint msg-id and symbol as well as its code.
 * `unused-import` is the SDK's sample and matches Pylint 4.1.3 on its
   fixtures (acceptance test AC-10).
 * The others follow their Pylint checker's main behavior; each crate's
-  doc comment lists what it leaves out, such as loop variables for
-  `unused-variable` or every name of a module with a star import for
+  doc comment lists what it leaves out, such as names used only in
+  a type comment for `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
 * `singleton-comparison` quotes the operands as Pylint does in the simple
   cases (double-quoted strings print single-quoted, the operands keep their
