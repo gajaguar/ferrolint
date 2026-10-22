@@ -29,13 +29,12 @@ answers to its Pylint msg-id and symbol as well as its code.
 * `unused-import` is the SDK's sample and matches Pylint 4.1.3 on its
   fixtures (acceptance test AC-10).
 * The others follow their Pylint checker's main behavior; each crate's
-  doc comment lists what it leaves out, such as names used only in
-  a type comment for `unused-variable` or every name of a module with a star import for
-  `undefined-variable`.
+  doc comment lists what it leaves out, such as names used only in a type
+  comment for `unused-variable` or every name of a module with a star
+  import for `undefined-variable`.
 * `bare-except` skips an `except:` whose body has a `raise` among its own
   statements, as Pylint's `_is_raising` does; a `raise` under an `if` still
   counts as bare.
-
 * `redefined-builtin` checks a module and a function, once per name at its
   first binding, and reads `redefining-builtins-modules` and
   `allowed-redefined-builtins`. A function name the module also binds is

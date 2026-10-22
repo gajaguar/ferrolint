@@ -130,3 +130,11 @@ Variadics
 xpylint
 symilar
 ytype
+bpnumber
+igetattr
+mktime
+Pickler
+reinit
+Unpickler
+xdummy
+zstopen

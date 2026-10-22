@@ -6,7 +6,8 @@
   directory, except `W0231`, `W0233`, `E1111` and `E1128`, which Pylint skips
   there; the `W0614` of a wildcard import of a stub-only module is left out.
 
-* **plugins.md**: `bare-except` skips an `except:` that re-raises, as Pylint does.
+* **plugins.md**: `bare-except` skips an `except:` that re-raises, as Pylint
+  does.
 
 * **native-rules.md**: `W0631` takes `range` from `six.moves` as the builtin and
   names the attribute inference it lacks.
@@ -18,8 +19,9 @@
 
 ## 2026-10-20
 
-* **native-rules.md**: `R1710` knows a `self.method()` annotated `NoReturn` or `Never` in the class
-  or in a base of the file, also when the base is written `Base[T]`.
+* **native-rules.md**: `R1710` knows a `self.method()` annotated `NoReturn`
+  or `Never` in the class or in a base of the file, also when the base is
+  written `Base[T]`.
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the
   msg-id of a native rule of an opt-in Pylint extension (`W9006` of docparams)
