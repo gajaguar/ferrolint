@@ -1335,11 +1335,16 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
 * Pylint lints `.pyi` files when it is given a directory, and knows a linted
   module by its name. So does ferrolint: a stub found under a directory is a
   module (`E0401` and `E0611` answer from its names, and its own imports are
-  checked), but no per-file rule runs on it. Pylint's `astroid` does not look
+  checked), and the per-file rules run on it as on a `.py`, except where
+  Pylint skips a stub: `W0231` and `W0233` (its `__init__` body is `...`), and
+  `E1111` and `E1128` (astroid's module is not "fully defined" unless it
+  comes from a `.py`). `W0613` is Ruff's. Pylint's `astroid` does not look
   for stubs, so `import pkg.stub` and `from pkg.stub import x` are an edge to
   `pkg`, not to `pkg.stub`. Given only `.py` files, Pylint finds no stub, and
   neither does ferrolint. A `.py` shadows a `.pyi` of the same name. An
   `import __main__` is not an edge (Pylint has the module of the run).
+  A stub's `from m import *` of a module that only a stub holds gets no
+  `W0614` here; Pylint reports it or not by the order of its run.
 * A file with `raise;` or `except E:raise;stmt` (a `raise` ended by a `;`) is a
   syntax error to the parser of ruff 0.17.1, so it has no imports in the
   graph; Python and Pylint accept it.

@@ -460,6 +460,10 @@ impl<'a> Walk<'a, '_> {
         let Expr::Call(call) = &*assign.value else {
             return;
         };
+        // Pylint skips a callee of a module that is not fully defined, as a stub is.
+        if self.env.ctx.is_stub() {
+            return;
+        }
         let Some(func) = function_called(self.env, &self.classes, call)
             .filter(|func| func.decorator_list.is_empty() && !func.is_async)
         else {
@@ -774,7 +778,9 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::classes::render;
+    use std::path::Path;
+
+    use super::super::classes::{render, render_at};
 
     #[test]
     fn single_call_and_assignment_rules() {
@@ -799,6 +805,17 @@ mod tests {
         let source = include_str!("fixtures/assignment_from_no_return.py");
         let expected = include_str!("fixtures/assignment_from_no_return.expected").trim_end();
         assert_eq!(render(source, &[], &["E1111", "E1128"]), expected);
+    }
+
+    #[test]
+    fn a_stub_is_not_fully_defined() {
+        let source = "def f():\n    return None\n\n\nx = f()\n";
+        let at = |name| render_at(source, Path::new(name), "mod", &[], &["E1128"]);
+        assert_eq!(
+            at("mod.py"),
+            "5:E1128:Assigning result of a function call, where the function returns None"
+        );
+        assert_eq!(at("mod.pyi"), "");
     }
 
     #[test]

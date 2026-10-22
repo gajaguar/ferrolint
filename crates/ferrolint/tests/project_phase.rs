@@ -248,3 +248,15 @@ fn diff_mode_drops_a_cycle_whose_files_did_not_change() {
         Vec::<String>::new()
     );
 }
+
+/// Pylint lints a stub as a module, so a per-file rule reports on it.
+#[test]
+fn a_stub_gets_the_per_file_rules() {
+    let project = Project::new();
+    project
+        .write("ferrolint.toml", "select = [\"C0103\"]\n")
+        .write("pkg/__init__.py", "")
+        .write("pkg/stub.pyi", "class bad_name: ...\n");
+    let found = project.run(&["--no-cache"]).stdout;
+    assert!(found.contains("pkg/stub.pyi:1:7: info C0103"), "{found}");
+}

@@ -85,6 +85,11 @@ impl Ctx<'_> {
             .find(|(name, _)| name == key)
             .map(|(_, value)| value.as_str())
     }
+
+    /// Whether the file is a `.pyi` stub, which astroid does not take as fully defined.
+    pub fn is_stub(&self) -> bool {
+        self.path.extension().is_some_and(|ext| ext == "pyi")
+    }
 }
 
 /// A family of native rules that share one walk of the tree.
