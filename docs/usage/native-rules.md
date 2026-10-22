@@ -131,11 +131,12 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   through the import. `E0313` follows Pylint: an item of the returned tuple
   that is not a name or a call must be a tuple display (first) or a dict
   display (second).
-* `W1114` and `W1117` resolve a call to a name bound once to an undecorated
-  function of the file, to `self.method` of the enclosing class (undecorated
-  or `staticmethod`), or to a class of the file with an `__init__` and no
-  decorator, metaclass or `__new__`. A starred argument or `**` skips the
-  call.
+* `W1114` and `W1117` resolve a call to a name bound once to a function of the
+  file, to `self.method` of the enclosing class, or to a class of the file with
+  an `__init__` and no decorator, metaclass or `__new__`. Pylint reads a
+  decorated function by the signature as written, so a decorator (`click`'s
+  commands included) does not hide the callee; a `classmethod`, a property and
+  its `setter` do. A starred argument or `**` skips the call.
 * `W1503` takes `self` as a `TestCase` when a base is named `...TestCase`
   (through imports and classes of the file), where Pylint finds the method on
   the inferred class. A float constant prints as Rust does, so an exponent
@@ -379,7 +380,8 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   and an attribute that an ancestor defines are looked up among the classes
   of the file by name.
 * `W3101` knows `requests.get` for `requests.api.get`, and no other
-  re-export. A `**` argument is read as the empty dict for the `**kwargs`
+  re-export. A function of the linted file is listed under its module's name
+  (`requests.api.request` for the `request` that `requests/api.py` defines). A `**` argument is read as the empty dict for the `**kwargs`
   parameter of the enclosing function and as the literal when it is a dict
   display of strings; any other `**` skips the call, as Pylint does when
   it cannot infer the keywords.
@@ -1010,9 +1012,11 @@ Not ported: a call whose callee needs types or a decorator model.
 Known divergences from Pylint, where Pylint infers the callee:
 
 * The callee is the one `W1114` resolves (see Batch B): a name bound once to
-  an undecorated function of the file, `self.method` of the enclosing class
-  (undecorated or `staticmethod`) or a class of the file with one `__init__`.
-  An imported function, a decorated one, a class method, an alias of a method
+  a function of the file, `self.method` of the enclosing class, `cls(...)` in
+  a `classmethod` or a class of the file with one `__init__`. A decorator
+  changes nothing but `E1123` of a function or constructor, left out when it
+  has one (Pylint looks for the keyword among what the decorator returns). An
+  imported function, a class method, an alias of a method
   (`g = f`), a method that `self.name = ...` replaces, a function or an
   `__init__` defined twice and `self.__init__` (which Pylint does not judge)
   are not followed.
@@ -1023,9 +1027,16 @@ Known divergences from Pylint, where Pylint infers the callee:
   literal list, tuple or dict written in the call.
 * A call to a `ctypes` type that astroid's brain gives a `__init__(self,
   value)` (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the
-  other `wintypes` names of those types) reports the missing `value`. A call
-  that a decorator rewrites (a `click` command), `self.__new__(Cls)` and a
-  method of an instance that a call returns are not judged.
+  other `wintypes` names of those types) reports the missing `value`.
+  `self.__new__(Cls)` in a class with no base but `object` reports the missing
+  `cls` (astroid reads `object.__new__` as `(self, cls)`); with a `__new__`
+  of the class, a base from elsewhere or other arguments it is not judged, nor
+  is a method of an instance that a call returns. Left to type inference: a
+  callee from another module (`ws.send(...)` of a socket built elsewhere),
+  `self.get(...)` on a receiver not named `self`, `functools.partial` objects
+  (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class
+  returned by a call, and the stdlib signatures
+  (`base64.urlsafe_b64decode(data, padded=True)`).
 
 ## Batch S: private members, public methods and what an expression stands for
 
@@ -1206,6 +1217,10 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   are not judged. A display with a starred element, such as `(*t, 1)`, and a
   dict with `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
+  A list that a method returns after other statements emptied or filled it
+  (`args = self.popall()`), a slice of `*args` (`F, A = B[:2]`) and a value
+  that another module returns are not judged either: Pylint counts the
+  elements it infers there.
 
 ## Batch W: docparams
 
@@ -1396,11 +1411,19 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   `import d.sub` and ferrolint differs (not reproduced).
   A stub's `from m import *` of a module that only a stub holds gets no
   `W0614` here; Pylint reports it or not by the order of its run.
+* A package found on the search path with only an `__init__.pyi` (a compiled
+  module's stub, `pydantic_core._pydantic_core`) is read from the stub, as
+  astroid's finder does, also when a compiled module of that name sits beside it.
 * A file with `raise;` or `except E:raise;stmt` (a `raise` ended by a `;`) is a
   syntax error to the parser of ruff 0.17.1, so it has no imports in the
   graph; Python and Pylint accept it.
 * Pylint reads astroid's brain plugins, which add names to some modules
   (`hashlib`, `six`, `numpy` and others); those modules accept any name here.
+  `collections` is not one: its brain adds names the source holds, so
+  `from collections import Mapping` is reported.
+* A `from m import *` of a source that does not parse (such as `raise;` above)
+  binds names that cannot be told, so the module that star-imports it is not
+  judged for `E0611`.
   A name that a module imports from another is not followed to what it infers
   to.
 * `TYPE_CHECKING`, `ImportError`, `typing` and `suppress` are recognized by
