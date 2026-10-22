@@ -5,18 +5,23 @@
 //! Pylint's instance attributes are the `x.name` targets whose `x` infers to
 //! an instance of the class, minus those a `__slots__` leaves out. shortcut:
 //! here `x` is the first parameter of a method of the class (or of a function
-//! or lambda nested in it that does not rebind it), a name bound once to
-//! that parameter, or a name bound once to a call of a class of the file, of
-//! `cls`, or of `__new__` on it or on `object` (`object.__new__(self.__class__)`);
-//! upgrade with a value inference. The ancestors come from [`super::hierarchy`]: a class
-//! without an MRO is not checked by the rules that look at its ancestors.
+//! or lambda nested in it that does not rebind it), a name whose nearest
+//! binding is that parameter, or a call of a class of the file, of `cls`,
+//! of `self._Nested` or of `__new__` on it or on `object`
+//! (`object.__new__(self.__class__)`); a branch that rebinds the name is not
+//! read, nor is a class reached through a list, a field or a call to another
+//! module. Upgrade with a value inference. The ancestors come from
+//! [`super::hierarchy`]: a class without an MRO is not checked by the rules
+//! that look at its ancestors.
 
 use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use regex::Regex;
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{ExceptHandler, Expr, ExprContext, Stmt, StmtClassDef, StmtFunctionDef};
+use ruff_python_ast::{
+    ExceptHandler, Expr, ExprContext, ExprName, Parameters, Stmt, StmtClassDef, StmtFunctionDef,
+};
 use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::{Env, Local, bases, is_classmethod, is_static, locals, methods, py_repr};
@@ -30,6 +35,38 @@ const OUTSIDE_INIT: &str = "W0201";
 const HIDDEN: &str = "E0202";
 const BEFORE_DEFINITION: &str = "E0203";
 const TOO_MANY: &str = "R0902";
+
+/// What every class has from `object` or astroid, so that `local_attr` finds
+/// it: `object`'s attributes but `__doc__`, and the ones astroid adds.
+const OBJECT_ATTRS: [&str; 27] = [
+    "__annotations__",
+    "__class__",
+    "__delattr__",
+    "__dict__",
+    "__dir__",
+    "__eq__",
+    "__format__",
+    "__ge__",
+    "__getattribute__",
+    "__getstate__",
+    "__gt__",
+    "__hash__",
+    "__init__",
+    "__init_subclass__",
+    "__le__",
+    "__lt__",
+    "__module__",
+    "__ne__",
+    "__new__",
+    "__qualname__",
+    "__reduce__",
+    "__reduce_ex__",
+    "__repr__",
+    "__setattr__",
+    "__sizeof__",
+    "__str__",
+    "__subclasshook__",
+];
 
 /// How a site uses the attribute.
 #[derive(Clone, Copy, PartialEq)]
@@ -248,9 +285,10 @@ struct Clients<'a, 'e> {
     values: HashMap<u32, &'a Expr>,
     frames: Vec<(usize, Option<&'a StmtFunctionDef>)>,
     classes: Vec<&'a StmtClassDef>,
-    /// The first parameter of each method being walked, with its class and
-    /// whether it is a classmethod (the parameter is the class, not an instance).
-    cls: Vec<(&'a str, &'a StmtClassDef, bool)>,
+    /// The first parameter of each method being walked (by node id), with its
+    /// class and whether it is a classmethod (the parameter is the class, not
+    /// an instance).
+    cls: Vec<(Option<u32>, &'a StmtClassDef, bool)>,
     store: Use,
     out: HashMap<usize, Vec<Site<'a>>>,
 }
@@ -286,7 +324,7 @@ impl<'a> Clients<'a, '_> {
     fn bound(&self, expr: &Expr) -> Option<&'a Expr> {
         let Expr::Name(name) = expr else { return None };
         let binding = self.env.binding(name)?;
-        (binding.kind == BindingKind::Assignment && self.env.ctx.model.is_sole_binding(binding.id))
+        (binding.kind == BindingKind::Assignment)
             .then(|| self.values.get(&binding.node?).copied())
             .flatten()
     }
@@ -298,16 +336,37 @@ impl<'a> Clients<'a, '_> {
         }
         match expr {
             Expr::Name(name) => {
-                if let Some((_, class, true)) = self.param(&name.id) {
+                if let Some((class, true)) = self.param(name) {
                     return Some(class);
                 }
             }
             // `self.__class__`
             Expr::Attribute(a) if a.attr.as_str() == "__class__" => {
                 if let Expr::Name(name) = &*a.value
-                    && let Some((_, class, false)) = self.param(&name.id)
+                    && let Some((class, false)) = self.param(name)
                 {
                     return Some(class);
+                }
+            }
+            // `self._result` or `cls._result`, a class the method's class
+            // binds once in its body. shortcut: not one it inherits or an
+            // instance attribute shadows; upgrade with a value inference.
+            Expr::Attribute(a) => {
+                if let Expr::Name(name) = &*a.value
+                    && let Some((class, _)) = self.param(name)
+                {
+                    let attr = a.attr.as_str();
+                    if locals(&class.body)
+                        .iter()
+                        .filter(|(n, _)| n == attr)
+                        .count()
+                        == 1
+                    {
+                        return class.body.iter().find_map(|stmt| match stmt {
+                            Stmt::ClassDef(c) if c.name.as_str() == attr => Some(c),
+                            _ => None,
+                        });
+                    }
                 }
             }
             _ => {}
@@ -357,17 +416,25 @@ impl<'a> Clients<'a, '_> {
                 self.class(&call.func, depth + 1)
             }
             // An alias of the method's own `self`.
-            Expr::Name(name) if depth > 0 => match self.param(&name.id) {
-                Some((_, class, false)) => Some(class),
+            Expr::Name(name) if depth > 0 => match self.param(name) {
+                Some((class, false)) => Some(class),
                 _ => self.instance(self.bound(expr)?, depth + 1),
             },
             _ => self.instance(self.bound(expr)?, depth + 1),
         }
     }
 
-    /// The first parameter of the innermost method named `name`.
-    fn param(&self, name: &str) -> Option<(&'a str, &'a StmtClassDef, bool)> {
-        self.cls.iter().rev().find(|(p, ..)| *p == name).copied()
+    /// The class of the method whose first parameter `name` is, and whether
+    /// that parameter is the class itself.
+    fn param(&self, name: &ExprName) -> Option<(&'a StmtClassDef, bool)> {
+        let binding = self.env.binding(name)?;
+        let node = binding
+            .node
+            .filter(|_| binding.kind == BindingKind::Parameter)?;
+        self.cls
+            .iter()
+            .find(|(p, ..)| *p == Some(node))
+            .map(|&(_, class, is_cls)| (class, is_cls))
     }
 }
 
@@ -402,7 +469,13 @@ impl<'a> Visitor<'a> for Clients<'a, '_> {
                 })
                 .zip(p.posonlyargs.first().or(p.args.first()))
                 .map(|(class, first)| {
-                    (first.parameter.name.as_str(), *class, is_classmethod(func))
+                    (
+                        ruff_python_ast::HasNodeIndex::node_index(&first.parameter)
+                            .load()
+                            .as_u32(),
+                        *class,
+                        is_classmethod(func),
+                    )
                 });
             self.cls.extend(cls);
             self.frames
@@ -548,25 +621,52 @@ pub(super) fn is_private(name: &str) -> bool {
     name.starts_with("__") && end.len() > 2 && !end.ends_with('_')
 }
 
-/// Whether a function of `method` calls `name` as an attribute, as
-/// `self.name()`. shortcut: Pylint asks that the callee infer to a bound
-/// method; any `x.name()` counts here, which can only excuse more.
-fn calls(method: &StmtFunctionDef, name: &str) -> bool {
-    struct Find<'n>(&'n str, bool);
+/// Whether `method`, of `owner`, calls the function `name` on `self` or on a
+/// local, as `self.name()`. Pylint asks that the callee infer to a bound
+/// method of that name: a call on `self.helper` or on another parameter does
+/// not, and `initialize = _initialize` in `owner` binds `_initialize`, not
+/// `initialize`. shortcut: any local counts as an instance (`inst = new(cls);
+/// inst.name()`), and an alias is read in `owner` alone; upgrade with a value
+/// inference.
+fn calls(owner: &StmtClassDef, method: &StmtFunctionDef, name: &str) -> bool {
+    struct Find<'n>(&'n str, &'n str, &'n StmtClassDef, &'n Parameters, bool);
     impl Visitor<'_> for Find<'_> {
         fn visit_expr(&mut self, expr: &Expr) {
             if let Expr::Call(c) = expr
                 && let Expr::Attribute(a) = &*c.func
-                && a.attr.as_str() == self.0
+                && matches!(&*a.value, Expr::Name(n)
+                    if n.id.as_str() == self.1 || !self.3.includes(n.id.as_str()))
+                && alias(self.2, a.attr.as_str()) == self.0
             {
-                self.1 = true;
+                self.4 = true;
             }
             visitor::walk_expr(self, expr);
         }
     }
-    let mut find = Find(name, false);
+    let p = &method.parameters;
+    let Some(first) = p.posonlyargs.first().or(p.args.first()) else {
+        return false;
+    };
+    let mut find = Find(name, first.parameter.name.as_str(), owner, p, false);
     find.visit_body(&method.body);
-    find.1
+    find.4
+}
+
+/// What `attr` names in `class` when its body binds it as `attr = other`.
+fn alias<'a>(class: &'a StmtClassDef, attr: &'a str) -> &'a str {
+    class
+        .body
+        .iter()
+        .find_map(|stmt| match stmt {
+            Stmt::Assign(a) => match (&a.targets[..], &*a.value) {
+                ([Expr::Name(target)], Expr::Name(value)) if target.id.as_str() == attr => {
+                    Some(value.id.as_str())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .unwrap_or(attr)
 }
 
 pub struct InstanceAttrs;
@@ -665,7 +765,7 @@ struct Ancestry<'m> {
     sites: Vec<Vec<Site<'m>>>,
     /// The methods of `defining-attr-methods` of each class, from that
     /// class on: the ones Pylint looks a defining method up in.
-    defining: Vec<Vec<&'m StmtFunctionDef>>,
+    defining: Vec<Vec<(&'m StmtClassDef, &'m StmtFunctionDef)>>,
 }
 
 impl<'m> Ancestry<'m> {
@@ -690,8 +790,8 @@ impl<'m> Ancestry<'m> {
             .map(|i| {
                 defs[i..]
                     .iter()
-                    .flat_map(|def| methods(&def.body))
-                    .filter(|f| defining.iter().any(|name| name == f.name.as_str()))
+                    .flat_map(|def| methods(&def.body).into_iter().map(move |f| (*def, f)))
+                    .filter(|(_, f)| defining.iter().any(|name| name == f.name.as_str()))
                     .collect()
             })
             .collect();
@@ -1017,7 +1117,7 @@ impl<'a> Walk<'a, '_> {
             }
         }
         for name in names {
-            if name == "__dict__" {
+            if OBJECT_ATTRS.contains(&name) {
                 continue;
             }
             // `self.x += 1` alone is left to the typing rules, as in Pylint.
@@ -1044,7 +1144,7 @@ impl<'a> Walk<'a, '_> {
                 s.func.is_some_and(|f| {
                     ancestry.defining[0]
                         .iter()
-                        .any(|method| calls(method, f.name.as_str()))
+                        .any(|(owner, method)| calls(owner, method, f.name.as_str()))
                 })
             };
             if nodes.iter().any(called) {
@@ -1071,7 +1171,7 @@ impl<'a> Walk<'a, '_> {
                     && ((s.is_instance_attr()
                         && (self.defining(s.func)
                             || s.func.is_some_and(|f| {
-                                defining.iter().any(|m| calls(m, f.name.as_str()))
+                                defining.iter().any(|(o, m)| calls(o, m, f.name.as_str()))
                             })))
                         || (s.use_ == Use::Setattr && self.defining(s.method)))
             })
@@ -1128,6 +1228,13 @@ mod tests {
             ),
             expected
         );
+    }
+
+    #[test]
+    fn instance_attribute_inference() {
+        let source = include_str!("fixtures/instance_attribute_inference.py");
+        let expected = include_str!("fixtures/instance_attribute_inference.expected").trim_end();
+        assert_eq!(render(source, &[], &["W0201"]), expected);
     }
 
     #[test]

@@ -1,5 +1,12 @@
 # Directory Update Log
 
+## 2026-10-22
+
+* **native-rules.md**: `W0201` follows the nearest binding of a name, a class
+  bound in the method's class (`self._Result()`), a call on a local in a
+  defining method, and skips the attributes of `object`; the divergences list
+  what stays missed.
+
 ## 2026-10-20
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the

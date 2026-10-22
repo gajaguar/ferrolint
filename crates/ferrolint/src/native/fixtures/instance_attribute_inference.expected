@@ -1,0 +1,10 @@
+8:W0201:Attribute 'b' defined outside __init__
+10:W0201:Attribute 'c' defined outside __init__
+20:W0201:Attribute 'b' defined outside __init__
+26:W0201:Attribute 'c' defined outside __init__
+39:W0201:Attribute 'b' defined outside __init__
+40:W0201:Attribute 'c' defined outside __init__
+48:W0201:Attribute '__doc__' defined outside __init__
+71:W0201:Attribute 'a' defined outside __init__
+74:W0201:Attribute 'c' defined outside __init__
+85:W0201:Attribute 'b' defined outside __init__
