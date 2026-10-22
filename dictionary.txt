@@ -138,3 +138,5 @@ reinit
 Unpickler
 xdummy
 zstopen
+glyf
+ssize
