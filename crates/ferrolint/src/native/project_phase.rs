@@ -684,7 +684,10 @@ pub fn module_name(path: &Path, bases: &[PathBuf], namespace: bool) -> Option<St
         if !packages && !namespace {
             continue;
         }
-        let stem = file.strip_suffix(".py").unwrap_or(&file).to_owned();
+        let stem = file
+            .rsplit_once('.')
+            .map_or(&*file, |(stem, _)| stem)
+            .to_owned();
         if stem != "__init__" {
             parts.push(stem);
         }

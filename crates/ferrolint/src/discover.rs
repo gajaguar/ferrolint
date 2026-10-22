@@ -49,7 +49,8 @@ impl Excludes {
 /// order, so linting can start before the walk ends.
 ///
 /// Files named explicitly are kept even when an ignore rule covers them;
-/// the filters apply only to what a directory walk discovers.
+/// the filters apply only to what a directory walk discovers. Only a walk
+/// finds `.pyi` stubs, as in Pylint.
 pub fn stream(
     cwd: &Path,
     targets: &[PathBuf],
@@ -98,7 +99,8 @@ fn walk(dir: &Path, excludes: &Excludes, emit: &mut impl FnMut(PathBuf)) -> Resu
     for entry in walker {
         let entry = entry.map_err(|err| Error::io(err.to_string()))?;
         let is_file = entry.file_type().is_some_and(|kind| kind.is_file());
-        if is_file && is_python(entry.path()) {
+        // A stub is a module of the run only when no `.py` has its name.
+        if is_file && (is_python(entry.path()) || is_stub(entry.path())) {
             emit(normalize(entry.path()));
         }
     }
@@ -107,6 +109,11 @@ fn walk(dir: &Path, excludes: &Excludes, emit: &mut impl FnMut(PathBuf)) -> Resu
 
 fn is_python(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "py")
+}
+
+/// Whether `path` is a `.pyi` stub that no `.py` shadows.
+pub fn is_stub(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "pyi") && !path.with_extension("py").is_file()
 }
 
 /// Drop `.` components so one file has one spelling.
@@ -124,5 +131,33 @@ pub fn display_path(cwd: &Path, path: &Path) -> String {
             .collect::<Vec<_>>()
             .join("/"),
         Err(_) => path.to_string_lossy().replace('\\', "/"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn a_walk_finds_the_stubs_no_py_shadows() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a.py", "a.pyi", "b.pyi"] {
+            std::fs::write(dir.path().join(name), "").unwrap();
+        }
+        let excludes = Excludes::new(&Config::default()).unwrap();
+        let mut found = Vec::new();
+        stream(dir.path(), &[PathBuf::from(".")], &excludes, |f| {
+            found.push(f);
+        })
+        .unwrap();
+        found.sort();
+        assert_eq!(found, [dir.path().join("a.py"), dir.path().join("b.pyi")]);
+        found.clear();
+        stream(dir.path(), &[PathBuf::from("b.pyi")], &excludes, |f| {
+            found.push(f);
+        })
+        .unwrap();
+        assert_eq!(found, Vec::<PathBuf>::new());
     }
 }

@@ -147,6 +147,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         let prepared = project_phase::prepare_all(&units);
         let linted = units
             .iter()
+            .filter(|u| !crate::discover::is_stub(&u.path))
             .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
             .collect();
         let environment = crate::native::environment();
@@ -292,7 +293,7 @@ fn units(
                         .unwrap_or_default()
                 });
             Unit {
-                is_package: real.file_name().is_some_and(|name| name == "__init__.py"),
+                is_package: real.file_stem().is_some_and(|stem| stem == "__init__"),
                 path: real,
                 display: display.clone(),
                 module,

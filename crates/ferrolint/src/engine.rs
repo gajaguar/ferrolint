@@ -151,7 +151,12 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
                 .par_bridge()
                 .map(|path| {
                     let display = discover::display_path(cwd, &path);
-                    let findings = linter.lint_file(&path, &display);
+                    // shortcut: no per-file rule runs on a stub, until one is chosen.
+                    let findings = if discover::is_stub(&path) {
+                        Ok(Vec::new())
+                    } else {
+                        linter.lint_file(&path, &display)
+                    };
                     (display, path, findings)
                 })
                 .collect()
