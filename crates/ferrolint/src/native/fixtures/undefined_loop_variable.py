@@ -160,3 +160,12 @@ def loop_over_alias(values):
     for name in names:
         pass
     return name
+
+
+from six.moves import range
+
+
+def six_range(values):
+    for i in range(len(values)):
+        pass
+    return i

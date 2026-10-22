@@ -1,5 +1,12 @@
 # Directory Update Log
 
+## 2026-10-22
+
+* **plugins.md**: `bare-except` skips an `except:` that re-raises, as Pylint does.
+
+* **native-rules.md**: `W0631` takes `range` from `six.moves` as the builtin and
+  names the attribute inference it lacks.
+
 ## 2026-10-20
 
 * **native-rules.md**, **configuration-file.md**: a plugin alias equal to the

@@ -32,6 +32,9 @@ answers to its Pylint msg-id and symbol as well as its code.
   doc comment lists what it leaves out, such as loop variables for
   `unused-variable` or every name of a module with a star import for
   `undefined-variable`.
+* `bare-except` skips an `except:` whose body has a `raise` among its own
+  statements, as Pylint's `_is_raising` does; a `raise` under an `if` still
+  counts as bare.
 * `singleton-comparison` quotes the operands as Pylint does in the simple
   cases (double-quoted strings print single-quoted, the operands keep their
   order, `bool(...)` appears outside a test condition) and is compared with
