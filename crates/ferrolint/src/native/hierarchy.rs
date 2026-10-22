@@ -15,6 +15,7 @@ use ruff_text_size::TextSize;
 
 use super::classes::{Env, bases};
 use super::project::{ClassRef, Project};
+use crate::class_methods;
 
 /// Bases that add no method to the MRO, though the project cannot read them.
 pub(super) const EMPTY_BASES: [&str; 8] = [
@@ -204,6 +205,10 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                     Ok(base) => Entry::Class(Class::Remote(base)),
                     Err(name) if name == "object" => Entry::Object,
                     Err(name) if EMPTY_BASES.contains(&name.as_str()) => Entry::Empty,
+                    // A builtin base is not modelled, and is not unknown either.
+                    Err(name) if !name.contains('.') && class_methods::methods(&name).is_some() => {
+                        Entry::Empty
+                    }
                     Err(_) => Entry::Unknown,
                 })
                 .collect(),
@@ -379,6 +384,25 @@ mod tests {
         assert_eq!(
             run(&files, &["R0903"]),
             "3:R0903:Too few public methods (1/2)"
+        );
+    }
+
+    #[test]
+    fn a_builtin_base_of_another_module_does_not_make_the_chain_unknown() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/base.py",
+                "class Box(dict):\n    def run(self, a):\n        ...\n",
+            ),
+            (
+                "pkg/main.py",
+                "from .base import Box\n\nclass Child(Box):\n    def run(self):\n        ...\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, &["W0221"]),
+            "4:W0221:Number of parameters was 2 in 'Box.run' and is now 1 in overriding 'Child.run' method"
         );
     }
 
