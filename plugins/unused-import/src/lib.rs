@@ -60,10 +60,10 @@ impl Checker for UnusedImport {
         match node.kind {
             NodeKind::Alias => self.collect(node, cx),
             NodeKind::Name if matches!(node.context, ExprContext::Load | ExprContext::Del) => {
-                if let (Some(name), Some(binding)) = (node.name, cx.resolve(node)) {
-                    if !class_shadows(node, name, cx) {
-                        self.used.insert((binding.scope, name.to_owned()));
-                    }
+                if let (Some(name), Some(binding)) = (node.name, cx.resolve(node))
+                    && !class_shadows(node, name, cx)
+                {
+                    self.used.insert((binding.scope, name.to_owned()));
                 }
             }
             // Pylint reads the target of `name += ...` as a use of `name`.
