@@ -352,8 +352,10 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   Pylint infers the iterable. Here the iterable is safe when it is `range`,
   `enumerate` of a safe one, a non-empty display, a conditional expression
   whose first branch is safe, or a name whose first binding is any of these.
-  A loop over a call or an attribute is judged not safe, as Pylint does when
-  it cannot infer.
+  `range` may come from `from six.moves import range`, as in Pylint's six
+  brain. A loop over a call or an attribute is judged not safe, as Pylint does
+  when it cannot infer; Pylint does infer `self.items`, or `self.items + [x]`,
+  from the first `self.items = [...]` of the class, so it stays silent there.
 * `W0641` counts a name as read when any read of it resolves to the
   function, in any nested scope; `@overload` stubs and abstract methods are
   not excused.

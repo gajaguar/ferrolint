@@ -118,11 +118,13 @@ fn global_statement() {
 
 #[test]
 fn bare_except() {
-    let source =
-        "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept ValueError:\n    pass\n";
+    let source = "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept ValueError:\n    pass\n\ntry:\n    pass\nexcept:\n    cleanup()\n    raise\n\ntry:\n    pass\nexcept:\n    if x:\n        raise\n";
     assert_eq!(
         findings("ferrolint-plugin-bare-except", source),
-        ["3: No exception type(s) specified"]
+        [
+            "3: No exception type(s) specified",
+            "19: No exception type(s) specified"
+        ]
     );
 }
 

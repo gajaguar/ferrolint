@@ -21,7 +21,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange};
 
-use super::classes::py_repr;
+use super::classes::{Env, py_repr};
 use super::misc::py_match;
 use super::unassigned;
 use super::{Checker, Ctx, rule};
@@ -1028,21 +1028,27 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
 }
 
 /// Whether Pylint infers the iterable as a range, or as a non-empty display.
-fn safe_iterable(info: &Info<'_>, scope: usize, iter: &Expr, depth: u8) -> bool {
+fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, depth: u8) -> bool {
     match iter {
         Expr::Call(call) => match &*call.func {
-            Expr::Name(f) if f.id.as_str() == "range" => info.lookup(scope, "range").is_none(),
+            // Pylint's six brain makes `from six.moves import range` the builtin.
+            Expr::Name(f) if f.id.as_str() == "range" => {
+                info.lookup(scope, "range").is_none()
+                    || Env::new(ctx)
+                        .binding(f)
+                        .is_some_and(|b| b.origin.as_deref() == Some("six.moves.range"))
+            }
             Expr::Name(f)
                 if f.id.as_str() == "enumerate" && info.lookup(scope, "enumerate").is_none() =>
             {
                 call.arguments
                     .args
                     .first()
-                    .is_some_and(|arg| safe_iterable(info, scope, arg, depth))
+                    .is_some_and(|arg| safe_iterable(ctx, info, scope, arg, depth))
             }
             _ => false,
         },
-        Expr::If(e) => safe_iterable(info, scope, &e.body, depth),
+        Expr::If(e) => safe_iterable(ctx, info, scope, &e.body, depth),
         Expr::List(l) => !l.elts.is_empty(),
         Expr::Tuple(t) => !t.elts.is_empty(),
         Expr::Set(s) => !s.elts.is_empty(),
@@ -1057,7 +1063,7 @@ fn safe_iterable(info: &Info<'_>, scope: usize, iter: &Expr, depth: u8) -> bool 
                 .iter()
                 .find(|d| d.name == name.id.as_str())
                 .and_then(|d| d.value)
-                .is_some_and(|value| safe_iterable(info, scope, value, depth + 1))
+                .is_some_and(|value| safe_iterable(ctx, info, scope, value, depth + 1))
         }
         _ => false,
     }
@@ -1125,7 +1131,7 @@ fn loop_variables(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
         }) {
             continue;
         }
-        if safe_iterable(info, looped.scope, looped.iter, 0) {
+        if safe_iterable(ctx, info, looped.scope, looped.iter, 0) {
             continue;
         }
         out.push(ctx.report_at(
