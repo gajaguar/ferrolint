@@ -376,24 +376,34 @@ enum Failure {
 }
 
 impl File<'_> {
+    /// The module a `level`-dotted `name` stands for.
+    fn absolute(&self, level: u32, name: &str) -> Result<String, Failure> {
+        if level == 0 {
+            return Ok(name.to_owned());
+        }
+        relative_name(
+            &self.unit.module,
+            &self.unit.path,
+            self.unit.is_package,
+            name,
+            level,
+        )
+        .ok_or(Failure::TooFar)
+    }
+
     /// The module a `level`-dotted `name` stands for and where it is.
     fn find(&self, level: u32, name: &str) -> Result<(String, Rc<Spec>), Failure> {
-        let absolute = if level == 0 {
-            name.to_owned()
-        } else {
-            relative_name(
-                &self.unit.module,
-                &self.unit.path,
-                self.unit.is_package,
-                name,
-                level,
-            )
-            .ok_or(Failure::TooFar)?
-        };
+        let absolute = self.absolute(level, name)?;
         self.project
             .spec(&absolute)
             .map(|spec| (absolute, spec))
             .ok_or(Failure::Missing)
+    }
+
+    /// Whether the `level`-dotted `name` is a module that only a `.pyi` stub holds.
+    fn stub(&self, level: u32, name: &str) -> Option<String> {
+        let absolute = self.absolute(level, name).ok()?;
+        self.project.has_stub(&absolute).then_some(absolute)
     }
 
     /// Whether a missing `name` goes unreported here.
@@ -566,12 +576,16 @@ impl File<'_> {
                 import
                     .names
                     .iter()
-                    .filter(|name| self.find(0, name).is_ok())
+                    .filter(|name| self.find(0, name).is_ok() || self.stub(0, name).is_some())
                     .cloned()
                     .collect(),
             ),
-            Some((module, level)) => match self.find(*level, module) {
-                Ok((absolute, _)) => (
+            Some((module, level)) => match self
+                .find(*level, module)
+                .map(|(absolute, _)| absolute)
+                .or_else(|_| self.stub(*level, module).ok_or(Failure::Missing))
+            {
+                Ok(absolute) => (
                     *level,
                     import
                         .names

@@ -90,6 +90,18 @@ fn cycle_edges_match_pylint() {
     assert_eq!(found, expected("cycles_edges"));
 }
 
+/// A module that only a `.pyi` stub holds is an edge to its package, as in Pylint.
+#[test]
+fn stub_imports_are_edges_to_the_package() {
+    let found: Vec<String> = findings(&project("cycles_stub"), &["--no-cache"])
+        .iter()
+        .map(|line| line.splitn(3, ':').nth(2).unwrap())
+        .filter(|finding| finding.starts_with("R0401:"))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(found, expected("cycles_stub"));
+}
+
 #[test]
 fn duplicates_match_pylint() {
     let project = project("duplicates");

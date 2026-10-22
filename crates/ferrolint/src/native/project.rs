@@ -638,6 +638,20 @@ impl Project {
             .is_some_and(|spec| !matches!(spec.kind, Kind::Made))
     }
 
+    /// Whether `name` is a module with only a `.pyi` stub, beside the modules of its parent package.
+    /// shortcut: a top-level stub is not looked for, since no parent package lists it.
+    pub fn has_stub(&self, name: &str) -> bool {
+        let Some((parent, last)) = name.rsplit_once('.') else {
+            return false;
+        };
+        let Some(spec) = self.spec(parent) else {
+            return false;
+        };
+        spec.dirs
+            .iter()
+            .any(|dir| self.listing(dir).entry(&format!("{last}.pyi")) == Some(false))
+    }
+
     /// The directories listed and the files read so far, for a cache to stamp.
     pub fn touched(&self) -> Vec<PathBuf> {
         self.touched.borrow().iter().cloned().collect()
