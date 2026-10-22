@@ -157,6 +157,16 @@ fn a_cached_run_replays_until_the_search_path_changes() {
 }
 
 #[test]
+fn an_edit_to_a_stub_changes_the_cached_result() {
+    let project = project("stubs");
+    let first = findings(&project, &[]);
+    assert_eq!(first, expected("stubs"));
+    project.write("pkg/stub2.pyi", "x = 1\ny = 1\n");
+    let after = findings(&project, &[]);
+    assert_eq!(after.len(), first.len() - 1, "{after:?}");
+}
+
+#[test]
 fn an_edit_to_a_cycle_member_drops_the_cycle() {
     let project = project("cycles");
     assert!(
