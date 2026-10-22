@@ -470,7 +470,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
 * A module-level `name = value` is a constant when the value is a literal,
   a folded literal, an f-string, `int`, `str`, `bool` or `len` of literals,
   a name bound once to one, or a boolean, comparison or `if` expression of
-  them. Pylint infers more (`os.name`, `"a".upper()`, `os.sep + "x"`,
+  them, and so is a `str` or `bytes` method call on a constant (`"a".upper()`,
+  `",".join(x)`, `"{}".format(1)`, which Pylint infers to a constant whatever
+  the arguments, except `format`, which needs every argument constant and
+  every field of the template supplied). Pylint infers more (`os.name`,
+  `os.sep + "x"`,
   `isinstance(1, int)`, a constant attribute of an imported module or
   class); those names are not judged here. A value that cannot be told is
   skipped, as Pylint skips what it cannot infer. A call of a capitalized
@@ -494,17 +498,23 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   on other files, a cached result is stale until the file changes or the
   cache is cleared with `--no-cache`.
 * Left to the inference Pylint runs: a name bound to a class of the
-  project is a class (and not judged) only when the project binds it once,
-  as astroid infers one value; a class bound twice (a fallback in
-  `try`/`except` or `if`), a class returned by a call
-  (`Model = make_model()`), a standard library class under an alias
-  (`_Fraction = Fraction`), the value of a standard library attribute
-  (`sys.platform`, `math.pi`, `os.sep`), the result of a `str` method or
-  of `%` formatting, a name read through `getattr` or `hasattr`, and the
-  attribute that `obj = Cls(); obj.attr = 1` adds to `Cls` from outside
-  its body are not followed, so the names Pylint infers differently stay
-  as differences. A comprehension is not inferred by astroid and its name
-  is not judged.
+  project is a class (and not judged) when the project binds it once, as
+  astroid infers one value, also through `name = module.Class` in a package,
+  a class defined in an `except` handler, a function that returns a class of
+  the project, a metaclass called with a name, bases and a namespace and the
+  functional `Enum("Name", ...)`. A class bound twice (a fallback in
+  `try`/`except` or `if`, a base bound in both branches of an `if`), a class
+  returned by a call of an installed package, a standard library class
+  missing from the class table (`_Fraction = Fraction`), the value of a standard library
+  attribute (`sys.platform`, `math.pi`, `os.sep`), `%` formatting, a name
+  read through `getattr` or `hasattr`, a variable whose value is a factory or
+  an attribute of an installed package (`Pool = app.Pool`), and the attribute
+  that `obj = Cls(); obj.attr = 1` adds to `Cls` from outside its body are
+  not followed, so the names Pylint infers differently stay as differences.
+  A comprehension is not inferred by astroid and its name is not judged.
+* Pylint reports some attribute lines only when the file is linted alone, not
+  inside a whole run (`fontTools/ttLib/tables/*`, which set an attribute of a
+  base class from another module); ferrolint reports them in both cases.
 * `name-group` is not read, and a `*-rgx` pattern that Rust's regex engine
   rejects (a look-around or a back-reference) is not applied.
 * `E0710`, `E0712` and `E0705` judge a class only when all its bases are

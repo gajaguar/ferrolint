@@ -89,3 +89,16 @@ if __name__ == "__main__":
     MainCamel = os
     mainReassigned = 1
     mainReassigned = 2
+
+
+try:
+    import pycurl
+except ImportError:
+    pycurl = CurlClient = None
+else:
+    from pycurl import CurlClient
+
+_GLOBS = list(globals())
+_GLOBS += ["x"]
+SHOWN = list([1])
+SHOWN += [2]

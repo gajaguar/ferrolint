@@ -68,3 +68,45 @@ def make():
     Alias = Local
     Other = Maker()
     return Alias, Other
+
+
+from datetime import date
+from enum import Enum, IntEnum
+
+
+class Meta(type):
+    pass
+
+
+class SubMeta(Meta):
+    pass
+
+
+class Color(Enum):
+    RED = 1
+
+
+MetaMade = Meta("MetaMade", (object,), {})
+metaMade = SubMeta("metaMade", (object,), {})
+metaTwo = Meta("metaTwo", (object,))
+enumMade = Enum("enumMade", "a b")
+enumInt = IntEnum("enumInt", "a b")
+enumSub = Color("enumSub", "a b")
+pastDate = date
+dictUnpack = {**unknown_thing()}
+dictNested = {**{"a": 1}}
+
+
+def functional():
+    madeInFn = Meta("madeInFn", (object,), {})
+    enumInFn = Enum("enumInFn", "a b")
+    enumIntFn = IntEnum("enumIntFn", "a b")
+    return madeInFn, enumInFn, enumIntFn
+strUpper = "x".upper()
+snake_join = ",".join(unknown_thing())
+bytesDecode = b"x".decode()
+snake_split = "x".split(",")
+snake_unknown = unknown_thing().upper()
+fmtDone = "{} {a}".format(1, a=2)
+snake_fmt_missing = "{a}".format(**globals())
+snake_fmt_args = "{}".format(unknown_thing())
