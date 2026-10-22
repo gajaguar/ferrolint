@@ -47,7 +47,68 @@ const REDUNDANT: &str = "E1124";
 const MISSING_KWOA: &str = "E1125";
 const NO_RETURN: &str = "E1111";
 const NONE_RETURNED: &str = "E1128";
+/// The `ctypes` types that astroid's ctypes brain redefines with `__init__(self, value)`.
+const CTYPES_VALUE: [&str; 26] = [
+    "c_bool",
+    "c_byte",
+    "c_char",
+    "c_double",
+    "c_float",
+    "c_int",
+    "c_int16",
+    "c_int32",
+    "c_int64",
+    "c_int8",
+    "c_long",
+    "c_longdouble",
+    "c_longlong",
+    "c_short",
+    "c_size_t",
+    "c_ssize_t",
+    "c_ubyte",
+    "c_uint",
+    "c_uint16",
+    "c_uint32",
+    "c_uint64",
+    "c_uint8",
+    "c_ulong",
+    "c_ulonglong",
+    "c_ushort",
+    "c_wchar",
+];
+/// The `ctypes.wintypes` names that are plain aliases of those types (`DWORD = c_ulong`).
+// shortcut: a fixed list of the aliases, not read from `wintypes.py`; upgrade with inference.
+const WINTYPES_VALUE: [&str; 17] = [
+    "BOOL",
+    "BOOLEAN",
+    "BYTE",
+    "CHAR",
+    "DOUBLE",
+    "DWORD",
+    "FLOAT",
+    "INT",
+    "LONG",
+    "SHORT",
+    "UINT",
+    "ULONG",
+    "USHORT",
+    "WCHAR",
+    "WORD",
+    "LARGE_INTEGER",
+    "ULARGE_INTEGER",
+];
 const ARITY: [&str; 5] = [MISSING, TOO_MANY, UNEXPECTED, REDUNDANT, MISSING_KWOA];
+
+/// Whether `name` is a `ctypes` type (or a `wintypes` alias of one) built from a `value`.
+fn ctypes_value(name: &str) -> bool {
+    match name.strip_prefix("ctypes.") {
+        Some(rest) => match rest.strip_prefix("wintypes.") {
+            Some(alias) => WINTYPES_VALUE.contains(&alias),
+            None => CTYPES_VALUE.contains(&rest),
+        },
+        None => false,
+    }
+}
 
 pub struct Calls;
 
@@ -242,6 +303,25 @@ impl<'a> Walk<'a, '_> {
                     "threading.Thread needs the target function",
                 ));
             }
+        }
+        // Pylint reads `c_int()` off the brain's constructor, which requires `value`.
+        if self.on(MISSING)
+            && call.arguments.args.is_empty()
+            && call
+                .arguments
+                .keywords
+                .iter()
+                .all(|k| k.arg.as_ref().is_some_and(|a| a != "value"))
+            && self
+                .env
+                .qualified(&call.func)
+                .is_some_and(|name| ctypes_value(&name))
+        {
+            self.out.push(ctx.report(
+                MISSING,
+                call,
+                "No value for argument 'value' in constructor call",
+            ));
         }
         if self.on(UNITTEST) {
             self.unittest(call);
