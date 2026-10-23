@@ -237,8 +237,12 @@ call:
   undecorated function, a class, a lambda or a generator expression of the
   file, a module imported with `import`, or a builtin function or class; and
   the call of a function of the file that returns only generator
-  expressions. A test such as `self.method` or a property, or a function
-  imported with `from`, is not known.
+  expressions. Not known, so not reported: a method read through `self`
+  (Pylint reports `if self.method:` unless the method is a property), a
+  name or attribute bound to a call such as `getattr(...)`, a class imported
+  with `from` (`from logging import PercentStyle`), and an instance attribute
+  bound to the call of a generator method. A class attribute bound to a
+  constant is not reported by Pylint either.
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
   literal, a container, a lambda, or `not`, `-` and `+` of one; Pylint also
   folds operations and comparisons of constants and names that hold them.
