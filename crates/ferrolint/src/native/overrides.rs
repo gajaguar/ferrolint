@@ -8,13 +8,13 @@
 //! interpreter (a builtin such as `dict`), whose methods it does not compare
 //! either.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::comparable::ComparableExpr;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Expr, ExprAttribute, ExprCall, Parameters, Stmt, StmtClassDef, StmtFunctionDef,
+    Expr, ExprAttribute, ExprCall, HasNodeIndex, Parameters, Stmt, StmtClassDef, StmtFunctionDef,
 };
 use ruff_text_size::Ranged;
 
@@ -412,6 +412,68 @@ fn differences(
     out
 }
 
+/// The bindings of the method `name` that the first class of `mro` overrides, as astroid's
+/// `local_attr_ancestors` finds them: all of the first ancestor that binds the name to a
+/// function, never empty.
+fn overridden<'m, 'a>(
+    mro: &'m [Class<'a>],
+    name: &str,
+) -> Option<(&'m Class<'a>, &'m StmtClassDef, Vec<&'m StmtFunctionDef>)> {
+    mro[1..].iter().find_map(|owner| {
+        let def = owner.def()?;
+        let (_, kind) = locals(&def.body).into_iter().find(|(n, _)| n == name)?;
+        if kind != Local::Function {
+            return None;
+        }
+        let all: Vec<_> = methods(&def.body)
+            .into_iter()
+            .filter(|f| f.name.as_str() == name)
+            .collect();
+        (!all.is_empty()).then_some((owner, def, all))
+    })
+}
+
+/// For the plugins' `modules` query: the parameter names, position-only ones left out, of the
+/// method each method of the file overrides, by the node id of the overriding one. Pylint's
+/// `overridden_method` reads them to excuse a parameter that shadows a builtin.
+pub fn overridden_parameters(ctx: &Ctx<'_>) -> HashMap<u32, Vec<String>> {
+    struct Names<'a, 'e> {
+        hierarchy: Hierarchy<'a, 'e>,
+        found: HashMap<u32, Vec<String>>,
+    }
+    impl<'a> Visitor<'a> for Names<'a, '_> {
+        fn visit_stmt(&mut self, stmt: &'a Stmt) {
+            if let Stmt::ClassDef(class) = stmt
+                && let Some(mro) = self.hierarchy.mro(&Class::Local(class))
+            {
+                // Pylint asks for a method whose parent is the class, not an `if` of its body.
+                for stmt in &class.body {
+                    if let Stmt::FunctionDef(method) = stmt
+                        && let Some((.., all)) = overridden(&mro, method.name.as_str())
+                        && let Some(id) = HasNodeIndex::node_index(method).load().as_u32()
+                    {
+                        let p = &*all[0].parameters;
+                        let names = p.args.iter().chain(&p.kwonlyargs).map(|a| &a.parameter);
+                        let variadics = p.vararg.iter().chain(&p.kwarg).map(|a| &**a);
+                        self.found.insert(
+                            id,
+                            names.chain(variadics).map(|a| a.name.to_string()).collect(),
+                        );
+                    }
+                }
+            }
+            visitor::walk_stmt(self, stmt);
+        }
+    }
+    let env = Env::new(ctx);
+    let mut names = Names {
+        hierarchy: Hierarchy::new(&env),
+        found: HashMap::new(),
+    };
+    names.visit_body(&ctx.parsed.syntax().body);
+    names.found
+}
+
 impl<'a> Walk<'a, '_> {
     fn class(&mut self, class: &'a StmtClassDef) {
         // The constructor check reads the bases one by one, so it does not need an MRO.
@@ -441,31 +503,18 @@ impl<'a> Walk<'a, '_> {
     /// `local_attr_ancestors`.
     fn signature(&mut self, class: &'a StmtClassDef, mro: &[Class<'a>], method: &StmtFunctionDef) {
         let name = method.name.as_str();
-        let found = mro[1..].iter().find_map(|owner| {
-            let def = owner.def()?;
-            let (_, kind) = locals(&def.body).into_iter().find(|(n, _)| n == name)?;
-            if kind != Local::Function {
-                return None;
-            }
-            let all: Vec<&StmtFunctionDef> = methods(&def.body)
-                .into_iter()
-                .filter(|f| f.name.as_str() == name)
-                .collect();
-            let first = *all.first()?;
-            // Compare with the implementation, not the first overload stub.
-            let parent = if is_overload(first) {
-                all.iter()
-                    .rev()
-                    .find(|f| !is_overload(f))
-                    .copied()
-                    .unwrap_or(first)
-            } else {
-                first
-            };
-            Some((owner, def, parent))
-        });
-        let Some((owner, def, parent)) = found else {
+        let Some((owner, def, all)) = overridden(mro, name) else {
             return;
+        };
+        // Compare with the implementation, not the first overload stub.
+        let parent = if is_overload(all[0]) {
+            all.iter()
+                .rev()
+                .find(|f| !is_overload(f))
+                .copied()
+                .unwrap_or(all[0])
+        } else {
+            all[0]
         };
         self.compare(class, def, parent, method);
         if self.enabled.contains(INVALID_OVERRIDE) {

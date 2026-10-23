@@ -530,6 +530,29 @@ mod tests {
     }
 
     #[test]
+    fn a_typing_alias_is_the_class_it_aliases() {
+        let files = [
+            (
+                "_collections_abc.py",
+                "class Mapping:\n    def get(self, key, default=None): ...\n",
+            ),
+            (
+                "typing.py",
+                "import collections.abc\n\nMapping = _alias(collections.abc.Mapping, 2)\n",
+            ),
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/main.py",
+                "import typing\n\nclass A(typing.Mapping[str, str]):\n    def get(self, name, default=None): ...\n",
+            ),
+        ];
+        assert_eq!(
+            run(&files, &["W0237"]),
+            "4:W0237:Parameter 'key' has been renamed to 'name' in overriding 'A.get' method"
+        );
+    }
+
+    #[test]
     fn an_unreadable_base_does_not_hide_the_readable_ones() {
         let main = "from nowhere import Mystery\n\nclass Base:\n    def __init__(self):\n        self.x = 1\n\nclass Child(Mystery, Base):\n    def __init__(self):\n        Mystery.__init__(self)\n";
         assert_eq!(

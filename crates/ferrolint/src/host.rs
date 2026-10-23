@@ -51,6 +51,9 @@ pub struct FileData {
     /// The names each `from m import *` binds, by alias node, for the
     /// `modules` query.
     pub stars: HashMap<u32, Vec<String>>,
+    /// The parameter names of the method each method overrides, by node,
+    /// for the `modules` query.
+    pub overridden: HashMap<u32, Vec<String>>,
 }
 
 /// Per-store host state.
@@ -183,6 +186,10 @@ impl wit::ferrolint::plugin::comments::Host for State {
 impl wit::ferrolint::plugin::modules::Host for State {
     fn star_names(&mut self, alias: u32) -> wasmtime::Result<Option<Vec<String>>> {
         Ok(self.check_node(alias)?.stars.get(&alias).cloned())
+    }
+
+    fn overridden_parameters(&mut self, method: u32) -> wasmtime::Result<Option<Vec<String>>> {
+        Ok(self.check_node(method)?.overridden.get(&method).cloned())
     }
 }
 

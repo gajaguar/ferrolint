@@ -622,7 +622,9 @@ Known divergences:
   names aside), the keyword-only ones by name, and a removed `*args` or
   `**kwargs` is reported; a constructor is never compared and a special
   method only by number, as in Pylint. Private methods, setters and stubs
-  are skipped.
+  are skipped. A base from `typing` that aliases a `collections.abc` class
+  (`typing.MutableMapping[str, str]`) is that class; `typing.IO[str]` and
+  the other `typing` classes are empty, as astroid infers them.
 * `W0231` `super-init-not-called`: an `__init__` that calls neither
   `super().__init__` (anywhere in its body) nor `Base.__init__` of a base
   whose `__init__`, found along the base's MRO, is not abstract (a `pass`,
@@ -654,6 +656,15 @@ Known divergences:
   ancestor tests of `W0201`. A builtin base such as `dict` or
   `Exception` adds nothing, which matches Pylint for the signatures it
   reads from a running interpreter.
+* The signature rules miss an override whose ancestor astroid reaches by a
+  path the project does not follow: a class of a C module or a builtin
+  (`str.replace`), a name a module binds in a function with `global`
+  (`concurrent.futures.ThreadPoolExecutor`), a base imported in both
+  branches of an `if` or `try`, a base bound by a star import and then by an
+  alias of the same name, and `Generic.__class_getitem__`, which astroid adds
+  to `typing.Generic`. A name rebound to another class in a branch
+  (`HTTPSConnection = DummyConnection` under `if`) makes ferrolint report
+  an override that Pylint does not.
 * `E0202` treats a decorator that is a function as one that returns no
   data descriptor, where Pylint infers the value it returns.
 * A method that a defining method calls excuses `W0201` when that method

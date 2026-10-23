@@ -716,7 +716,19 @@ impl Linter<'_> {
             context.py_version,
         );
         let ast = flat.pack();
+        let overridden = native::overridden_parameters(&native::Ctx {
+            source: context.source,
+            index: context.index,
+            parsed: context.parsed,
+            flat: &flat,
+            model: &model,
+            options: context.options,
+            py_version: context.py_version,
+            module: context.module,
+            path: context.path,
+        });
         let data = Arc::new(FileData {
+            overridden,
             stars: star_names(&flat, context.path, context.module),
             flat,
             ast,

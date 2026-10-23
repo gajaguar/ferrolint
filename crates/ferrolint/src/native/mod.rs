@@ -47,6 +47,7 @@ mod members;
 mod misc;
 mod names;
 mod overrides;
+pub use overrides::overridden_parameters;
 mod project;
 pub use project::{Project, environment};
 mod duplicates;

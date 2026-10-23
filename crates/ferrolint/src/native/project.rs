@@ -1247,7 +1247,8 @@ impl Module {
 }
 
 /// The qualified `Y` of the last `name = Y` of the top level, where `Y` is a name of the module
-/// or an attribute of a module it imports (`name = decoder.Decoder`), that may be a class.
+/// or an attribute of a module it imports (`name = decoder.Decoder`), that may be a class; also
+/// `name = _alias(Y, n)`.
 ///
 /// shortcut: a name bound in the module itself, not under `if` or `try`;
 /// upgrade with inference.
@@ -1256,15 +1257,19 @@ fn alias(loaded: &Module, module: &str, name: &str) -> Option<String> {
         Stmt::Assign(a)
             if matches!(&a.targets[..], [Expr::Name(target)] if target.id.as_str() == name) =>
         {
-            match &*a.value {
-                Expr::Name(value) => Some(format!("{module}.{}", value.id)),
-                Expr::Attribute(attr) => {
-                    let Expr::Name(base) = &*attr.value else {
-                        return None;
-                    };
-                    let origin = loaded.imports.get(base.id.as_str())?.last()?;
-                    Some(format!("{origin}.{}", attr.attr))
+            // astroid reads `X = _alias(Y, n)`, as typing writes it, as a class `X` that derives from `Y`.
+            let value = match &*a.value {
+                Expr::Call(call)
+                    if matches!(&*call.func, Expr::Name(f) if matches!(f.id.as_str(), "_alias" | "_DeprecatedGenericAlias"))
+                        && call.arguments.args.len() == 2 =>
+                {
+                    &call.arguments.args[0]
                 }
+                other => other,
+            };
+            match value {
+                Expr::Name(value) => Some(format!("{module}.{}", value.id)),
+                Expr::Attribute(_) => loaded.qualify(value),
                 _ => None,
             }
         }
