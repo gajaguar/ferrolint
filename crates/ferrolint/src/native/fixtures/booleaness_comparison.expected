@@ -41,3 +41,12 @@
 116:C1803:"members == {}" can be simplified to "not members", if it is strictly a sequence, as an empty dict is falsey
 119:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
 131:C1803:"same == []" can be simplified to "not same", if it is strictly a sequence, as an empty list is falsey
+141:C1803:"typed == []" can be simplified to "not typed", if it is strictly a sequence, as an empty list is falsey
+152:C1803:"first == []" can be simplified to "not first", if it is strictly a sequence, as an empty list is falsey
+153:C1803:"second == {}" can be simplified to "not second", if it is strictly a sequence, as an empty dict is falsey
+154:C1803:"both == []" can be simplified to "not both", if it is strictly a sequence, as an empty list is falsey
+155:C1803:"also == []" can be simplified to "not also", if it is strictly a sequence, as an empty list is falsey
+156:C1803:"nest == []" can be simplified to "not nest", if it is strictly a sequence, as an empty list is falsey
+158:C1803:"top == ()" can be simplified to "not top", if it is strictly a sequence, as an empty tuple is falsey
+159:C1803:"short == []" can be simplified to "not short", if it is strictly a sequence, as an empty list is falsey
+160:C1803:"swapped == []" can be simplified to "not swapped", if it is strictly a sequence, as an empty list is falsey

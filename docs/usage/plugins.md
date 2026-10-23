@@ -47,12 +47,13 @@ answers to its Pylint msg-id and symbol as well as its code.
 * `redefined-builtin` checks a module and a function, once per name at its
   first binding, and reads `redefining-builtins-modules` and
   `allowed-redefined-builtins`. A function name the module also binds is
-  left to `W0621`, as Pylint does. A parameter that a method of an ancestor
-  repeats is excused (Pylint's `overridden_method`) only when the ancestor is
-  a class of the same file, so a method that overrides an imported class
-  (`argparse.Action`, `codecs.IncrementalDecoder`) is still reported. It does
-  not know the names a star import binds, so it misses a builtin that one
-  binds, and it ignores `global __doc__`.
+  left to `W0621`, as Pylint does. A parameter that the method of the first
+  ancestor with that method repeats is excused (Pylint's
+  `overridden_method`); the host reads that ancestor
+  (`modules.overridden-parameters`) from the file, the project, the standard
+  library and the installed packages, and where it cannot (a C class) the
+  parameter is reported. It does not know the names a star import binds, so it
+  misses a builtin that one binds, and it ignores `global __doc__`.
 * `singleton-comparison` quotes the operands as Pylint does in the simple
   cases (double-quoted strings print single-quoted, the operands keep their
   order, `bool(...)` appears outside a test condition) and is compared with

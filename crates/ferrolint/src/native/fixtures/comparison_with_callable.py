@@ -195,3 +195,12 @@ def builtin_new(obj, other):
         pass
     if other != dict.fromkeys:
         pass
+
+
+def unpacked(flag):
+    one, two = (len, 1)
+    three, four = len, 2
+    assert one == flag
+    assert two == len
+    assert three == 4
+    assert four == len

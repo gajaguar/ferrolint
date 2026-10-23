@@ -4,10 +4,8 @@
 //! binding; only a module and a function are checked, as Pylint does, and
 //! imports from `redefining-builtins-modules` are left alone.
 //!
-//! shortcut: a parameter that a method of an ancestor repeats is excused
-//! (as Pylint does) only when the ancestor is a class of the file named
-//! plainly, and its position-only parameters count as any; a name that a
-//! star import binds counts as no module name. Upgrade with a class model.
+//! shortcut: a name that a star import binds counts as no module name;
+//! upgrade by reading the names the host gives (`modules.star-names`).
 
 use std::collections::HashSet;
 
@@ -271,55 +269,14 @@ fn binds(node: &Node<'_>) -> bool {
 }
 
 /// Pylint's `overridden_method` test: the parameter belongs to a method that
-/// an ancestor class of the file defines with a parameter of the same name.
+/// an ancestor class defines with a parameter of the same name.
 fn overridden(cx: &Context<'_>, parameter: &Node<'_>) -> bool {
     let mut up = cx.ancestors(parameter);
-    let (_, Some(method), Some(class)) = (up.next(), up.next(), up.next()) else {
+    let (_, Some(method), Some(name)) = (up.next(), up.next(), parameter.name) else {
         return false;
     };
-    if method.kind != NodeKind::FunctionDef || class.kind != NodeKind::ClassDef {
-        return false;
-    }
-    let (Some(method), Some(name)) = (method.name, parameter.name) else {
-        return false;
-    };
-    let mut seen = vec![class.id];
-    // The first ancestor with the method decides, in astroid's depth-first order.
-    let mut stack: Vec<_> = class_bases(cx, class).into_iter().rev().collect();
-    while let Some(ancestor) = stack.pop() {
-        if seen.contains(&ancestor.id) {
-            continue;
-        }
-        seen.push(ancestor.id);
-        let defined = cx
-            .children(ancestor)
-            .find(|node| node.kind == NodeKind::FunctionDef && node.name == Some(method));
-        if let Some(defined) = defined {
-            return cx
-                .children(defined)
-                .filter(|node| node.kind == NodeKind::Parameters)
-                .flat_map(|parameters| cx.children(parameters))
-                .any(|node| node.name == Some(name));
-        }
-        stack.extend(class_bases(cx, ancestor).into_iter().rev());
-    }
-    false
-}
-
-/// The bases of `class` that are classes of the file, named plainly or
-/// subscripted (`Base[int]`).
-fn class_bases<'a>(cx: &Context<'a>, class: &Node<'_>) -> Vec<&'a Node<'a>> {
-    cx.children(class)
-        .filter(|node| node.kind == NodeKind::Arguments)
-        .flat_map(|arguments| cx.children(arguments))
-        .filter_map(|base| match base.kind {
-            NodeKind::Subscript => cx.children(base).next(),
-            _ => Some(base),
-        })
-        .filter(|base| base.kind == NodeKind::Name)
-        .filter_map(|base| cx.resolve(base)?.node.and_then(|id| cx.node(id)))
-        .filter(|node| node.kind == NodeKind::ClassDef)
-        .collect()
+    cx.overridden_parameters(method)
+        .is_some_and(|names| names.iter().any(|other| other == name))
 }
 
 /// Whether the module `scope` binds `name`, so a function binding it is `W0621`.

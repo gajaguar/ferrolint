@@ -24,6 +24,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::astring::as_string;
 use super::classes::{Env, is_static, py_repr};
 use super::flow::{const_truth, own_returns};
+use super::hierarchy::Hierarchy;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -106,8 +107,10 @@ impl Checker for Conditions {
             return;
         }
         let env = Env::new(ctx);
+        let hierarchy = Hierarchy::new(&env);
         let mut walk = Walk {
             env: &env,
+            hierarchy: &hierarchy,
             enabled,
             out,
             assigned: HashMap::new(),
@@ -122,6 +125,7 @@ impl Checker for Conditions {
 
 struct Walk<'a, 'e> {
     env: &'e Env<'a>,
+    hierarchy: &'e Hierarchy<'a, 'e>,
     enabled: &'e BTreeSet<String>,
     out: &'e mut Vec<Diagnostic>,
     /// The value assigned to each name written as an assignment target, by
@@ -249,6 +253,8 @@ impl<'a> Walk<'a, '_> {
             // a module (if it can be imported) or a builtin function or class
             BindingKind::Builtin if !builtin_callable(&binding.name) => return,
             BindingKind::Import | BindingKind::Builtin | BindingKind::ClassDef => false,
+            // a class of another module; any other `from` import is not judged
+            BindingKind::FromImport if self.hierarchy.resolve_here(test).is_some() => false,
             BindingKind::FunctionDef => {
                 let Some(func) = self.env.func_of(name) else {
                     return;
@@ -1253,5 +1259,26 @@ mod tests {
         let source = include_str!("fixtures/conditions.py");
         let expected = include_str!("fixtures/conditions.expected").trim_end();
         assert_eq!(render(source, &[], BATCH_C), expected);
+    }
+
+    #[test]
+    fn constant_test_of_a_class_imported_with_from() {
+        use crate::native::classes::render_at;
+
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "class Base:\n    pass\n\n\nflag = 1\n",
+        )
+        .unwrap();
+        let source = "from pkg.base import Base, flag\n\nif Base:\n    pass\nif flag:\n    pass\n";
+        let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &["W0125"]);
+        assert_eq!(
+            found,
+            "3:W0125:Using a conditional statement with a constant value"
+        );
     }
 }

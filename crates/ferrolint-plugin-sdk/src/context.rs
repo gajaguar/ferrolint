@@ -40,6 +40,12 @@ pub trait Semantic {
     fn star_names(&self, _node: u32) -> Option<Vec<String>> {
         None
     }
+    /// The parameter names of the method that the function at `method`
+    /// overrides, or none when the host cannot tell. A native test that does
+    /// not care answers that it cannot.
+    fn overridden_parameters(&self, _method: u32) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// A comment of the file: its range and its text, `#` included.
@@ -84,6 +90,10 @@ impl Semantic for HostSemantic {
 
     fn star_names(&self, node: u32) -> Option<Vec<String>> {
         crate::bindings::ferrolint::plugin::modules::star_names(node)
+    }
+
+    fn overridden_parameters(&self, method: u32) -> Option<Vec<String>> {
+        crate::bindings::ferrolint::plugin::modules::overridden_parameters(method)
     }
 }
 
@@ -224,6 +234,13 @@ impl<'a> Context<'a> {
     /// when the host cannot tell (see the contract's `modules` interface).
     pub fn star_names(&self, node: &Node<'_>) -> Option<Vec<String>> {
         self.semantic.star_names(node.id)
+    }
+
+    /// The parameter names of the method that the function at `method`
+    /// overrides, position-only ones left out, or none when there is none or
+    /// the host cannot tell (see the contract's `modules` interface).
+    pub fn overridden_parameters(&self, method: &Node<'_>) -> Option<Vec<String>> {
+        self.semantic.overridden_parameters(method.id)
     }
 
     /// The host's best-effort type of the expression at `node`; check

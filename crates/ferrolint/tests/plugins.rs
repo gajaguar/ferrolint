@@ -109,21 +109,40 @@ fn redefined_builtin() {
 
 #[test]
 fn redefined_builtin_override() {
-    let source = "class Base(Generic[T]):\n    def run(self, id, input):\n        return id, input\n\nclass Child(Base[int]):\n    def run(self, id, value):\n        return id, value\n\nclass Grand(Child):\n    def run(self, id, input):\n        return id, input\n\nclass Other(Missing):\n    def run(self, id):\n        return id\n";
+    let source = "from typing import Generic, TypeVar, overload\n\nT = TypeVar('T')\n\nclass Base(Generic[T]):\n    def run(self, id, input):\n        return id, input\n\nclass Child(Base[int]):\n    def run(self, id, value):\n        return id, value\n\nclass Grand(Child):\n    def run(self, id, input):\n        return id, input\n\nclass Other(Missing):\n    def run(self, id):\n        return id\n\nclass PBase:\n    def pos(self, id, /):\n        return id\n\nclass PChild(PBase):\n    def pos(self, id):\n        return id\n\nclass IChild(Base):\n    if True:\n        def run(self, id):\n            return id\n\nclass OBase:\n    @overload\n    def get(self) -> int: ...\n    @overload\n    def get(self, type: int) -> int: ...\n    def get(self, type=None): ...\n\nclass OChild(OBase):\n    def get(self, type=None): ...\n";
     // Pylint excuses a parameter that the method of the first ancestor with
-    // that method repeats: `Child.run` has `id` but not `input`, and `Missing`
-    // is not a class of the file.
+    // that method repeats: `Child.run` has `id` but not `input`, `Missing`
+    // is not a class, a position-only parameter of the ancestor is no name, a
+    // method under an `if` of the class body overrides nothing, and the first overload
+    // stub is the method that counts.
     assert_eq!(
         findings("ferrolint-plugin-redefined-builtin", source)
             .into_iter()
             .filter(|line| line.contains("built-in"))
             .collect::<Vec<_>>(),
         [
-            "2: Redefining built-in 'id'",
-            "2: Redefining built-in 'input'",
-            "10: Redefining built-in 'input'",
-            "14: Redefining built-in 'id'",
+            "6: Redefining built-in 'id'",
+            "6: Redefining built-in 'input'",
+            "14: Redefining built-in 'input'",
+            "18: Redefining built-in 'id'",
+            "22: Redefining built-in 'id'",
+            "26: Redefining built-in 'id'",
+            "31: Redefining built-in 'id'",
+            "38: Redefining built-in 'type'",
+            "39: Redefining built-in 'type'",
+            "42: Redefining built-in 'type'",
         ]
+    );
+}
+
+#[test]
+fn redefined_builtin_override_of_another_module() {
+    // Only the base's own `id` shows: the override of `case.py` repeats it.
+    let tokens = "class Base:\n    def run(self, id=None): ...\n";
+    let source = "from tokens import Base\n\nclass C(Base):\n    def run(self, id=None): ...\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-redefined-builtin", tokens, source),
+        ["2: Redefining built-in 'id'"]
     );
 }
 
@@ -339,12 +358,12 @@ fn unused_import_leaves_a_name_an_earlier_project_star_import_binds() {
     );
 }
 
-/// The unused-import component with every `@0.4.1` interface name spelled
+/// The unused-import component with every `@0.4.2` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
 fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.1");
+    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.2");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -377,8 +396,8 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 
 #[test]
 fn a_plugin_built_against_the_patch_before_is_loaded() {
-    // 0.4.1 only adds an interface, which a 0.4.0 build does not import.
-    let run = lint_with(&respelled_plugin(*b"@0.4.0"));
+    // 0.4.2 only adds a function, which a 0.4.1 build does not import.
+    let run = lint_with(&respelled_plugin(*b"@0.4.1"));
     assert_eq!(run.code, 1, "{run:?}");
     assert!(run.stdout.contains("Unused import os"), "{run:?}");
 }
@@ -386,7 +405,7 @@ fn a_plugin_built_against_the_patch_before_is_loaded() {
 #[test]
 fn a_plugin_built_against_an_older_contract_is_refused() {
     // Before 1.0 a minor bump of the contract is incompatible, whatever it
-    // adds, so 0.4.1 refuses a 0.3.x build as it does a 0.2.x one.
+    // adds, so 0.4.2 refuses a 0.3.x build as it does a 0.2.x one.
     for version in [*b"@0.2.1", *b"@0.3.1"] {
         let run = lint_with(&respelled_plugin(version));
         assert_eq!(run.code, 2, "{run:?}");

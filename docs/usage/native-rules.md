@@ -235,12 +235,13 @@ call:
   is not known, nor are the classes it derives from.
 * `W0125` and `W0126` know a test that is a name bound once to an
   undecorated function, a class, a lambda or a generator expression of the
-  file, a module imported with `import`, or a builtin function or class; and
+  file, a module imported with `import`, a class imported with `from` that
+  the environment holds (`from logging import PercentStyle`), or a builtin
+  function or class; and
   the call of a function of the file that returns only generator
   expressions. Not known, so not reported: a method read through `self`
   (Pylint reports `if self.method:` unless the method is a property), a
-  name or attribute bound to a call such as `getattr(...)`, a class imported
-  with `from` (`from logging import PercentStyle`), and an instance attribute
+  name or attribute bound to a call such as `getattr(...)`, and an instance attribute
   bound to the call of a generator method. A class attribute bound to a
   constant is not reported by Pylint either.
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
@@ -621,7 +622,9 @@ Known divergences:
   names aside), the keyword-only ones by name, and a removed `*args` or
   `**kwargs` is reported; a constructor is never compared and a special
   method only by number, as in Pylint. Private methods, setters and stubs
-  are skipped.
+  are skipped. A base from `typing` that aliases a `collections.abc` class
+  (`typing.MutableMapping[str, str]`) is that class; `typing.IO[str]` and
+  the other `typing` classes are empty, as astroid infers them.
 * `W0231` `super-init-not-called`: an `__init__` that calls neither
   `super().__init__` (anywhere in its body) nor `Base.__init__` of a base
   whose `__init__`, found along the base's MRO, is not abstract (a `pass`,
@@ -653,6 +656,15 @@ Known divergences:
   ancestor tests of `W0201`. A builtin base such as `dict` or
   `Exception` adds nothing, which matches Pylint for the signatures it
   reads from a running interpreter.
+* The signature rules miss an override whose ancestor astroid reaches by a
+  path the project does not follow: a class of a C module or a builtin
+  (`str.replace`), a name a module binds in a function with `global`
+  (`concurrent.futures.ThreadPoolExecutor`), a base imported in both
+  branches of an `if` or `try`, a base bound by a star import and then by an
+  alias of the same name, and `Generic.__class_getitem__`, which astroid adds
+  to `typing.Generic`. A name rebound to another class in a branch
+  (`HTTPSConnection = DummyConnection` under `if`) makes ferrolint report
+  an override that Pylint does not.
 * `E0202` treats a decorator that is a function as one that returns no
   data descriptor, where Pylint infers the value it returns.
 * A method that a defining method calls excuses `W0201` when that method
@@ -845,10 +857,11 @@ Known divergences:
 * Pylint infers the compared or subscripted value. Here a value has a type
   only when it is a list, tuple, dict, set, string or bytes literal, a call
   of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name whose every
-  binding is a plain assignment to one of those, all of the same type. A
-  parameter, an attribute, a call of another function, an instance of a class,
-  an annotated assignment, a name bound to different types, `range(...)` and
-  `slice(...)` objects are silent where Pylint may report.
+  binding is a plain or annotated assignment, or an element of a tuple or list
+  unpacking, to one of those, all of the same type. A parameter, an attribute,
+  a call of another function, an instance of a class, a name bound to
+  different types, `range(...)` and `slice(...)` objects are silent where
+  Pylint may report.
 * `C1803` is silent for a number, a float and a bool, as in Pylint, but
   Pylint also reports a `None`, a class, a function, a module and an instance
   of a class without `__bool__`; those are not reported.
@@ -1140,15 +1153,19 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   not hold (a missing optional dependency) is left out of the count, as
   astroid cannot import it, unless the name is bound more than once.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
-  class, a module, a call of a class of the file and a name bound once to one
-  of those. A call of a function, a name bound twice, an imported name, a
-  parameter and an attribute of an object have no answer and stay silent.
-  `W0143` also takes the `__new__` of a builtin class for a function and a
-  `getattr` of a parameter for no function. It stays silent where Pylint
-  infers across modules: a function of an imported project module
+  class, a module, a call of a class of the file and a name bound once to one of
+  those, also as an element of a tuple unpacking. A call of a function, a name
+  bound twice, an imported name, a parameter and an attribute of an object have
+  no answer and stay silent. `W0143` also takes the `__new__` of a builtin class
+  for a function and a `getattr` of a parameter for no function. It stays silent
+  where Pylint infers across modules: a function of an imported project module
   (`setters.validate`, `genericTypeValidator`), a function a call returns
-  (`setters.pipe(...)`), a standard library function (`signal.default_int_handler`)
-  and a value unpacked from a tuple of conditional expressions.
+  (`setters.pipe(...)`), a standard library function
+  (`signal.default_int_handler`) and a value unpacked from a tuple of
+  conditional expressions. Pylint also counts an uninferable operand as no
+  function, which needs inference to tell from an operand it cannot see:
+  `validator == genericTypeValidator` where `validator` is a `dict.get(...)`
+  result.
 * `E0239` prints a base written as an f-string as written; Pylint rewrites its
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the

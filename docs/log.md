@@ -2,6 +2,15 @@
 
 ## 2026-10-23
 
+* **Plugin overrides, native-rules.md**: Contract 0.4.2 adds
+  `modules.overridden-parameters`. `redefined-builtin` (`W0622`) excuses a
+  parameter that the method it overrides repeats also when the ancestor is
+  in another module, the standard library or an installed package. `W0221`,
+  `W0237` and the other ancestor rules read a `typing` alias base
+  (`typing.MutableMapping[str, str]`) as the `collections.abc` class it
+  aliases. Updated `requirements/plugin-contract.md`, `usage/plugins.md`
+  and `usage/writing-a-plugin.md`.
+
 * **native-rules.md**: the arity rules read a class of another module of the
   project, a `*name` of a list or tuple literal, `f.__get__(...)`, `cls.method(...)`
   in a metaclass as an unbound call, and `self.__new__(X)` whatever the bases.
