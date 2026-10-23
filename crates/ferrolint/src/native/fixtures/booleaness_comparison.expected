@@ -40,3 +40,4 @@
 111:C1803:"names != ()" can be simplified to "bool(names)", if it is strictly a sequence, as an empty tuple is falsey
 116:C1803:"members == {}" can be simplified to "not members", if it is strictly a sequence, as an empty dict is falsey
 119:C1803:"lst == []" can be simplified to "not lst", if it is strictly a sequence, as an empty list is falsey
+131:C1803:"same == []" can be simplified to "not same", if it is strictly a sequence, as an empty list is falsey

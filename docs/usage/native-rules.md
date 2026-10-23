@@ -820,10 +820,11 @@ Known divergences:
 
 * Pylint infers the compared or subscripted value. Here a value has a type
   only when it is a list, tuple, dict, set, string or bytes literal, a call
-  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name bound once
-  by a plain assignment to one of those. A parameter, an attribute, a call of
-  another function, an instance of a class, a name bound twice, `range(...)`
-  and `slice(...)` objects are silent where Pylint may report.
+  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name whose every
+  binding is a plain assignment to one of those, all of the same type. A
+  parameter, an attribute, a call of another function, an instance of a class,
+  an annotated assignment, a name bound to different types, `range(...)` and
+  `slice(...)` objects are silent where Pylint may report.
 * `C1803` is silent for a number, a float and a bool, as in Pylint, but
   Pylint also reports a `None`, a class, a function, a module and an instance
   of a class without `__bool__`; those are not reported.

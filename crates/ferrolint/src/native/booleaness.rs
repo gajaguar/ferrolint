@@ -7,8 +7,8 @@
 //! shortcut: Pylint infers the type of the compared or subscripted value.
 //! Here a value has a type only when it is written as a list, tuple, dict,
 //! set, string or bytes literal, is a call of the builtin `list`, `tuple`,
-//! `dict`, `set` or `str`, or is a name bound once by a plain assignment to
-//! one of those. Anything else stays silent; upgrade with an inference of
+//! `dict`, `set` or `str`, or is a name whose every binding is a plain
+//! assignment to one of those, all of the same type. Anything else stays silent; upgrade with an inference of
 //! values.
 
 use std::collections::{BTreeSet, HashMap};
@@ -180,11 +180,20 @@ impl<'a> Walk<'a, '_> {
                 _ => None,
             },
             Expr::Name(name) if depth > 0 => {
-                let binding = self.env.binding(name)?;
-                (binding.kind == BindingKind::Assignment
-                    && self.env.ctx.model.is_sole_binding(binding.id))
-                .then_some(())?;
-                self.kind(self.assigned.get(&binding.node?)?, depth - 1)
+                // Pylint infers every binding of the name and needs one type.
+                let mut kinds = self
+                    .env
+                    .ctx
+                    .model
+                    .same_name(self.env.binding(name)?.id)
+                    .into_iter()
+                    .map(|b| {
+                        (b.kind == BindingKind::Assignment)
+                            .then_some(())
+                            .and_then(|()| self.kind(self.assigned.get(&b.node?)?, depth - 1))
+                    });
+                let first = kinds.next()??;
+                kinds.all(|k| k == Some(first)).then_some(first)
             }
             _ => None,
         }
