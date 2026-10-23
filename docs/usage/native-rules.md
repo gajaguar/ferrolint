@@ -205,15 +205,21 @@ Known divergences from Pylint, where Pylint infers a value, a class or a
 call:
 
 * A call never returns, for `W0101` and `R1710`, when it is `exit`, `quit`,
-  `sys.exit`, `os._exit`, `os.abort`, `pytest.fail` and its kin, an
-  `assert_never`, `self.fail` of a class with a `...TestCase` base that does
-  not define `fail`, a function of the file annotated `NoReturn` or `Never`,
-  a `self.method()` that the class or a base of the file (`Base[T]` too)
-  annotates so, or a name of `never-returning-functions`. A function
-  imported from another module that is annotated `NoReturn`, a method of a
-  base from another module, and a method called on a value that is not
-  `self` (click's `ctx.exit()`), are not known. Only a
-  call written as a statement ends a block for `W0101`.
+  `sys.exit`, `os._exit`, `os.abort`, an `assert_never`, `self.fail` of a
+  class with a `...TestCase` base that does not define `fail`, a function
+  annotated `NoReturn` or `Never` (of the file, or imported from a module of
+  the project or an installed package), a `self.method()` that the class or a
+  base annotates so (a base from another module too, `Base[T]` too), a
+  `self.name()` that a method sets to such a function (`self.name = f`, or a
+  parameter whose default is `f`), or a name of `never-returning-functions`.
+  Not known: the standard library, a function re-exported by the module it is
+  imported from, a property that returns one, and a method called on a value
+  that is not `self` (click's `ctx.exit()`, `outcome.unwrap()`). `pytest.fail`
+  and its kin are not listed: pytest 8 and later makes them callable objects,
+  which Pylint cannot infer. A call anywhere in an assignment or an expression
+  statement ends a block for `W0101`, not one in the header of an `if` or
+  `for`. A file that Ruff's parser rejects (`raise;stmt` on one line) has no
+  findings but the syntax error.
 * `R1710` follows a `raise` inside a `try` as Pylint does: the exception is
   the class named by the call, and a handler that names it must end in a
   return. A raised name that is not a class is assumed to be inferable,

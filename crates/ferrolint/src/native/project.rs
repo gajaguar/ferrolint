@@ -31,7 +31,7 @@ use ruff_python_parser::Parsed;
 use ferrolint_core::LineIndex;
 
 use super::classes::{bases, locals};
-use super::flow::own_returns;
+use super::flow::{no_return, own_returns};
 use crate::c_module_names;
 use crate::class_methods;
 
@@ -391,6 +391,27 @@ impl Project {
 }
 
 impl Project {
+    /// Whether the function `qualified` (`pkg.module.func`) is annotated
+    /// `NoReturn` or `Never`, and then whether it is `async`.
+    ///
+    /// shortcut: the function must be defined in the module the name is given
+    /// in, and the standard library is not read; upgrade with import resolution.
+    pub fn never_returns(&self, qualified: &str) -> Option<bool> {
+        let (module, name) = qualified.rsplit_once('.')?;
+        if self.is_stdlib(module) {
+            return None;
+        }
+        self.load(module)?
+            .parsed
+            .syntax()
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                Stmt::FunctionDef(f) if f.name.as_str() == name && no_return(f) => Some(f.is_async),
+                _ => None,
+            })
+    }
+
     /// Whether every `return` of the function `qualified` names
     /// (`pkg.module.func`) gives a class of the project that the function
     /// imports or the module imports.

@@ -2,6 +2,12 @@
 
 ## 2026-10-22
 
+* **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
+  imported from the project or an installed package, a method of a base from
+  another module and `self.name()` set to such a function; `W0101` reads the
+  calls of an assignment and of an `await`. `pytest.fail` and its kin no
+  longer end a block, as pytest 8 makes them objects Pylint cannot infer.
+
 * **native-rules.md**: the arity rules (`E1120`, `E1121`, `E1124`, `E1125`)
   read a decorated function by its signature as written, as Pylint does
   (a `classmethod`, a property and its `setter` excepted), and follow
