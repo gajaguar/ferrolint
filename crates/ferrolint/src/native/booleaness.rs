@@ -7,9 +7,10 @@
 //! shortcut: Pylint infers the type of the compared or subscripted value.
 //! Here a value has a type only when it is written as a list, tuple, dict,
 //! set, string or bytes literal, is a call of the builtin `list`, `tuple`,
-//! `dict`, `set` or `str`, or is a name whose every binding is a plain
-//! assignment to one of those, all of the same type. Anything else stays silent; upgrade with an inference of
-//! values.
+//! `dict`, `set` or `str`, or is a name whose every binding is a plain or
+//! annotated assignment (or an element of a tuple unpacking) to one of
+//! those, all of the same type. Anything else stays silent; upgrade with an
+//! inference of values.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -22,7 +23,7 @@ use ruff_python_ast::{
 
 use super::astring::as_string;
 use super::classes::Env;
-use super::conditions::Assigned;
+use super::inferred::assigned_values;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -74,11 +75,9 @@ impl Checker for Booleaness {
             return;
         }
         let body = &ctx.parsed.syntax().body;
-        let mut assigned = HashMap::new();
-        Assigned(&mut assigned).visit_body(body);
         Walk {
             env: Env::new(ctx),
-            assigned,
+            assigned: assigned_values(body),
             on,
             boolean: false,
             out,
@@ -188,7 +187,7 @@ impl<'a> Walk<'a, '_> {
                     .same_name(self.env.binding(name)?.id)
                     .into_iter()
                     .map(|b| {
-                        (b.kind == BindingKind::Assignment)
+                        matches!(b.kind, BindingKind::Assignment | BindingKind::Annotation)
                             .then_some(())
                             .and_then(|()| self.kind(self.assigned.get(&b.node?)?, depth - 1))
                     });

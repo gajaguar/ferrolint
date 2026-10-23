@@ -846,10 +846,11 @@ Known divergences:
 * Pylint infers the compared or subscripted value. Here a value has a type
   only when it is a list, tuple, dict, set, string or bytes literal, a call
   of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name whose every
-  binding is a plain assignment to one of those, all of the same type. A
-  parameter, an attribute, a call of another function, an instance of a class,
-  an annotated assignment, a name bound to different types, `range(...)` and
-  `slice(...)` objects are silent where Pylint may report.
+  binding is a plain or annotated assignment, or an element of a tuple or list
+  unpacking, to one of those, all of the same type. A parameter, an attribute,
+  a call of another function, an instance of a class, a name bound to
+  different types, `range(...)` and `slice(...)` objects are silent where
+  Pylint may report.
 * `C1803` is silent for a number, a float and a bool, as in Pylint, but
   Pylint also reports a `None`, a class, a function, a module and an instance
   of a class without `__bool__`; those are not reported.
@@ -1142,7 +1143,7 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   astroid cannot import it, unless the name is bound more than once.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
   class, a module, a call of a class of the file and a name bound once to one
-  of those. A call of a function, a name bound twice, an imported name, a
+  of those, also as an element of a tuple unpacking. A call of a function, a name bound twice, an imported name, a
   parameter and an attribute of an object have no answer and stay silent.
   `W0143` also takes the `__new__` of a builtin class for a function and a
   `getattr` of a parameter for no function. It stays silent where Pylint
@@ -1150,6 +1151,9 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   (`setters.validate`, `genericTypeValidator`), a function a call returns
   (`setters.pipe(...)`), a standard library function (`signal.default_int_handler`)
   and a value unpacked from a tuple of conditional expressions.
+  Pylint also counts an uninferable operand as no function, which needs
+  inference to tell from an operand it cannot see: `validator ==
+  genericTypeValidator` where `validator` is a `dict.get(...)` result.
 * `E0239` prints a base written as an f-string as written; Pylint rewrites its
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the

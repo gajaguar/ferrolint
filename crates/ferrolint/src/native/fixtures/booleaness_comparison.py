@@ -129,3 +129,33 @@ def rebound(flag):
     for loop in flag:
         pass
     return same == [], mixed == [], loop == []
+
+
+def annotated(flag):
+    typed: list[int] = []
+    bare: list[int]
+    mixed: list[int] = []
+    if flag:
+        bare = []
+        mixed = ()
+    return typed == [], bare == [], mixed == []
+
+
+def unpacked(flag):
+    first, second = ([], {})
+    both, also = [], []
+    (nest, num), top = ([], 2), ()
+    short, extra = ([], [], [])
+    swapped, swapped2 = [], ()
+    if flag:
+        swapped2 = []
+    assert first == []
+    assert second == {}
+    assert both == []
+    assert also == []
+    assert nest == []
+    assert num == []
+    assert top == ()
+    assert short == []
+    assert swapped == []
+    assert swapped2 == []

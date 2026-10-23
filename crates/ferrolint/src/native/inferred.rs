@@ -181,11 +181,24 @@ pub(super) fn assigned_values(body: &[Stmt]) -> HashMap<u32, &Expr> {
 }
 
 impl<'a> Assigned<'a, '_> {
+    /// Binds the names of `target` to `value`, a tuple or list unpacking to
+    /// the elements in the same place (the shorter side decides, as in astroid).
     fn add(&mut self, target: &Expr, value: &'a Expr) {
-        if let Expr::Name(name) = target
-            && let Some(id) = name.node_index().load().as_u32()
-        {
-            self.0.insert(id, value);
+        match (target, value) {
+            (Expr::Name(name), _) => {
+                if let Some(id) = name.node_index().load().as_u32() {
+                    self.0.insert(id, value);
+                }
+            }
+            (target, value) => {
+                if let (Some(targets), Some(values)) = (elements(target), elements(value))
+                    && !targets.iter().chain(values).any(Expr::is_starred_expr)
+                {
+                    for (target, value) in targets.iter().zip(values) {
+                        self.add(target, value);
+                    }
+                }
+            }
         }
     }
 }
