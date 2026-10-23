@@ -98,7 +98,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     }
     let units = units(params, files, &opts, &enabled);
     // The listing order is not a file's content, so the key must name the anchor.
-    let anchor = duplicates
+    let anchor = (duplicates || cyclic)
         .then(|| checked_last(arguments(params), &units))
         .flatten();
     let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
@@ -173,7 +173,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
             );
         }
         // Pylint reports these at the start of the file it checked last.
-        if cyclic && let Some(last) = units.last() {
+        if cyclic && let Some(last) = anchor {
             out.extend(
                 found
                     .cycles
@@ -183,7 +183,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         }
         touched = project.touched();
     }
-    if let Some(last) = anchor {
+    if duplicates && let Some(last) = anchor {
         out.extend(
             project_phase::duplicates(&units, &opts, params.registry)
                 .into_iter()
@@ -206,11 +206,9 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     (out, units)
 }
 
-/// The file Pylint checks last, where it attaches R0801: the one `os.walk`
-/// reaches last in the arguments' trees (a directory's files, then its
-/// subdirectories, in the order the file system lists them).
-// shortcut: R0401 still takes the last by name; move R0401 here when its
-// corpora agree.
+/// The file Pylint checks last, where it attaches R0801 and R0401: the one
+/// `os.walk` reaches last in the arguments' trees (a directory's files, then
+/// its subdirectories, in the order the file system lists them).
 fn checked_last(arguments: Vec<PathBuf>, units: &[Unit]) -> Option<&Unit> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let mut subdirs = Vec::new();
@@ -347,7 +345,7 @@ fn units(
 }
 
 /// What a directory (its entries) or a file (its size and time) looks like.
-fn stamp_of(path: &Path) -> String {
+pub(crate) fn stamp_of(path: &Path) -> String {
     match fs::metadata(path) {
         Ok(meta) if meta.is_dir() => {
             let mut names: Vec<String> = fs::read_dir(path)

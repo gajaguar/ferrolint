@@ -2,7 +2,7 @@
 
 use ferrolint_core::{Diagnostic, LineIndex, RuleInfo, Severity};
 use ruff_python_ast::ModModule;
-use ruff_python_parser::Parsed;
+use ruff_python_parser::{ParseErrorType, ParseOptions, Parsed};
 
 use crate::native;
 use crate::suppress::{self, Noqa};
@@ -147,6 +147,47 @@ pub fn not_utf8() -> Diagnostic {
     }
 }
 
+/// Parse `source` as a module, tolerating `raise;stmt`, which `CPython` accepts
+/// and the Ruff parser rejects at the `;` (it ends a bare `raise` on a newline
+/// only).
+///
+/// The only errors being that one, the file is parsed again with each such
+/// `raise` spelled `pass `: same length, so every offset, line and column is
+/// unchanged. Any other error leaves the first parse, and so E0001, as it was.
+///
+/// shortcut: the tree holds a `Pass` where the source has the bare `raise`, so
+/// a rule that reads that statement (W0101 after it) does not see it; upgrade
+/// when Ruff's parser accepts the `;`.
+pub fn parse(source: &str, options: ParseOptions) -> Parsed<ModModule> {
+    let parsed = ruff_python_parser::parse_unchecked(source, options.clone())
+        .try_into_module()
+        .unwrap_or_else(|| unreachable!("Python source parses to a module"));
+    let mut fixed = source.to_owned();
+    for error in parsed.errors() {
+        let semi = error.location.start().to_usize();
+        let raise = semi.wrapping_sub(5);
+        let bare = matches!(error.error, ParseErrorType::ExpectedExpression)
+            && source.get(semi..=semi) == Some(";")
+            && source.get(raise..semi) == Some("raise")
+            && !source[..raise].ends_with(|c: char| c.is_alphanumeric() || c == '_');
+        if !bare {
+            return parsed;
+        }
+        fixed.replace_range(raise..semi, "pass ");
+    }
+    if parsed.errors().is_empty() {
+        return parsed;
+    }
+    let again = ruff_python_parser::parse_unchecked(&fixed, options)
+        .try_into_module()
+        .unwrap_or_else(|| unreachable!("Python source parses to a module"));
+    if again.errors().is_empty() {
+        again
+    } else {
+        parsed
+    }
+}
+
 /// The host rules' diagnostics for one parsed file.
 ///
 /// `known` tells whether the rule registry resolves a message name, so a
@@ -232,7 +273,28 @@ mod tests {
     use ruff_python_ast::PySourceType;
     use ruff_python_parser::{ParseOptions, parse_unchecked};
 
-    use super::check;
+    use super::{check, parse};
+
+    fn errors(source: &str) -> usize {
+        parse(source, ParseOptions::from(PySourceType::Python))
+            .errors()
+            .len()
+    }
+
+    #[test]
+    fn a_bare_raise_before_a_semicolon_parses() {
+        assert_eq!(errors("try:\n\tpass\nexcept X:raise;x = 1\ny = 2\n"), 0);
+        assert_eq!(errors("raise;x = 1\n"), 0);
+    }
+
+    #[test]
+    fn other_semicolon_errors_stay() {
+        // an error elsewhere, a `;` after other tokens, a name that ends in `raise`
+        assert!(errors("def f(:\n    raise;x = 1\n") > 0);
+        assert!(errors("x = (1;\n") > 0);
+        assert!(errors("reraise;\nx = (\n") > 0);
+        assert!(errors("raise;;x\n") > 0);
+    }
 
     #[test]
     fn syntax_error_names_the_module_as_pylint_does() {

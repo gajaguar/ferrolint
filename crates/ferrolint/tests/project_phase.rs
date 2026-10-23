@@ -178,6 +178,23 @@ fn a_cached_run_follows_the_anchor_of_the_arguments() {
 }
 
 #[test]
+fn a_cached_run_follows_the_anchor_of_a_cycle() {
+    let project = Project::new();
+    project.write("ferrolint.toml", SELECT);
+    project.write("x.py", "import y\n");
+    project.write("y.py", "import x\n");
+    // R0401 sits on the file checked last, which is the last argument.
+    let anchor = |order: &[&str]| {
+        let found = findings(&project, order);
+        let found = found.iter().find(|f| f.contains("R0401")).unwrap();
+        found.split(':').next().unwrap().to_owned()
+    };
+    assert_eq!(anchor(&["x.py", "y.py"]), "y.py");
+    assert_eq!(anchor(&["y.py", "x.py"]), "x.py");
+    assert_eq!(anchor(&["x.py", "y.py"]), "y.py");
+}
+
+#[test]
 fn an_edit_to_a_stub_changes_the_cached_result() {
     let project = project("stubs");
     let first = findings(&project, &[]);

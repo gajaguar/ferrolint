@@ -827,6 +827,14 @@ fn ac_20_findings_run_exits_one() {
 }
 
 #[test]
+fn a_bare_raise_before_a_semicolon_is_not_a_syntax_error() {
+    let project = Project::new();
+    project.write("a.py", "try:\n    pass\nexcept X:raise;y = 1\n");
+    let run = project.run(&[]);
+    assert!(!run.stdout.contains("FL003"), "{run:?}");
+}
+
+#[test]
 fn ac_21_broken_run_exits_two() {
     let project = Project::new();
     project.write("clean.py", CLEAN);

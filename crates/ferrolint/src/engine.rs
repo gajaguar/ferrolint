@@ -486,9 +486,7 @@ impl Linter<'_> {
         // silently skip the file.
         let options =
             ParseOptions::from(PySourceType::Python).with_target_version(PythonVersion::latest());
-        let parsed = ruff_python_parser::parse_unchecked(source, options)
-            .try_into_module()
-            .unwrap_or_else(|| unreachable!("Python source parses to a module"));
+        let parsed = checks::parse(source, options);
         Prepared::Source {
             source: source.to_owned(),
             parsed,
