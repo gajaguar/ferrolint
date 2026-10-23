@@ -11,6 +11,9 @@
 * **native-rules.md**: `R0801` sits on the file `os.walk` reaches last, as
   Pylint attaches it, not the last by name.
 
+* **native-rules.md**: `R0401` sits on the same file as `R0801`, the one
+  `os.walk` reaches last, not the last by name.
+
 ## 2026-10-22
 
 * **native-rules.md**: the arity rules (`E1120`, `E1121`, `E1124`, `E1125`)

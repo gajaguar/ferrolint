@@ -1429,9 +1429,9 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   unknown, so an absolute import is never reported as missing and a name is
   never judged missing in them; relative imports and the project's own modules
   still are. Set `VIRTUAL_ENV` to the environment Pylint runs in to match it.
-* `R0401` is reported once per cycle at line 1 of the file that sorts last
-  among the linted ones; Pylint attaches it to the file it checked last, in
-  filesystem order. The cycles and their text agree.
+* `R0401` is reported once per cycle at line 1 of the file `os.walk` reaches
+  last, as `R0801` (below); Pylint attaches it to the file it checked last,
+  in filesystem order. The cycles and their text agree.
 * `R0801` takes the files in name order and attaches the messages to the one
   `os.walk` reaches last (a directory's files, then its subdirectories, in the
   order the file system lists them), as Pylint does; that order is the file
