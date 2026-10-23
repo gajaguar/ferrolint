@@ -68,6 +68,18 @@ const OBJECT_ATTRS: [&str; 27] = [
     "__subclasshook__",
 ];
 
+/// What astroid finds in the `BaseException` of a running interpreter.
+const EXCEPTION_ATTRS: [&str; 8] = [
+    "__cause__",
+    "__context__",
+    "__setstate__",
+    "__suppress_context__",
+    "__traceback__",
+    "add_note",
+    "args",
+    "with_traceback",
+];
+
 /// How a site uses the attribute.
 #[derive(Clone, Copy, PartialEq)]
 enum Use {
@@ -859,6 +871,16 @@ impl<'a> Walk<'a, '_> {
         };
         let slots = self.slots(&Class::Local(class));
         own.retain(|s| keep(s, &slots));
+        // shortcut: only the attributes every builtin exception has, and only through
+        // bases of this file; `errno` or `msg` of a subclass, upgrade with the builtin MRO.
+        if let Some(ancestry) = &mut ancestry
+            && bases(class).iter().any(|b| {
+                self.env
+                    .base_is(b, &|name| super::flow::builtin_exception(name).is_some())
+            })
+        {
+            ancestry.names.extend(EXCEPTION_ATTRS.map(String::from));
+        }
         if let (Some(mro), Some(ancestry)) = (&mro, &mut ancestry) {
             let ancestors = mro.iter().filter(|c| c.def().is_some()).skip(1);
             for (found, sites) in ancestors.zip(&mut ancestry.sites) {
@@ -1041,7 +1063,10 @@ impl<'a> Walk<'a, '_> {
             }
         }
         for name in names {
-            if ancestry.names.contains(name) || ancestry.instance_attr(name) {
+            if OBJECT_ATTRS.contains(&name)
+                || ancestry.names.contains(name)
+                || ancestry.instance_attr(name)
+            {
                 continue;
             }
             let defs: Vec<&Site<'_>> = own

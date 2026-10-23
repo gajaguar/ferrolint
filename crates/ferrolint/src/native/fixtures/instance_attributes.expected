@@ -26,3 +26,6 @@
 214:W0201:Attribute 'other' defined outside __init__
 227:R0902:Too many instance attributes (8/7)
 249:W0201:Attribute 'extra' defined outside __init__
+262:E0203:Access to member '__doc__' before its definition line 263
+263:W0201:Attribute '__doc__' defined outside __init__
+270:W0201:Attribute 'detail' defined outside __init__

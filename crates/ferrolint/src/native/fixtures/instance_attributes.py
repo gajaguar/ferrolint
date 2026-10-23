@@ -253,3 +253,23 @@ class Factory:
         made = cls()
         made.skipped = 1
         return made
+
+
+class ObjectAttributes:
+    def swap(self):
+        cls = self.__class__
+        self.__class__ = cls
+        doc = self.__doc__
+        self.__doc__ = doc
+
+
+class Failure(ValueError):
+    def note(self):
+        self.args = ("again",)
+        self.__cause__ = None
+        self.detail = 1
+
+
+class SubFailure(Failure):
+    def note(self):
+        self.__traceback__ = None
