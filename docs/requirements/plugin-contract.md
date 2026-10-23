@@ -33,6 +33,9 @@ SDK.
   * `comments.comment-list` (contract 0.4.0) returns the same comments as
     `comment` records: the `range` and `own-line`, true when only
     whitespace precedes the comment on its line.
+  * `modules.star-names` (contract 0.4.1) returns the names the
+    `from m import *` at an alias node binds, or none when the host cannot
+    tell.
   * `settings.plugin-options` returns the plugin's own options, the
     `options` table of its `[[plugins]]` entry, as (key, value) text pairs
     sorted by key; it is empty for a plugin without the table and for a
@@ -60,6 +63,11 @@ The comment and settings queries are two more separate interfaces, added
 in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
 nothing of them.
+
+Contract 0.4.1 adds the `modules` interface with `star-names`: the names the
+`from m import *` at an alias node binds, when the host can tell (see
+[Plugins](../usage/plugins.md)). Like 0.3.1 it adds an interface and changes
+no record, so a host of 0.4.1 still loads a plugin built against 0.4.0.
 
 Contract 0.4.0 adds `comments.comment-list` and its `comment` record. It
 changes no existing record, but before 1.0 a minor bump is incompatible for

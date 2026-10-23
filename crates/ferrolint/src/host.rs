@@ -2,6 +2,7 @@
 //! every file in a fresh instance under an empty WASI environment with a
 //! fuel budget, an epoch deadline and a memory cap.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -47,6 +48,9 @@ pub struct FileData {
     pub source: String,
     /// The file's comments, for the `comments` queries.
     pub comments: Vec<wit::Comment>,
+    /// The names each `from m import *` binds, by alias node, for the
+    /// `modules` query.
+    pub stars: HashMap<u32, Vec<String>>,
 }
 
 /// Per-store host state.
@@ -173,6 +177,12 @@ impl wit::ferrolint::plugin::comments::Host for State {
 
     fn comment_list(&mut self) -> wasmtime::Result<Vec<wit::Comment>> {
         Ok(self.file()?.comments.clone())
+    }
+}
+
+impl wit::ferrolint::plugin::modules::Host for State {
+    fn star_names(&mut self, alias: u32) -> wasmtime::Result<Option<Vec<String>>> {
+        Ok(self.check_node(alias)?.stars.get(&alias).cloned())
     }
 }
 

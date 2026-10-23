@@ -69,3 +69,20 @@
 274:E1120:No value for argument 'a' in constructor call
 274:E1120:No value for argument 'a' in constructor call
 274:E1123:Unexpected keyword argument 'b' in constructor call
+289:E1120:No value for argument 'cls' in classmethod call
+316:E1120:No value for argument 'type' in staticmethod call
+317:E1120:No value for argument 'type' in function call
+318:E1120:No value for argument 'type' in classmethod call
+319:E1120:No value for argument 'type' in function call
+321:E1121:Too many positional arguments for function call
+322:E1120:No value for argument 'type' in function call
+332:E1120:No value for argument 'a' in function call
+332:E1120:No value for argument 'b' in function call
+334:E1120:No value for argument 'b' in function call
+338:E1121:Too many positional arguments for function call
+344:E1120:No value for argument 'b' in function call
+349:E1120:No value for argument 'name' in unbound method call
+352:E1120:No value for argument 'name' in staticmethod call
+355:E1120:No value for argument 'cls' in unbound method call
+355:E1120:No value for argument 'name' in unbound method call
+359:E1120:No value for argument 'name' in unbound method call

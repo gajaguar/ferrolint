@@ -140,3 +140,34 @@ class Fields:
     def __init__(self):
         self.camelField = 1
         self.otherCamel = 2
+
+
+import sys
+
+if sys.version_info[0] == 3:
+    Number = int
+    from collections.abc import MutableSequence as Seq
+else:
+    Number = long
+    from collections import MutableSequence as Seq
+
+
+class Wide(Number):
+    def __new__(Cls, Value): pass
+    def ownWide(self, Arg): pass
+
+
+class Many(Seq):
+    def insert(self, Index, Value): pass
+    def ownMany(self, Arg): pass
+
+
+if sys.platform == "x":
+    Stream = logging.StreamHandler[int]
+else:
+    Stream = logging.StreamHandler
+
+
+class Sub(Stream):
+    def handleError(self, Record): pass
+    def ownSub(self): pass

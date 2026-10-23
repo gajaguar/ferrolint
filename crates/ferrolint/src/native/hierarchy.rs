@@ -16,6 +16,7 @@ use ruff_text_size::TextSize;
 use super::classes::{Env, bases};
 use super::project::{ClassRef, Project};
 use crate::class_methods;
+use crate::wit::BindingKind;
 
 /// Bases that add no method to the MRO, though the project cannot read them.
 pub(super) const EMPTY_BASES: [&str; 8] = [
@@ -159,18 +160,56 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
             .find_map(|star| self.project.class(&format!("{star}.{}", name.id)))
     }
 
+    /// Whether astroid certainly fails to infer the base `expr` and so leaves
+    /// it out of the ancestors: a name that only imports of a module the
+    /// environment lacks bind, or a subscript with such a name in its value or
+    /// in a single index (a tuple index infers).
+    ///
+    /// shortcut: only a missing module is certain; a base computed by a call
+    /// or bound otherwise stays unknown, upgrade with a value inference.
+    fn dropped(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Subscript(s) => {
+                self.dropped(&s.value) || (!s.slice.is_tuple_expr() && self.dropped(&s.slice))
+            }
+            Expr::Attribute(a) => self.dropped(&a.value),
+            Expr::Name(name) => self.env.binding(name).is_some_and(|binding| {
+                // A builtin has no binding in the file, so the list is empty.
+                let all = self.env.ctx.model.same_name(binding.id);
+                !all.is_empty()
+                    && all.iter().all(|b| {
+                        matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
+                            && b.origin.as_deref().is_some_and(|origin| {
+                                !origin.starts_with('.')
+                                    && self
+                                        .project
+                                        .is_missing(origin.split('.').next().unwrap_or(origin))
+                            })
+                    })
+            }),
+            _ => false,
+        }
+    }
+
     /// The bases of `class` as written, each as the MRO reads it.
     fn entries(&self, class: &Class<'a>) -> Vec<Entry<'a>> {
         match class {
             Class::Local(def) => bases(def)
                 .iter()
                 .map(|base| {
+                    if self.dropped(base) {
+                        return Entry::Empty;
+                    }
                     // `Base[T]` derives from `Base`.
                     let (base, subscripted) = match base {
                         Expr::Subscript(s) => (&*s.value, true),
                         other => (other, false),
                     };
-                    if let Some(local) = self.env.class_of(base) {
+                    if let Some(local) = self
+                        .env
+                        .class_of(base)
+                        .or_else(|| self.env.made_class(base))
+                    {
                         return Entry::Class(Class::Local(local));
                     }
                     let Some(qualified) = self.env.qualified(base) else {

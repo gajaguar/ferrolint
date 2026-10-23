@@ -503,8 +503,13 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   class); those names are not judged here. A value that cannot be told is
   skipped, as Pylint skips what it cannot infer. A call of a capitalized
   imported name is taken as an instance, a lower-case imported name as a
-  function, and a call of a function of the file that returns only classes
-  as a class.
+  function, a call of a function of the file that returns only classes as a
+  class, and a call of one without decorator, `async` or `yield` that has a
+  single `return` as the value of it (a literal, a display, a nested function
+  or a variable bound once). An `if` expression of two constants of different
+  types is not judged, as astroid cannot join them; one whose test astroid
+  infers (`True`, `sys.platform`) picks an arm there and is not judged here
+  either.
 * An ancestor's methods and attributes are looked up in the classes of the
   file and in the other modules of the project, which are found as files
   under the directories above the linted file and followed through
@@ -526,8 +531,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   astroid infers one value, also through `name = module.Class` in a package,
   a class defined in an `except` handler, a function that returns a class of
   the project, a metaclass called with a name, bases and a namespace and the
-  functional `Enum("Name", ...)`. A class bound twice (a fallback in
-  `try`/`except` or `if`, a base bound in both branches of an `if`), a class
+  functional `Enum("Name", ...)`. A base bound in several branches
+  (`X = int` under `if`, `X = long` under `else`; an import under `try` and
+  another under `except`) stands for each value, also in another module of
+  the project, as Pylint takes every value of a base. A class value bound
+  twice (a fallback in `try`/`except` or `if`), a class
   returned by a call of an installed package, a standard library class
   missing from the class table (`_Fraction = Fraction`), the value of a
   standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`
@@ -657,10 +665,21 @@ Known divergences:
   builtin exception has (`args`, `__cause__`, `with_traceback`, ...); the
   attributes of one exception (`errno`, `msg`) are not known here. `E0203`
   skips the `object` attributes too.
-* `W0201` is missed where Pylint drops a base it cannot infer and the class
-  here has an unknown MRO: a base that is a call (`getTableClass("glyf")`),
-  a `Base[Missing[T]]` whose argument is unresolvable, or a name Pylint
-  follows to a class.
+* A base that astroid certainly fails to infer is left out of the ancestors,
+  as Pylint leaves it out (for every rule that reads them): a name that only
+  imports of a module the environment lacks bind (`from exceptiongroup import
+  X` with `exceptiongroup` not installed), or a `Base[...]` whose value or
+  single index is such a name (`AbstractRaises[BaseExceptionGroup[T]]`). It
+  needs `VIRTUAL_ENV`; without it the class keeps an unknown MRO. A name that
+  something else also binds (`except ImportError: X = object`) stays unknown.
+  A name bound once to `make()`, a plain function of the file whose every
+  `return` names one class, is that class (a mixin factory).
+* `W0201` is missed where Pylint infers a base here unknown and the class has
+  an unknown MRO: a base that is a call into another module
+  (`getTableClass("glyf")` yields `DefaultTable` as well as what astroid cannot
+  infer; `getFormatSwitchingBaseTableClass("uint8")` a class picked from a
+  dict by its argument), a factory returning one of several classes, a factory
+  of another module, or a name Pylint follows to a class.
 * `__slots__` keeps astroid from recording an attribute outside them, for
   `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
   ancestor of the file or project give plain slots (a string, list, tuple,
@@ -1051,7 +1070,9 @@ Known divergences from Pylint, where Pylint infers the callee:
 
 * The callee is the one `W1114` resolves (see Batch B): a name bound once to
   a function of the file, `self.method` of the enclosing class, `cls(...)` in
-  a `classmethod` or a class of the file with one `__init__`. A decorator
+  a `classmethod`, a class of the file with one `__init__` or, for the arity
+  rules only, such a class of another module of the project (its own
+  `__init__`, no `__new__` along its bases). A decorator
   changes nothing but `E1123` of a function or constructor, left out when it
   has one (Pylint looks for the keyword among what the decorator returns). An
   imported function, a class method, an alias of a method
@@ -1061,19 +1082,24 @@ Known divergences from Pylint, where Pylint infers the callee:
 * A class is followed only when it has no `__new__`, metaclass or decorator and
   every base is a builtin class or such a class of the file. Pylint reads the
   constructor of an imported base too.
-* A call with a starred argument or a `**` is skipped, where Pylint unpacks a
-  literal list, tuple or dict written in the call.
-* A call to a `ctypes` type that astroid's brain gives a `__init__(self,
-  value)` (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the
-  other `wintypes` names of those types) reports the missing `value`.
-  `self.__new__(Cls)` in a class with no base but `object` reports the missing
-  `cls` (astroid reads `object.__new__` as `(self, cls)`); with a `__new__`
-  of the class, a base from elsewhere or other arguments it is not judged, nor
-  is a method of an instance that a call returns. Left to type inference: a
-  callee from another module (`ws.send(...)` of a socket built elsewhere),
-  `self.get(...)` on a receiver not named `self`, `functools.partial` objects
-  (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class
-  returned by a call, and the stdlib signatures
+* A call with a `**` or a `*` of anything but a name bound once to a list or
+  tuple literal (`args = []` then `f(*args)` counts as no argument, whatever is
+  appended later, as Pylint reads it) is skipped, where Pylint also unpacks a
+  literal written in the call.
+* A call to a `ctypes` type that astroid's brain gives a `__init__(self, value)`
+  (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the other
+  `wintypes` names of those types) reports the missing `value`.
+  `self.__new__(Cls)` in a class reports the missing `cls` whatever its bases
+  (astroid reads the `__new__` of an instance as `(self, cls)`); with other
+  arguments it is not judged, nor is a method of an instance that a call
+  returns. `f.__get__(a, b)` of a function of the file takes the parameters of
+  `f`, defaulted or not, and `type` (astroid builds that signature); positional
+  arguments only. `cls.method(...)` in a method of a class deriving from `type`
+  or `abc.ABCMeta` is an unbound call, `cls` counted as a parameter. Left to
+  type inference: a callee from another module (`ws.send(...)` of a socket built
+  elsewhere), `self.get(...)` on a receiver not named `self`,
+  `functools.partial` objects (`E1124`), `__get__` and `cls.method(x)` on an
+  unbound method, a class returned by a call, and the stdlib signatures
   (`base64.urlsafe_b64decode(data, padded=True)`).
 * `E1121` of `array.__new__(cls, 'i', args)` (a C type whose signature
   Pylint reads as `__new__(cls, typecode)`) and of `attrs.define` classes
@@ -1092,12 +1118,12 @@ Known divergences from Pylint, where Pylint infers the callee:
   something that is not a name, and the class is judged again as part of each
   class that contains it. A function shows with its parameters as astroid
   prints them (`Cls.__f(self, a, b: int = 1, *rest, **kw)`).
-* `R0903` `too-few-public-methods`: fewer public methods, counted over the
-  class and its bases, than `min-public-methods` (default 2), plus the special
-  methods the class itself defines other than `__init__`. Exceptions, enums,
+* `R0903` `too-few-public-methods`: fewer public methods, counted over the class
+  and its bases, than `min-public-methods` (default 2), plus the special methods
+  the class itself defines other than `__init__`. Exceptions, enums,
   metaclasses, named tuples, typed dicts, dataclasses and `attrs` classes are
-  exempt, and so is a class with an ancestor that `exclude-too-few-public-methods`
-  matches.
+  exempt, and so is a class with an ancestor that
+  `exclude-too-few-public-methods` matches.
 * `E0239` `inherit-non-class`, `E0243` `invalid-class-object` and `W0143`
   `comparison-with-callable`: a base that is a function, a lambda, a literal
   or an instance of a class of the file; `X.__class__ = value` where the value
