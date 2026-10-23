@@ -117,3 +117,15 @@ class Holder:
 
     def method(self):
         return lst == []
+
+
+def rebound(flag):
+    same = []
+    same = [1]
+    mixed = []
+    if flag:
+        mixed = ()
+    loop = []
+    for loop in flag:
+        pass
+    return same == [], mixed == [], loop == []

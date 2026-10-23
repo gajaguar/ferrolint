@@ -17,7 +17,7 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     BoolOp, CmpOp, Comprehension, Expr, ExprBoolOp, ExprCompare, HasNodeIndex, Number, Stmt,
-    StmtFunctionDef, UnaryOp,
+    StmtClassDef, StmtFunctionDef, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange};
 
@@ -113,6 +113,7 @@ impl Checker for Conditions {
             assigned: HashMap::new(),
             tests: HashSet::new(),
             frames: Vec::new(),
+            classes: Vec::new(),
         };
         walk.collect(&ctx.parsed.syntax().body);
         walk.visit_body(&ctx.parsed.syntax().body);
@@ -130,6 +131,8 @@ struct Walk<'a, 'e> {
     tests: HashSet<usize>,
     /// The names of the enclosing functions.
     frames: Vec<&'a StmtFunctionDef>,
+    /// The enclosing classes.
+    classes: Vec<&'a StmtClassDef>,
 }
 
 /// Whether the builtin `name` is a function or a class, not a constant or
@@ -944,6 +947,12 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
                 self.frames.pop();
                 return;
             }
+            Stmt::ClassDef(class) => {
+                self.classes.push(class);
+                visitor::walk_stmt(self, stmt);
+                self.classes.pop();
+                return;
+            }
             _ => {}
         }
         visitor::walk_stmt(self, stmt);
@@ -1068,7 +1077,7 @@ impl Walk<'_, '_> {
     /// Whether Pylint gives the expression a type that is not a set: a
     /// literal other than `None` (which `node_type` skips), a call of a
     /// builtin class, `*args` or `**kwargs`, or a name
-    /// bound once to a literal.
+    /// bound once to a literal or to such a call.
     fn typed(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Name(name) => {
@@ -1087,11 +1096,15 @@ impl Walk<'_, '_> {
                         binding
                             .node
                             .and_then(|id| self.assigned.get(&id))
-                            .is_some_and(|value| literal_type(value))
+                            .is_some_and(|value| {
+                                matches!(value, Expr::Call(_)) && self.typed(value)
+                                    || literal_type(value)
+                            })
                     }
                     _ => false,
                 }
             }
+            Expr::Attribute(attr) => self.typed_attribute(&attr.value, attr.attr.as_str()),
             // calling a builtin class makes an instance of it; `len` of a
             // known value is a number
             Expr::Call(call) => {
@@ -1106,6 +1119,67 @@ impl Walk<'_, '_> {
             }
             other => literal_type(other),
         }
+    }
+}
+
+impl Walk<'_, '_> {
+    /// `self.__dict__`, or `self.name` / `cls.name` where the enclosing class
+    /// assigns `name` once, to a literal.
+    ///
+    /// shortcut: a base class that assigns `name` too is not seen, upgrade
+    /// with the inference of the bases.
+    fn typed_attribute(&self, base: &Expr, name: &str) -> bool {
+        let (Expr::Name(base), Some(func), Some(class)) =
+            (base, self.frames.last(), self.classes.last())
+        else {
+            return false;
+        };
+        let first = func
+            .parameters
+            .posonlyargs
+            .iter()
+            .chain(&func.parameters.args)
+            .next();
+        if first.is_none_or(|p| p.name().as_str() != base.id.as_str()) {
+            return false;
+        }
+        if name == "__dict__" {
+            return true;
+        }
+        let mut found = AttrAssigns {
+            name,
+            values: Vec::new(),
+        };
+        for stmt in &class.body {
+            if let Stmt::Assign(a) = stmt {
+                for target in &a.targets {
+                    if matches!(target, Expr::Name(n) if n.id.as_str() == name) {
+                        found.values.push(&a.value);
+                    }
+                }
+            }
+        }
+        found.visit_body(&class.body);
+        matches!(found.values[..], [only] if literal_type(only))
+    }
+}
+
+/// The values assigned to `.name` on any object in a class.
+struct AttrAssigns<'a> {
+    name: &'a str,
+    values: Vec<&'a Expr>,
+}
+
+impl<'a> Visitor<'a> for AttrAssigns<'a> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Stmt::Assign(assign) = stmt {
+            for target in &assign.targets {
+                if matches!(target, Expr::Attribute(a) if a.attr.as_str() == self.name) {
+                    self.values.push(&assign.value);
+                }
+            }
+        }
+        visitor::walk_stmt(self, stmt);
     }
 }
 

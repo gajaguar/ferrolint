@@ -260,6 +260,21 @@ impl<'a> Infer<'a, '_> {
             Expr::Name(name) => return self.name(expr, name, scope, depth),
             Expr::Attribute(attribute) => return self.attribute(expr, attribute, scope),
             Expr::Call(call) => {
+                // `getattr` on a parameter infers to nothing.
+                if let Expr::Name(f) = &*call.func
+                    && f.id.as_str() == "getattr"
+                    && self
+                        .env
+                        .binding(f)
+                        .is_some_and(|b| b.kind == BindingKind::Builtin)
+                    && let Some(Expr::Name(obj)) = call.arguments.args.first()
+                    && self
+                        .env
+                        .binding(obj)
+                        .is_some_and(|b| b.kind == BindingKind::Parameter)
+                {
+                    return Some(Value::Param);
+                }
                 // A call of a class that derives from `object` alone makes an
                 // instance of it, unless a metaclass or a decorator steps in.
                 let class = self.env.class_of(&call.func)?;
@@ -413,6 +428,13 @@ impl<'a> Infer<'a, '_> {
         };
         let name = attribute.attr.as_str();
         let binding = self.env.binding(base)?;
+        // The `__new__` of a builtin class is a builtin function to astroid.
+        if binding.kind == BindingKind::Builtin && name == "__new__" {
+            return Some(Value::Func {
+                is_async: false,
+                counted: true,
+            });
+        }
         if binding.kind == BindingKind::Parameter && scope.receiver == Some(base.id.as_str()) {
             return self.member(scope.class?, name, !scope.on_class);
         }

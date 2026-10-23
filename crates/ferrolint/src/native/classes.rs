@@ -140,6 +140,21 @@ impl<'a> Env<'a> {
     }
 
     fn class_of_at(&self, expr: &Expr, depth: u8) -> Option<&'a StmtClassDef> {
+        // `Outer.Inner`: a class that the body of a class of this file binds once.
+        if let Expr::Attribute(attribute) = expr {
+            let outer = self.class_of_at(&attribute.value, depth + 1)?;
+            let mut bound = locals(&outer.body)
+                .into_iter()
+                .filter(|(name, _)| name == attribute.attr.as_str());
+            bound.next()?;
+            if bound.next().is_some() {
+                return None;
+            }
+            return outer.body.iter().find_map(|stmt| match stmt {
+                Stmt::ClassDef(c) if c.name.as_str() == attribute.attr.as_str() => Some(c),
+                _ => None,
+            });
+        }
         let Expr::Name(name) = expr else { return None };
         let binding = self.binding(name)?;
         if !self.ctx.model.is_sole_binding(binding.id) {

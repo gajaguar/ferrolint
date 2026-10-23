@@ -8,8 +8,8 @@
 //! the runs and the message follow `symilar` step by step.
 //!
 //! shortcut: Pylint shows the lines of one of the files at random (a set's
-//! iteration order); this shows the first file's. The files are taken in name
-//! order, where Pylint takes them in the order of its file walk.
+//! iteration order); this shows the first file's. The files are compared in name
+//! order; only the file the message sits on follows Pylint's walk.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};

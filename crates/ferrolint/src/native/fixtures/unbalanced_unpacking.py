@@ -267,3 +267,17 @@ def shadows():
         pass
     for k, v in {"ab": 1, "abc": 2}.keys():
         pass
+
+
+def varargs(first, *args):
+    a, b = args
+    c, d = args[:2]
+    e, f = args[1:]
+    g, h = first[:2]
+    return a, b, c, d, e, f, g, h
+
+
+def shadowed(*args):
+    args = (1, 2, 3)
+    i, j = args[:2]
+    return i, j

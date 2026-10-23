@@ -203,3 +203,15 @@ class Both(Base):
 
     def __init__(self):
         pass
+
+
+class Outer:
+    class Inner:
+        def go(self):
+            pass
+
+
+class Derived(Outer):
+    class Inner(Outer.Inner):
+        async def go(self):
+            pass

@@ -150,13 +150,16 @@ pub fn not_utf8() -> Diagnostic {
 /// The host rules' diagnostics for one parsed file.
 ///
 /// `known` tells whether the rule registry resolves a message name, so a
-/// plugin's rule named in a pragma is not reported as unknown.
+/// plugin's rule named in a pragma is not reported as unknown. `plugin_loaded`
+/// tells whether `load-plugins` names a Pylint plugin module, whose messages
+/// and checkers count as known only while it is loaded.
 pub fn check(
     source: &str,
     parsed: &Parsed<ModModule>,
     index: &LineIndex,
     module: &str,
     known: &dyn Fn(&str) -> bool,
+    plugin_loaded: &dyn Fn(&str) -> bool,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     if let Some(error) = parsed.errors().first() {
@@ -188,8 +191,13 @@ pub fn check(
             ) {
                 names
                     .into_iter()
-                    .filter(|name| !known(name))
-                    .filter_map(|name| crate::pylint::message_issue(key, name))
+                    // A native port of an extension rule resolves too, yet Pylint
+                    // knows its name only while the extension is loaded.
+                    .filter(|name| {
+                        !known(name)
+                            || crate::pylint_names::owner(name).is_some_and(|m| !plugin_loaded(m))
+                    })
+                    .filter_map(|name| crate::pylint::message_issue(key, name, plugin_loaded))
                     .map(|issue| (issue.code, issue.message))
                     .collect()
             } else {
@@ -233,11 +241,37 @@ mod tests {
             .try_into_module()
             .unwrap();
         let index = LineIndex::new(source);
-        let diagnostics = check(source, &parsed, &index, "pkg.sub.mod", &|_| true);
+        let diagnostics = check(source, &parsed, &index, "pkg.sub.mod", &|_| true, &|_| {
+            false
+        });
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message,
             "Parsing failed: 'Expected a parameter or the end of the parameter list (pkg.sub.mod, line 2)'"
         );
+    }
+
+    #[test]
+    fn a_pragma_names_a_plugin_message_only_when_the_plugin_is_loaded() {
+        let source = "# pylint: disable=dict-init-mutate,no-self-use,made-up-name\nx = 1\n";
+        let parsed = parse_unchecked(source, ParseOptions::from(PySourceType::Python))
+            .try_into_module()
+            .unwrap();
+        let index = LineIndex::new(source);
+        let codes = |plugin_loaded: &dyn Fn(&str) -> bool| {
+            // The registry resolves every name, as it does for a native port.
+            check(source, &parsed, &index, "mod", &|_| true, plugin_loaded)
+                .into_iter()
+                .map(|d| d.code)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(codes(&|_| false), ["W0012", "R0022"]);
+        let loaded = |module: &str| {
+            matches!(
+                module,
+                "pylint.extensions.dict_init_mutate" | "pylint.extensions.no_self_use"
+            )
+        };
+        assert_eq!(codes(&loaded), Vec::<String>::new());
     }
 }

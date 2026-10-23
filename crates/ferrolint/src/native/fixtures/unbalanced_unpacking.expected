@@ -59,3 +59,5 @@
 260:W0644:Possible unbalanced dict unpacking with {'a': d[0:6:2]}.values(): left side has 2 labels, right side has 3 values
 264:W0644:Possible unbalanced dict unpacking with {'a': d[0:5:0]}.values(): left side has 2 labels, right side has 1 value
 268:W0644:Possible unbalanced dict unpacking with {'ab': 1, 'abc': 2}.keys(): left side has 2 labels, right side has 3 values
+274:W0632:Possible unbalanced tuple unpacking with sequence : left side has 2 labels, right side has 0 values
+275:W0632:Possible unbalanced tuple unpacking with sequence : left side has 2 labels, right side has 0 values

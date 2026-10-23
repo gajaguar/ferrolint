@@ -7,11 +7,12 @@
 //!
 //! shortcut: Pylint infers what a call calls and what a raised or caught
 //! name stands for. Here a terminating call is `exit`, `quit`, `sys.exit`,
-//! `os._exit`, `self.fail` of a `...TestCase`, a function or `self` method of this file
-//! annotated `NoReturn`/`Never`, or a name of `never-returning-functions`;
+//! `os._exit`, `self.fail` of a `...TestCase`, a function or `self` method of
+//! the project annotated `NoReturn`/`Never`, or a name of `never-returning-functions`;
 //! the exception hierarchy is the builtins plus the classes of this file.
 //! Upgrade with a call and class inference.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
@@ -24,6 +25,7 @@ use ruff_text_size::Ranged;
 
 use super::classes::{Env, bases, is_classmethod, is_static};
 use super::extensions::loaded;
+use super::hierarchy::{Class as Mro, Hierarchy};
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -108,12 +110,14 @@ impl Checker for Flow {
         let env = Env::new(ctx);
         let mut assigned = HashMap::new();
         collect(&ctx.parsed.syntax().body, &mut assigned);
+        let hierarchy = OnceCell::new();
         let mut walk = Walk {
             env: &env,
             enabled,
             out,
             class: Vec::new(),
-            assigned,
+            assigned: &assigned,
+            hierarchy: &hierarchy,
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -133,7 +137,9 @@ struct Walk<'a, 'e> {
     class: Vec<Frame<'a>>,
     /// The value assigned to each name, by the node id of the target;
     /// none for a name that unpacking binds.
-    assigned: Assigned<'a>,
+    assigned: &'e Assigned<'a>,
+    /// The project around the file, read when a call needs another module.
+    hierarchy: &'e OnceCell<Hierarchy<'a, 'e>>,
 }
 
 type Assigned<'a> = HashMap<u32, Option<&'a Expr>>;
@@ -227,7 +233,8 @@ impl<'a> Walk<'a, '_> {
             let ender = Ender {
                 env: self.env,
                 class,
-                assigned: &self.assigned,
+                assigned: self.assigned,
+                hierarchy: self.hierarchy,
             };
             if self.on(INCONSISTENT)
                 && returns.iter().any(|r| r.value.is_some())
@@ -295,12 +302,18 @@ impl<'a> Walk<'a, '_> {
         let ender = Ender {
             env: self.env,
             class: self.class.last().map(|f| f.class),
-            assigned: &self.assigned,
+            assigned: self.assigned,
+            hierarchy: self.hierarchy,
         };
         for (i, stmt) in body.iter().enumerate() {
             let stops = match stmt {
                 Stmt::Return(_) | Stmt::Raise(_) | Stmt::Break(_) | Stmt::Continue(_) => true,
-                Stmt::Expr(e) => matches!(&*e.value, Expr::Call(call) if ender.terminating(call)),
+                // shortcut: only the calls of a simple statement, not the header of an
+                // `if` or `for`; upgrade with a walk of every call of the body
+                Stmt::Expr(e) => ender.terminates(&e.value),
+                Stmt::Assign(a) => ender.terminates(&a.value),
+                Stmt::AugAssign(a) => ender.terminates(&a.value),
+                Stmt::AnnAssign(a) => a.value.as_deref().is_some_and(|v| ender.terminates(v)),
                 _ => false,
             };
             if !stops {
@@ -707,9 +720,10 @@ struct Ender<'e, 'a> {
     /// The class around the function, when it is a method.
     class: Option<&'a StmtClassDef>,
     assigned: &'e Assigned<'a>,
+    hierarchy: &'e OnceCell<Hierarchy<'a, 'e>>,
 }
 
-impl<'a> Ender<'_, 'a> {
+impl<'e, 'a> Ender<'e, 'a> {
     fn stmts(&self, body: &'a [Stmt], wrap: Wrap<'a>) -> bool {
         body.iter()
             .enumerate()
@@ -873,7 +887,7 @@ impl<'a> Ender<'_, 'a> {
                 match expr {
                     Expr::Call(call) => {
                         self.found |=
-                            self.ender.terminating(call) || self.ender.never_returns(call);
+                            self.ender.terminating(call, false) || self.ender.never_returns(call);
                     }
                     _ => visitor::walk_expr(self, expr),
                 }
@@ -887,8 +901,154 @@ impl<'a> Ender<'_, 'a> {
         calls.found
     }
 
+    /// Pylint's `visit_call`: a terminating call anywhere in `expr`, a
+    /// `lambda` apart, ends the block of its statement.
+    fn terminates(&self, expr: &Expr) -> bool {
+        struct Calls<'x, 'e, 'a> {
+            ender: &'x Ender<'e, 'a>,
+            found: bool,
+        }
+        impl<'b> Visitor<'b> for Calls<'_, '_, '_> {
+            fn visit_expr(&mut self, expr: &'b Expr) {
+                match expr {
+                    Expr::Lambda(_) => return,
+                    Expr::Await(a) => {
+                        if let Expr::Call(call) = &*a.value {
+                            self.found |= self.ender.terminating(call, true);
+                        }
+                    }
+                    Expr::Call(call) => self.found |= self.ender.terminating(call, false),
+                    _ => {}
+                }
+                visitor::walk_expr(self, expr);
+            }
+        }
+        let mut calls = Calls {
+            ender: self,
+            found: false,
+        };
+        calls.visit_expr(expr);
+        calls.found
+    }
+
+    fn hierarchy(&self) -> &Hierarchy<'a, 'e> {
+        self.hierarchy.get_or_init(|| Hierarchy::new(self.env))
+    }
+
+    /// Whether `call` calls a function annotated `NoReturn` or `Never`: a
+    /// function of this file or of an imported module, a method of the class,
+    /// of a base (from another module too) or one that `self.name` is set to.
+    /// An `async def` needs the call to be `awaited`.
+    fn annotated(&self, call: &ExprCall, awaited: bool) -> bool {
+        let ends = |f: &StmtFunctionDef| no_return(f) && (awaited || !f.is_async);
+        match &*call.func {
+            Expr::Name(n) => match self.env.func_of(n) {
+                Some(f) => ends(f),
+                None => self.imported(&call.func, awaited),
+            },
+            Expr::Attribute(a) if matches!(&*a.value, Expr::Name(n) if n.id.as_str() == "self") => {
+                let (Some(class), name) = (self.class, a.attr.as_str()) else {
+                    return false;
+                };
+                match self.method(class, name, 0) {
+                    Some(f) => ends(f),
+                    None => {
+                        self.inherited(class, name, awaited)
+                            || self.set_to(class, name).into_iter().any(ends)
+                    }
+                }
+            }
+            Expr::Attribute(_) => self.imported(&call.func, awaited),
+            _ => false,
+        }
+    }
+
+    /// Whether `func`, imported from a module of the project, is annotated so.
+    fn imported(&self, func: &Expr, awaited: bool) -> bool {
+        let Some(name) = self.env.qualified(func).filter(|q| q.contains('.')) else {
+            return false;
+        };
+        let project = &self.hierarchy().project;
+        project
+            .never_returns(&project.absolute(&name))
+            .is_some_and(|is_async| awaited || !is_async)
+    }
+
+    /// Whether the first `def name` along the bases of `class` that the
+    /// project reads (not the ones of this file only) is annotated so.
+    fn inherited(&self, class: &'a StmtClassDef, name: &str, awaited: bool) -> bool {
+        let hierarchy = self.hierarchy();
+        hierarchy
+            .known_order(&Mro::Local(class))
+            .into_iter()
+            .flatten()
+            .find_map(|c| {
+                c.def()?.body.iter().find_map(|s| match s {
+                    Stmt::FunctionDef(f) if f.name.as_str() == name => {
+                        Some(no_return(f) && (awaited || !f.is_async))
+                    }
+                    _ => None,
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// The functions of this file that `self.name = f` sets in a method of
+    /// `class`, `f` also being a parameter whose default is the function.
+    fn set_to(&self, class: &'a StmtClassDef, name: &str) -> Vec<&'a StmtFunctionDef> {
+        struct Sets<'a, 'x> {
+            name: &'x str,
+            values: Vec<&'a Expr>,
+        }
+        impl<'a> Visitor<'a> for Sets<'a, '_> {
+            fn visit_stmt(&mut self, stmt: &'a Stmt) {
+                let (targets, value) = match stmt {
+                    Stmt::Assign(a) => (a.targets.iter().collect(), Some(&*a.value)),
+                    Stmt::AnnAssign(a) => (vec![&*a.target], a.value.as_deref()),
+                    _ => (Vec::new(), None),
+                };
+                if let Some(value) = value
+                    && targets.iter().any(|t| {
+                        matches!(t, Expr::Attribute(a)
+                        if a.attr.as_str() == self.name
+                            && matches!(&*a.value, Expr::Name(n) if n.id.as_str() == "self"))
+                    })
+                {
+                    self.values.push(value);
+                }
+                visitor::walk_stmt(self, stmt);
+            }
+        }
+        let methods = class.body.iter().filter_map(|s| match s {
+            Stmt::FunctionDef(m) => Some(m),
+            _ => None,
+        });
+        methods
+            .flat_map(|m| {
+                let mut sets = Sets {
+                    name,
+                    values: Vec::new(),
+                };
+                sets.visit_body(&m.body);
+                sets.values.into_iter().filter_map(move |value| {
+                    let Expr::Name(n) = value else { return None };
+                    let default = m
+                        .parameters
+                        .iter_non_variadic_params()
+                        .find(|p| p.name().as_str() == n.id.as_str())
+                        .and_then(|p| p.default());
+                    match default {
+                        Some(Expr::Name(d)) => self.env.func_of(d),
+                        _ => self.env.func_of(n),
+                    }
+                })
+            })
+            .collect()
+    }
+
     /// Pylint's `is_terminating_func`.
-    fn terminating(&self, call: &ExprCall) -> bool {
+    /// `awaited`: the call is the operand of `await`, as an `async def` needs.
+    fn terminating(&self, call: &ExprCall, awaited: bool) -> bool {
         if !matches!(&*call.func, Expr::Name(_) | Expr::Attribute(_)) {
             return false;
         }
@@ -901,10 +1061,6 @@ impl<'a> Ender<'_, 'a> {
                         | "sys.exit"
                         | "os._exit"
                         | "os.abort"
-                        | "pytest.fail"
-                        | "pytest.skip"
-                        | "pytest.exit"
-                        | "pytest.xfail"
                         | "typing.assert_never"
                         | "typing_extensions.assert_never"
                 ))
@@ -924,14 +1080,7 @@ impl<'a> Ender<'_, 'a> {
         {
             return true;
         }
-        matches!(&*call.func, Expr::Name(n) if self.env.func_of(n).is_some_and(|f| {
-            !f.is_async
-                && f.returns.as_deref().is_some_and(|r| {
-                    self.env.qualified(r).is_some_and(|q| {
-                        matches!(q.as_str(), "typing.NoReturn" | "typing.Never" | "typing_extensions.NoReturn" | "typing_extensions.Never")
-                    })
-                })
-        }))
+        self.annotated(call, awaited)
     }
 
     /// The `def name` of `class` or, failing that, of its bases in this file.
@@ -973,20 +1122,18 @@ impl<'a> Ender<'_, 'a> {
         {
             return true;
         }
-        let func = match &*call.func {
-            Expr::Name(n) => self.env.func_of(n),
-            // `self.method()`, found in the class or in a base of this file
-            // shortcut: a base from another module is not followed, upgrade with import resolution
-            Expr::Attribute(a) if matches!(&*a.value, Expr::Name(n) if n.id.as_str() == "self") => {
-                self.class.and_then(|c| self.method(c, a.attr.as_str(), 0))
-            }
-            _ => None,
-        };
-        func.is_some_and(|f| {
-            matches!(f.returns.as_deref(), Some(Expr::Name(r)) if matches!(r.id.as_str(), "NoReturn" | "Never"))
-                || matches!(f.returns.as_deref(), Some(Expr::Attribute(r)) if matches!(r.attr.as_str(), "NoReturn" | "Never"))
-        })
+        self.annotated(call, true)
     }
+}
+
+/// Whether `f` is annotated `NoReturn` or `Never`, as Pylint reads it.
+pub(super) fn no_return(f: &StmtFunctionDef) -> bool {
+    let name = match f.returns.as_deref() {
+        Some(Expr::Name(r)) => r.id.as_str(),
+        Some(Expr::Attribute(r)) => r.attr.as_str(),
+        _ => return false,
+    };
+    matches!(name, "NoReturn" | "Never")
 }
 
 fn is_number_or_bool(expr: &Expr) -> bool {
@@ -1259,6 +1406,39 @@ mod fixtures {
         let expected = include_str!("fixtures/design_limits.expected").trim_end();
         let options = [("max-locals", "3"), ("max-args", "2"), ("max-returns", "2")];
         assert_eq!(render(source, &options, BATCH_C), expected);
+    }
+
+    #[test]
+    fn never_returning_calls_in_other_modules_and_attributes() {
+        use crate::native::classes::render_at;
+
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "from typing import NoReturn\n\n\ndef bail() -> NoReturn:\n    raise SystemExit\n\n\nclass Base:\n    def fail(self) -> NoReturn:\n        bail()\n",
+        )
+        .unwrap();
+        let source = "from pkg.base import Base, bail\nfrom typing import NoReturn\n\n\nasync def gone() -> NoReturn:\n    raise SystemExit\n\n\nclass A(Base):\n    def __init__(self, hook=gone):\n        self.hook = hook\n\n    def one(self, x):\n        if x:\n            return 1\n        self.fail()\n\n    def two(self, x):\n        bail()\n        return x\n\n    async def three(self):\n        y = await self.hook()\n        return y\n\n    async def four(self):\n        self.hook()\n        return 1\n";
+        let found = render_at(source, &package.join("child.py"), "pkg.child", &[], BATCH_C);
+        // `one` ends in a call that never returns; `two` and `three` have
+        // dead code after one; `four` calls an `async def` without `await`
+        assert_eq!(
+            found, "20:W0101:Unreachable code\n24:W0101:Unreachable code",
+            "{found}"
+        );
+    }
+
+    #[test]
+    fn pytest_calls_return() {
+        let source = "import pytest\n\n\ndef f(x):\n    try:\n        return x.decode()\n    except ValueError:\n        pytest.fail('no')\n";
+        let found = crate::native::classes::render(source, &[], BATCH_C);
+        assert_eq!(
+            found,
+            "4:R1710:Either all return statements in a function should return an expression, or none of them should."
+        );
     }
 
     #[test]

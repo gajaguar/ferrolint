@@ -205,15 +205,21 @@ Known divergences from Pylint, where Pylint infers a value, a class or a
 call:
 
 * A call never returns, for `W0101` and `R1710`, when it is `exit`, `quit`,
-  `sys.exit`, `os._exit`, `os.abort`, `pytest.fail` and its kin, an
-  `assert_never`, `self.fail` of a class with a `...TestCase` base that does
-  not define `fail`, a function of the file annotated `NoReturn` or `Never`,
-  a `self.method()` that the class or a base of the file (`Base[T]` too)
-  annotates so, or a name of `never-returning-functions`. A function
-  imported from another module that is annotated `NoReturn`, a method of a
-  base from another module, and a method called on a value that is not
-  `self` (click's `ctx.exit()`), are not known. Only a
-  call written as a statement ends a block for `W0101`.
+  `sys.exit`, `os._exit`, `os.abort`, an `assert_never`, `self.fail` of a
+  class with a `...TestCase` base that does not define `fail`, a function
+  annotated `NoReturn` or `Never` (of the file, or imported from a module of
+  the project or an installed package), a `self.method()` that the class or a
+  base annotates so (a base from another module too, `Base[T]` too), a
+  `self.name()` that a method sets to such a function (`self.name = f`, or a
+  parameter whose default is `f`), or a name of `never-returning-functions`.
+  Not known: the standard library, a function re-exported by the module it is
+  imported from, a property that returns one, and a method called on a value
+  that is not `self` (click's `ctx.exit()`, `outcome.unwrap()`). `pytest.fail`
+  and its kin are not listed: pytest 8 and later makes them callable objects,
+  which Pylint cannot infer. A call anywhere in an assignment or an expression
+  statement ends a block for `W0101`, not one in the header of an `if` or
+  `for`. A file that Ruff's parser rejects (`raise;stmt` on one line) has no
+  findings but the syntax error.
 * `R1710` follows a `raise` inside a `try` as Pylint does: the exception is
   the class named by the call, and a handler that names it must end in a
   return. A raised name that is not a class is assumed to be inferable,
@@ -231,15 +237,23 @@ call:
   undecorated function, a class, a lambda or a generator expression of the
   file, a module imported with `import`, or a builtin function or class; and
   the call of a function of the file that returns only generator
-  expressions. A test such as `self.method` or a property, or a function
-  imported with `from`, is not known.
+  expressions. Not known, so not reported: a method read through `self`
+  (Pylint reports `if self.method:` unless the method is a property), a
+  name or attribute bound to a call such as `getattr(...)`, a class imported
+  with `from` (`from logging import PercentStyle`), and an instance attribute
+  bound to the call of a generator method. A class attribute bound to a
+  constant is not reported by Pylint either.
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
   literal, a container, a lambda, or `not`, `-` and `+` of one; Pylint also
   folds operations and comparisons of constants and names that hold them.
   The code a message quotes is written as astroid does.
 * `C0117` fires for a comparison whose two sides have a known type: a
-  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
-  a call of a builtin class, or `len` of one of these. Pylint infers more.
+  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal or
+  to such a call, a call of a builtin class, `len` of one of these,
+  `self.__dict__`, or
+  `self.name` / `cls.name` when the enclosing class assigns `name` once, to
+  a literal (a base class is not read). An instance of a class, a property
+  or an attribute set from a parameter is not known, though Pylint infers it.
 * `W4701`, `E4702` and `E4703` take the iterated name as a list, dict or set
   when it is assigned a display, `list()`, `dict()`, `set()` or `list` or
   `set` of a display of constants; an attribute (`self.items`) is not
@@ -704,7 +718,9 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
   not `disable`, `enable`, `disable-next`, `disable-msg` or `enable-msg`.
 * `W0012` `unknown-option-value`: a `disable` or `enable` option, or a pragma,
   names a message, category or checker Pylint does not know. A name the rule
-  registry resolves, such as a plugin's rule, is known.
+  registry resolves, such as a plugin's rule, is known. A message or checker
+  of a `pylint.extensions.*` or `pylint_django` plugin is known only when
+  `load-plugins` names that plugin, as Pylint registers its names only then.
 * `R0022` `useless-option-value`: the same, for a message Pylint removed or
   moved to an extension.
 * `E0013` `bad-plugin-value`: a `load-plugins` module is in no project
@@ -719,9 +735,6 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* `no-self-use` and `R0201` in a `disable` or `enable` option are `R0022`
-  unless `pylint.extensions.no_self_use` is in `load-plugins`. In an inline
-  pragma they still count as known.
 * A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint
@@ -812,10 +825,11 @@ Known divergences:
 
 * Pylint infers the compared or subscripted value. Here a value has a type
   only when it is a list, tuple, dict, set, string or bytes literal, a call
-  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name bound once
-  by a plain assignment to one of those. A parameter, an attribute, a call of
-  another function, an instance of a class, a name bound twice, `range(...)`
-  and `slice(...)` objects are silent where Pylint may report.
+  of the builtin `list`, `tuple`, `dict`, `set` or `str`, or a name whose every
+  binding is a plain assignment to one of those, all of the same type. A
+  parameter, an attribute, a call of another function, an instance of a class,
+  an annotated assignment, a name bound to different types, `range(...)` and
+  `slice(...)` objects are silent where Pylint may report.
 * `C1803` is silent for a number, a float and a bool, as in Pylint, but
   Pylint also reports a `None`, a class, a function, a module and an instance
   of a class without `__bool__`; those are not reported.
@@ -1061,6 +1075,12 @@ Known divergences from Pylint, where Pylint infers the callee:
   (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class
   returned by a call, and the stdlib signatures
   (`base64.urlsafe_b64decode(data, padded=True)`).
+* `E1121` of `array.__new__(cls, 'i', args)` (a C type whose signature
+  Pylint reads as `__new__(cls, typecode)`) and of `attrs.define` classes
+  built from a base with its own `__init__` (Pylint reads the base's `__init__`
+  and ignores the one `attrs` writes, so it reports a call that is valid) are
+  not reported: the first needs the interpreter's signature, the second is a
+  Pylint false positive.
 
 ## Batch S: private members, public methods and what an expression stands for
 
@@ -1097,6 +1117,12 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   class, a module, a call of a class of the file and a name bound once to one
   of those. A call of a function, a name bound twice, an imported name, a
   parameter and an attribute of an object have no answer and stay silent.
+  `W0143` also takes the `__new__` of a builtin class for a function and a
+  `getattr` of a parameter for no function. It stays silent where Pylint
+  infers across modules: a function of an imported project module
+  (`setters.validate`, `genericTypeValidator`), a function a call returns
+  (`setters.pipe(...)`), a standard library function (`signal.default_int_handler`)
+  and a value unpacked from a tuple of conditional expressions.
 * `E0239` prints a base written as an f-string as written; Pylint rewrites its
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the
@@ -1142,6 +1168,8 @@ Known divergences:
   `__getstate__` written with `self` alone.
 * `W0236` takes a decorator that is a function returning a property for an
   ordinary method.
+  A parent written `Outer.Inner` is followed when `Outer` is a class of the
+  file whose body binds `Inner` once as a class.
 * `W0246` compares default values as written: `1`, `1.0` and `True` differ here
   and are equal in Python.
 * `W0233` needs every base to be known, and skips a call whose target it
@@ -1216,7 +1244,9 @@ Known divergences:
   `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
   from the items of every key or value. `value` is a tuple, list, set or dict
   display, a name bound once to one, a call of a function of the file whose
-  only `return` returns one, or the view of such a dict. The tuple rule words
+  only `return` returns one, or the view of such a dict; a slice of the
+  `*args` of the enclosing function holds no value (`a, b = args[:2]` says
+  `right side has 0 values`). The tuple rule words
   the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
   as `defined at line N` otherwise. A starred name on the left, an abstract
   enclosing class, a starred element in the display and a dict with `**other`
@@ -1240,8 +1270,10 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
   a conditional expression, a slice or a sum, an attribute such as `self.v`,
   a property, a classmethod, a lambda and a method called as `Class.method()`
-  are not judged. A display with a starred element, such as `(*t, 1)`, and a
-  dict with `**other` are left out, where Pylint expands them, and an
+  are not judged, nor is a slice of an attribute that `__init__` sets to `[]`
+  (`s = self.stack[:]; return s`) or a callee that another module defines. A
+  display with a starred element, such as `(*t, 1)`, and a dict with
+  `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
   A list that a method returns after other statements emptied or filled it
   (`args = self.popall()`), a slice of `*args` (`F, A = B[:2]`) and a value
@@ -1400,8 +1432,10 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
 * `R0401` is reported once per cycle at line 1 of the file that sorts last
   among the linted ones; Pylint attaches it to the file it checked last, in
   filesystem order. The cycles and their text agree.
-* `R0801` takes the files in name order and attaches the message to the last
-  one; Pylint takes them in the order of its file walk. Pylint prints the
+* `R0801` takes the files in name order and attaches the messages to the one
+  `os.walk` reaches last (a directory's files, then its subdirectories, in the
+  order the file system lists them), as Pylint does; that order is the file
+  system's, so it differs between machines. Pylint prints the
   lines of any one of the files (a set's iteration order); this prints those
   of the first. Several `R0401` or `R0801` findings of one run come out
   ordered by message, since both sit at the same position. The hash of a

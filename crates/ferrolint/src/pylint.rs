@@ -34,20 +34,34 @@ const CATEGORIES: [&str; 12] = [
 ];
 
 /// The W0012 or R0022 for a `disable`/`enable`/pragma name that is no Pylint
-/// message, category, checker or `all`.
-pub fn message_issue(action: &str, name: &str) -> Option<Issue> {
+/// message, category, checker or `all`. `plugin_loaded` tells whether
+/// `load-plugins` names a plugin module: a name a plugin owns is known only
+/// while the plugin is loaded, as in Pylint.
+pub fn message_issue(
+    action: &str,
+    name: &str,
+    plugin_loaded: &dyn Fn(&str) -> bool,
+) -> Option<Issue> {
     let lower = name.to_ascii_lowercase();
     let upper = name.to_ascii_uppercase();
+    let pylint_name = contains(names::CHECKERS, &lower)
+        || contains(names::MESSAGES, name)
+        || contains(names::MESSAGES, &upper);
+    let owner = names::owner(name)
+        .or_else(|| names::owner(&upper))
+        .or_else(|| names::owner(&lower));
     let known = lower == "all"
         || lower.starts_with("rp")
         || CATEGORIES.contains(&lower.as_str())
-        || contains(names::CHECKERS, &lower)
-        || contains(names::MESSAGES, name)
-        || contains(names::MESSAGES, &upper);
+        || (pylint_name && owner.is_none_or(plugin_loaded));
     if known {
         return None;
     }
-    if contains(names::DELETED, name) || contains(names::DELETED, &upper) {
+    if contains(names::DELETED, name)
+        || contains(names::DELETED, &upper)
+        || contains(names::MOVED, name)
+        || contains(names::MOVED, &upper)
+    {
         return Some(moved_issue(action, name));
     }
     Some(Issue {
@@ -95,11 +109,14 @@ pub fn issues(
     if foreign_plugin(entries, exists) {
         return out;
     }
-    let self_use_loaded = entries
+    let loaded: Vec<&str> = entries
         .iter()
         .filter(|(key, _)| key == "load-plugins")
         .flat_map(|(_, value)| value.split(','))
-        .any(|plugin| plugin.trim() == "pylint.extensions.no_self_use");
+        .map(str::trim)
+        .filter(|plugin| !plugin.is_empty())
+        .collect();
+    let plugin_loaded = |module: &str| loaded.contains(&module);
     let mut unknown: Vec<String> = Vec::new();
     for (key, value) in entries {
         let key = if ini {
@@ -119,12 +136,7 @@ pub fn issues(
                     .filter(|item| !item.is_empty())
                     .filter_map(|item| {
                         let action = format!("--{key}");
-                        if !self_use_loaded
-                            && matches!(item.to_ascii_lowercase().as_str(), "no-self-use" | "r0201")
-                        {
-                            return Some(moved_issue(&action, item));
-                        }
-                        message_issue(&action, item)
+                        message_issue(&action, item, &plugin_loaded)
                     }),
             );
         }
@@ -360,6 +372,42 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         let issues = issues(&entries, true, |_| false);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].code, "E0015");
+    }
+
+    #[test]
+    fn a_plugin_message_is_w0012_unless_its_plugin_is_loaded() {
+        let off = ini(
+            "[MASTER]\ndisable=dict-init-mutate,consider-using-any-or-all,R0204\n",
+            false,
+        )
+        .unwrap();
+        let codes: Vec<_> = issues(&off, true, |_| true)
+            .iter()
+            .map(|i| i.code)
+            .collect();
+        assert_eq!(codes, ["W0012", "W0012", "W0012"]);
+        let on = ini(
+            "[MASTER]\nload-plugins=pylint.extensions.dict_init_mutate,pylint.extensions.for_any_all\n\
+             disable=dict-init-mutate,consider-using-any-or-all\n",
+            false,
+        )
+        .unwrap();
+        assert_eq!(issues(&on, true, |_| true), []);
+    }
+
+    #[test]
+    fn a_plugin_checker_name_is_w0012_unless_its_plugin_is_loaded() {
+        let off = ini("[MASTER]\ndisable=multiple_types\n", false).unwrap();
+        let found = issues(&off, true, |_| true);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "W0012");
+        assert!(found[0].message.contains("'multiple_types'"));
+        let on = ini(
+            "[MASTER]\nload-plugins=pylint.extensions.redefined_variable_type\ndisable=multiple_types\n",
+            false,
+        )
+        .unwrap();
+        assert_eq!(issues(&on, true, |_| true), []);
     }
 
     #[test]
