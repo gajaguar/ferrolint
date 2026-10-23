@@ -35,6 +35,7 @@ use super::classes::{bases, locals};
 use super::flow::{no_return, own_returns};
 use crate::c_module_names;
 use crate::class_methods;
+use crate::project_run::stamp_of;
 
 /// How far up from the linted file a project root is looked for.
 const LEVELS: usize = 8;
@@ -398,19 +399,24 @@ impl Project {
     /// shortcut: the function must be defined in the module the name is given
     /// in, and the standard library is not read; upgrade with import resolution.
     pub fn never_returns(&self, qualified: &str) -> Option<bool> {
-        /// The answers of the run, by search path and name: the files of a
-        /// package share them, and each would else parse the same module.
-        // shortcut: never evicted or re-read, so a file edited during the run keeps
-        // its first answer; upgrade if a long-lived process ever lints.
-        type Answers = Mutex<HashMap<(Vec<PathBuf>, String), Option<bool>>>;
+        /// The answers of the process, by search path and name, each with the
+        /// stamp of the file it came from: the files of a package share them,
+        /// and each would else parse the same module.
+        type Answers = Mutex<HashMap<(Vec<PathBuf>, String), (String, Option<bool>)>>;
         static ANSWERS: LazyLock<Answers> = LazyLock::new(Mutex::default);
         let (module, name) = qualified.rsplit_once('.')?;
         if self.is_stdlib(module) {
             return None;
         }
+        // The path is in the stamp: a package may replace the module file.
+        let stamp = self.locate(module).map_or_else(String::new, |(file, _)| {
+            format!("{}:{}", file.display(), stamp_of(&file))
+        });
         let key = (self.roots.clone(), qualified.to_owned());
-        if let Some(answer) = ANSWERS.lock().ok()?.get(&key) {
-            return *answer;
+        if let Some((known, answer)) = ANSWERS.lock().ok()?.get(&key) {
+            if *known == stamp {
+                return *answer;
+            }
         }
         let answer = self.load(module).and_then(|loaded| {
             loaded
@@ -425,7 +431,7 @@ impl Project {
                     _ => None,
                 })
         });
-        ANSWERS.lock().ok()?.insert(key, answer);
+        ANSWERS.lock().ok()?.insert(key, (stamp, answer));
         answer
     }
 
@@ -1417,6 +1423,24 @@ mod tests {
             assert_eq!(project.never_returns("lib.stop.die"), Some(false));
             assert_eq!(project.never_returns("lib.stop.ok"), None);
         }
+    }
+
+    #[test]
+    fn an_edited_or_new_module_gives_a_fresh_answer() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("edit")).unwrap();
+        std::fs::write(root.path().join("edit/a.py"), "").unwrap();
+        let ask = || {
+            Project::new(&root.path().join("edit/a.py"), "edit.x").never_returns("edit.stop.die")
+        };
+        assert_eq!(ask(), None);
+        let stop = root.path().join("edit/stop.py");
+        std::fs::write(&stop, "def die() -> NoReturn:\n    raise SystemExit\n").unwrap();
+        assert_eq!(ask(), Some(false));
+        std::fs::write(&stop, "async def die() -> Never:\n    raise SystemExit\n").unwrap();
+        assert_eq!(ask(), Some(true));
+        std::fs::write(&stop, "def die():\n    raise SystemExit\n").unwrap();
+        assert_eq!(ask(), None);
     }
 
     #[test]

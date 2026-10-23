@@ -345,7 +345,7 @@ fn units(
 }
 
 /// What a directory (its entries) or a file (its size and time) looks like.
-fn stamp_of(path: &Path) -> String {
+pub(crate) fn stamp_of(path: &Path) -> String {
     match fs::metadata(path) {
         Ok(meta) if meta.is_dir() => {
             let mut names: Vec<String> = fs::read_dir(path)
