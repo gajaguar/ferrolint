@@ -235,12 +235,13 @@ call:
   is not known, nor are the classes it derives from.
 * `W0125` and `W0126` know a test that is a name bound once to an
   undecorated function, a class, a lambda or a generator expression of the
-  file, a module imported with `import`, or a builtin function or class; and
+  file, a module imported with `import`, a class imported with `from` that
+  the environment holds (`from logging import PercentStyle`), or a builtin
+  function or class; and
   the call of a function of the file that returns only generator
   expressions. Not known, so not reported: a method read through `self`
   (Pylint reports `if self.method:` unless the method is a property), a
-  name or attribute bound to a call such as `getattr(...)`, a class imported
-  with `from` (`from logging import PercentStyle`), and an instance attribute
+  name or attribute bound to a call such as `getattr(...)`, and an instance attribute
   bound to the call of a generator method. A class attribute bound to a
   constant is not reported by Pylint either.
 * `R1709`, `R1726` and `R1727` take a value as constant when it is a
