@@ -215,9 +215,9 @@ call:
   Not known: the standard library, a function re-exported by the module it is
   imported from, a property that returns one, and a method called on a value
   that is not `self` (click's `ctx.exit()`, `outcome.unwrap()`). `pytest.fail`
-  and its kin are not listed: pytest 8 and later makes them callable objects,
-  which Pylint cannot infer. A call anywhere in an assignment or an expression
-  statement ends a block for `W0101`, not one in the header of an `if` or
+  and its kin are not listed: with every pytest tried (7.4.4, 8.0.2, 8.4.2,
+  9.1.1) Pylint cannot infer them, so they never end a block. A call anywhere
+  in an assignment or an expression statement ends a block for `W0101`, not one in the header of an `if` or
   `for`. A file that Ruff's parser rejects (`raise;stmt` on one line) has no
   findings but the syntax error.
 * `R1710` follows a `raise` inside a `try` as Pylint does: the exception is
