@@ -1119,7 +1119,7 @@ impl<'a> Walk<'a, '_> {
                 Some(q)
                     if q.starts_with("typing.")
                         || q.starts_with("collections.abc.")
-                        || self.is_class(Some(q)) =>
+                        || (!stdlib_class(q) && self.is_class(Some(q))) =>
                 {
                     Val::Class
                 }

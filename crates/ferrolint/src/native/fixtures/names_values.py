@@ -110,3 +110,4 @@ snake_unknown = unknown_thing().upper()
 fmtDone = "{} {a}".format(1, a=2)
 snake_fmt_missing = "{a}".format(**globals())
 snake_fmt_args = "{}".format(unknown_thing())
+stdSubscript = logging.StreamHandler[int]
