@@ -416,10 +416,10 @@ impl Project {
             format!("{}:{}", file.display(), stamp_of(&file))
         });
         let key = (self.roots.clone(), qualified.to_owned());
-        if let Some((known, answer)) = ANSWERS.lock().ok()?.get(&key) {
-            if *known == stamp {
-                return *answer;
-            }
+        if let Some((known, answer)) = ANSWERS.lock().ok()?.get(&key)
+            && *known == stamp
+        {
+            return *answer;
         }
         let answer = self.load(module).and_then(|loaded| {
             loaded

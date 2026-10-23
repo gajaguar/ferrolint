@@ -147,8 +147,8 @@ pub fn not_utf8() -> Diagnostic {
     }
 }
 
-/// Parse `source` as a module, tolerating `raise;stmt`, which CPython accepts
-/// and Ruff's parser rejects at the `;` (it ends a bare `raise` on a newline
+/// Parse `source` as a module, tolerating `raise;stmt`, which `CPython` accepts
+/// and the Ruff parser rejects at the `;` (it ends a bare `raise` on a newline
 /// only).
 ///
 /// The only errors being that one, the file is parsed again with each such
