@@ -1074,6 +1074,12 @@ Known divergences from Pylint, where Pylint infers the callee:
   (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class
   returned by a call, and the stdlib signatures
   (`base64.urlsafe_b64decode(data, padded=True)`).
+* `E1121` of `array.__new__(cls, 'i', args)` (a C type whose signature
+  Pylint reads as `__new__(cls, typecode)`) and of `attrs.define` classes
+  built from a base with its own `__init__` (Pylint reads the base's `__init__`
+  and ignores the one `attrs` writes, so it reports a call that is valid) are
+  not reported: the first needs the interpreter's signature, the second is a
+  Pylint false positive.
 
 ## Batch S: private members, public methods and what an expression stands for
 
@@ -1161,6 +1167,8 @@ Known divergences:
   `__getstate__` written with `self` alone.
 * `W0236` takes a decorator that is a function returning a property for an
   ordinary method.
+  A parent written `Outer.Inner` is followed when `Outer` is a class of the
+  file whose body binds `Inner` once as a class.
 * `W0246` compares default values as written: `1`, `1.0` and `True` differ here
   and are equal in Python.
 * `W0233` needs every base to be known, and skips a call whose target it

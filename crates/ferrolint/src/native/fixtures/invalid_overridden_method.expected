@@ -17,3 +17,4 @@
 175:W0236:Method 'a1' was expected to be 'non-async', found it instead as 'async'
 188:W0236:Method 'm1' was expected to be 'property', found it instead as 'method'
 197:W0236:Method 'a1' was expected to be 'method', found it instead as 'property'
+216:W0236:Method 'go' was expected to be 'non-async', found it instead as 'async'
