@@ -1325,9 +1325,14 @@ impl<'a> Walk<'a, '_> {
             | "typing_extensions.TypedDict" => Val::Class,
             "enum.Enum" => Val::Enum,
             // astroid infers the other enums' functional calls to nothing.
-            "enum.IntEnum" | "enum.StrEnum" | "enum.Flag" | "enum.IntFlag" => Val::Unknown,
+            "enum.IntEnum"
+            | "enum.StrEnum"
+            | "enum.Flag"
+            | "enum.IntFlag"
+            | "typing.TypeVar"
+            | "typing.ParamSpec"
+            | "typing.TypeVarTuple" => Val::Unknown,
             "dict" | "list" | "set" | "frozenset" | "tuple" | "object" => Val::Other,
-            "typing.TypeVar" | "typing.ParamSpec" | "typing.TypeVarTuple" => Val::Unknown,
             q if self.project.returns_class(&self.project.absolute(q)) => Val::Class,
             q => {
                 let last = q.rsplit('.').next().unwrap_or_default();
