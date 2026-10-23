@@ -865,6 +865,66 @@ mod tests {
     }
 
     #[test]
+    fn a_star_import_of_a_source_that_does_not_parse_binds_unknown_names() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("pkg/__init__.py", "from pkg.broken import *\nOWN = 1\n"),
+                ("pkg/broken.py", "def f(:\n"),
+                ("app/__init__.py", ""),
+                ("app/a.py", "from pkg import anything, OWN\n"),
+            ],
+        );
+        assert!(run(dir.path(), &[]).iter().all(|f| f.2 != "E0611"));
+    }
+
+    #[test]
+    fn collections_has_only_the_names_of_its_source() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                (
+                    "stdlib/collections/__init__.py",
+                    "from _collections import deque\n",
+                ),
+                ("pkg/__init__.py", ""),
+                ("pkg/a.py", "from collections import deque, Mapping\n"),
+            ],
+        );
+        let found = run(dir.path(), &[]);
+        assert_eq!(
+            found.iter().map(|f| f.3.as_str()).collect::<Vec<_>>(),
+            ["No name 'Mapping' in module 'collections'"]
+        );
+    }
+
+    #[test]
+    fn a_package_with_only_an_init_stub_is_read_from_the_stub() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("stdlib/sys.py", ""),
+                (
+                    "stdlib/ext/__init__.pyi",
+                    "from . import sub as sub\nVALUE: int\n",
+                ),
+                ("stdlib/ext/sub.pyi", ""),
+                ("stdlib/ext.cpython-314-darwin.so", ""),
+                ("pkg/__init__.py", ""),
+                ("pkg/a.py", "from ext import VALUE, sub, nope\n"),
+            ],
+        );
+        let found = run(dir.path(), &[]);
+        assert_eq!(
+            found.iter().map(|f| f.3.as_str()).collect::<Vec<_>>(),
+            ["No name 'nope' in module 'ext'"]
+        );
+    }
+
+    #[test]
     fn an_absolute_import_inside_a_package_is_shown_as_written() {
         let dir = tempfile::tempdir().unwrap();
         write(

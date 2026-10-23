@@ -420,7 +420,6 @@ impl Project {
 /// The modules whose names astroid's brain plugins add to, so a name that
 /// their source lacks may still be there.
 const BRAINS: &[&str] = &[
-    "collections",
     "ctypes",
     "crypt",
     "curses",
@@ -565,8 +564,12 @@ impl Project {
             let listing = self.listing(dir);
             let package = dir.join(part);
             if listing.entry(part) == Some(true) {
-                if self.listing(&package).entry("__init__.py") == Some(false) {
-                    return Some(Spec::source(package.join("__init__.py"), true));
+                // astroid's finder takes a package with only `__init__.pyi` for a source package.
+                let inner = self.listing(&package);
+                for init in ["__init__.py", "__init__.pyi"] {
+                    if inner.entry(init) == Some(false) {
+                        return Some(Spec::source(package.join(init), true));
+                    }
                 }
                 if !listing.has_compiled(part)
                     && listing.entry(&format!("{part}.py")) != Some(false)
@@ -631,7 +634,9 @@ impl Project {
         let defined = brain
             || match &spec.kind {
                 // A file that does not parse binds names that cannot be told.
-                Kind::Source { .. } => self.names_of(name).is_none_or(|names| names.contains(attr)),
+                Kind::Source { .. } => self
+                    .names_of(name)
+                    .is_none_or(|names| names.contains(attr) || names.contains("*")),
                 Kind::Builtin(names) => attr.starts_with('_') || names.contains(&attr),
                 Kind::Extension => self.loads_extension(name),
                 Kind::Made => true,
@@ -809,7 +814,15 @@ impl Project {
             match item {
                 Late::Name(name) => add_name(out, &name, all),
                 Late::Star(origin) => {
-                    let _ = self.public_at(&origin, depth + 1, out);
+                    // A source that does not parse brings names that cannot be told: `*` stands for them.
+                    let told = self.public_at(&origin, depth + 1, out).is_some();
+                    if !told
+                        && self
+                            .spec(&origin)
+                            .is_some_and(|s| matches!(s.kind, Kind::Source { .. }))
+                    {
+                        out.push("*".into());
+                    }
                 }
             }
         }

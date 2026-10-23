@@ -349,8 +349,13 @@ impl<'a> Walk<'a, '_> {
 
     fn call(&mut self, call: &'a ruff_python_ast::ExprCall) {
         let Some(methods) = &self.timeout else { return };
-        let Some(qualified) = self.env.qualified(&call.func) else {
-            return;
+        // A function of this file is listed under the module's own name.
+        let qualified = match (&*call.func, self.env.qualified(&call.func)) {
+            (_, Some(qualified)) => qualified,
+            (Expr::Name(name), None) if self.env.func_of(name).is_some() => {
+                format!("{}.{}", self.ctx().module, name.id)
+            }
+            _ => return,
         };
         // `requests.get` re-exports `requests.api.get`.
         let listed = methods.iter().any(|m| {
@@ -633,7 +638,9 @@ pub(super) fn imported_names(body: &[Stmt]) -> HashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::classes::render;
+    use std::path::Path;
+
+    use super::super::classes::{render, render_at};
 
     #[test]
     fn disallowed_names() {
@@ -669,6 +676,17 @@ mod tests {
         let source = include_str!("fixtures/missing_timeout.py");
         let expected = include_str!("fixtures/missing_timeout.expected").trim_end();
         assert_eq!(render(source, &[], &["W3101"]), expected);
+    }
+
+    #[test]
+    fn a_function_of_the_listed_module() {
+        let source = "def request(method, url, **kwargs):\n    pass\n\n\ndef get(url, **kwargs):\n    return request(\"get\", url, **kwargs)\n\n\ndef put(url):\n    return request(\"put\", url)\n";
+        let at = |module| render_at(source, Path::new("api.py"), module, &[], &["W3101"]);
+        assert_eq!(
+            at("requests.api"),
+            "6:W3101:Missing timeout argument for method 'request' can cause your program to hang indefinitely\n10:W3101:Missing timeout argument for method 'request' can cause your program to hang indefinitely"
+        );
+        assert_eq!(at("other"), "");
     }
 
     #[test]

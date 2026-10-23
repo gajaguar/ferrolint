@@ -2,6 +2,16 @@
 
 ## 2026-10-22
 
+* **native-rules.md**: the arity rules (`E1120`, `E1121`, `E1124`, `E1125`)
+  read a decorated function by its signature as written, as Pylint does
+  (a `classmethod`, a property and its `setter` excepted), and follow
+  `cls(...)` in a classmethod and `self.__new__(Cls)`; `E1123` leaves out a
+  decorated function or constructor. `W3101` lists a function of the linted
+  file under its module's name. `E0611` no longer accepts any name of
+  `collections` and does not judge a name behind a `from m import *` of a
+  source that does not parse; a package with only an `__init__.pyi` is read
+  from the stub.
+
 * **native-rules.md**: the per-file rules run on a `.pyi` stub found under a
   directory, except `W0231`, `W0233`, `E1111` and `E1128`, which Pylint skips
   there; the `W0614` of a wildcard import of a stub-only module is left out.
