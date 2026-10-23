@@ -246,3 +246,31 @@ def multiline(a):
     if a.get(
         'k',   1) or True:
         pass
+
+
+class Attributes:
+    table = {}
+    names = []
+
+    def __init__(self):
+        self.cells = {}
+        self.names.append(1)
+
+    @classmethod
+    def build(cls, key, other):
+        if not 'k' in cls.table:
+            pass
+        if not 'k' in cls.__dict__:
+            pass
+        if not 'k' in other.table:
+            pass
+
+    def find(self, key):
+        if not 'k' in self.cells:
+            pass
+
+
+def named_call(value):
+    text = str(value)
+    if not 'k' in text:
+        pass

@@ -244,8 +244,11 @@ call:
   folds operations and comparisons of constants and names that hold them.
   The code a message quotes is written as astroid does.
 * `C0117` fires for a comparison whose two sides have a known type: a
-  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal,
-  a call of a builtin class, or `len` of one of these. Pylint infers more.
+  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal or to such a call,
+  a call of a builtin class, `len` of one of these, `self.__dict__`, or
+  `self.name` / `cls.name` when the enclosing class assigns `name` once, to
+  a literal (a base class is not read). An instance of a class, a property
+  or an attribute set from a parameter is not known, though Pylint infers it.
 * `W4701`, `E4702` and `E4703` take the iterated name as a list, dict or set
   when it is assigned a display, `list()`, `dict()`, `set()` or `list` or
   `set` of a display of constants; an attribute (`self.items`) is not
