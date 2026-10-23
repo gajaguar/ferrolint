@@ -29,3 +29,4 @@
 89:C0103:Variable name "MainCamel" doesn't conform to snake_case naming style
 90:C0103:Variable name "mainReassigned" doesn't conform to snake_case naming style
 91:C0103:Variable name "mainReassigned" doesn't conform to snake_case naming style
+103:C0103:Variable name "SHOWN" doesn't conform to snake_case naming style
