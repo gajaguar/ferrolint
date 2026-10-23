@@ -787,7 +787,12 @@ impl<'a> Walk<'a, '_> {
                         .find(|f| f.name.as_str() == "__init__");
                     (class.key(), init)
                 })
+                // astroid gives a dataclass the `__init__` it generates.
+                .or_else(|| self.generates_init(class, def).then(|| (class.key(), None)))
         });
+        if let Some((owner, None)) = &found {
+            return Some(owner.clone());
+        }
         // astroid finds an `__init__` on a class derived from a protocol.
         let Some((owner, init)) = found else {
             return mro
@@ -816,6 +821,48 @@ impl<'a> Walk<'a, '_> {
                 .is_some_and(|name| name == "abc.abstractmethod")
         });
         (!abstract_).then_some(owner)
+    }
+
+    /// Whether `def` is a `@dataclass` that keeps `init=True` and declares a
+    /// field: astroid generates no `__init__` without one.
+    ///
+    /// shortcut: the fields of its own body only, where the generated
+    /// `__init__` also takes the ones a dataclass base declares; upgrade by
+    /// walking the MRO.
+    fn generates_init(&self, class: &Class<'a>, def: &StmtClassDef) -> bool {
+        let field = |stmt: &Stmt| {
+            let Stmt::AnnAssign(a) = stmt else {
+                return false;
+            };
+            let annotation = match &*a.annotation {
+                Expr::Subscript(s) => &*s.value,
+                other => other,
+            };
+            let leaf = match annotation {
+                Expr::Name(n) => n.id.as_str(),
+                Expr::Attribute(at) => at.attr.as_str(),
+                _ => "",
+            };
+            matches!(&*a.target, Expr::Name(_)) && !matches!(leaf, "ClassVar" | "KW_ONLY")
+        };
+        def.body.iter().any(field)
+            && def.decorator_list.iter().any(|d| {
+                let (func, init_off) = match &d.expression {
+                    Expr::Call(call) => (
+                        &*call.func,
+                        call.arguments.keywords.iter().any(|k| {
+                            k.arg.as_ref().is_some_and(|a| a.as_str() == "init")
+                                && matches!(&k.value, Expr::BooleanLiteral(b) if !b.value)
+                        }),
+                    ),
+                    other => (other, false),
+                };
+                !init_off
+                    && self
+                        .hierarchy
+                        .qualify(class, func)
+                        .is_some_and(|name| name == "dataclasses.dataclass")
+            })
     }
 
     /// The identity of the direct bases of `class`, or `None` when one is unknown.
@@ -1138,10 +1185,28 @@ mod tests {
     }
 
     #[test]
+    fn a_base_bound_by_an_alias_is_a_class() {
+        let source = "class A:\n    def f(self, a):\n        pass\n\n\nB = A\n\n\nclass C(B):\n    def f(self, b):\n        pass\n";
+        assert_eq!(
+            render(source, &[], &["W0237"]),
+            "10:W0237:Parameter 'a' has been renamed to 'b' in overriding 'C.f' method"
+        );
+    }
+
+    #[test]
     fn super_init_not_called() {
         let source = include_str!("fixtures/super_init_not_called.py");
         let expected = include_str!("fixtures/super_init_not_called.expected").trim_end();
         assert_eq!(render(source, &[], &["W0231"]), expected);
+    }
+
+    #[test]
+    fn a_dataclass_has_an_init_to_call() {
+        let source = "from dataclasses import dataclass\n\n\n@dataclass\nclass A:\n    x: int = 0\n\n\n@dataclass(init=False)\nclass B:\n    x: int = 0\n\n\n@dataclass\nclass E:\n    pass\n\n\nclass C(A):\n    def __init__(self):\n        self.y = 1\n\n\nclass D(B):\n    def __init__(self):\n        self.y = 1\n\n\nclass F(E):\n    def __init__(self):\n        self.y = 1\n";
+        assert_eq!(
+            render(source, &[], &["W0231"]),
+            "20:W0231:__init__ method from base class 'A' is not called"
+        );
     }
 
     #[test]

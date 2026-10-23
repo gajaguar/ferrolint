@@ -245,10 +245,20 @@ impl Project {
     pub fn with_packages(path: &Path, module: &str) -> Self {
         let mut project = Self::new(path, module);
         if let Some((library, packages)) = environment() {
+            project.stdlib = Some(library.clone());
             project.roots.push(library);
             project.roots.extend(packages);
         }
         project
+    }
+
+    /// Whether the environment is known and holds no module `name`, so that
+    /// astroid cannot import it either.
+    pub fn is_missing(&self, name: &str) -> bool {
+        // A bare `.` names the package itself.
+        self.stdlib.is_some()
+            && !name.trim_start_matches('.').is_empty()
+            && self.spec(&self.absolute(name)).is_none()
     }
 
     /// The modules that `from m import *` names at the top level of `body`.
@@ -1100,15 +1110,12 @@ impl ClassRef {
             }));
         }
         let Some(qualified) = self.module.qualify(expr) else {
-            // A name that `from module import *` binds.
+            // A name that `from module import *` binds, or `Alias = Class`.
             let Expr::Name(name) = expr else {
                 return None;
             };
-            return self
-                .module
-                .stars
-                .iter()
-                .find_map(|star| project.class(&format!("{star}.{}", name.id)))
+            return project
+                .class(&format!("{}.{}", self.module.name, name.id))
                 .map(Ok);
         };
         Some(project.class(&qualified).ok_or(qualified))
@@ -1405,6 +1412,38 @@ mod tests {
         let bases = project.class("app.child.Child").unwrap().bases(&project);
         assert_eq!(bases.len(), 1);
         assert_eq!(bases[0].as_ref().unwrap().qname(), "app.base.Base");
+    }
+
+    #[test]
+    fn a_base_bound_by_an_alias_of_its_module_is_found() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write(
+            "app/child.py",
+            "class Base:\n    pass\n\nAlias = Base\n\nclass Child(Alias):\n    pass\n",
+        );
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let bases = project.class("app.child.Child").unwrap().bases(&project);
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].as_ref().unwrap().qname(), "app.child.Base");
+    }
+
+    #[test]
+    fn a_module_is_missing_only_where_the_environment_is_known() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("here.py"), "").unwrap();
+        let mut project = Project::new(&root.path().join("mod.py"), "mod");
+        assert!(!project.is_missing("absent"));
+        project.stdlib = Some(root.path().to_path_buf());
+        assert!(project.is_missing("absent"));
+        assert!(!project.is_missing("here"));
+        assert!(!project.is_missing("."));
     }
 
     #[test]
