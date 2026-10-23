@@ -387,8 +387,9 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   and an attribute that an ancestor defines are looked up among the classes
   of the file by name.
 * `W3101` knows `requests.get` for `requests.api.get`, and no other
-  re-export. A function of the linted file is listed under its module's name
-  (`requests.api.request` for the `request` that `requests/api.py` defines). A `**` argument is read as the empty dict for the `**kwargs`
+  re-export. A function of the linted file is listed under its module's
+  name (`requests.api.request` for the `request` that `requests/api.py`
+  defines). A `**` argument is read as the empty dict for the `**kwargs`
   parameter of the enclosing function and as the literal when it is a dict
   display of strings; any other `**` skips the call, as Pylint does when
   it cannot infer the keywords.
@@ -514,8 +515,9 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   functional `Enum("Name", ...)`. A class bound twice (a fallback in
   `try`/`except` or `if`, a base bound in both branches of an `if`), a class
   returned by a call of an installed package, a standard library class
-  missing from the class table (`_Fraction = Fraction`), the value of a standard library
-  attribute (`sys.platform`, `math.pi`, `os.sep`), `%` formatting, a name
+  missing from the class table (`_Fraction = Fraction`), the value of a
+  standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`
+  formatting, a name
   read through `getattr` or `hasattr`, a variable whose value is a factory or
   an attribute of an installed package (`Pool = app.Pool`), and the attribute
   that `obj = Cls(); obj.attr = 1` adds to `Cls` from outside its body are
