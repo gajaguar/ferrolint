@@ -16,13 +16,13 @@ use std::fmt::Write as _;
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    BoolOp, CmpOp, Comprehension, Expr, ExprBoolOp, ExprCompare, HasNodeIndex, Number, Stmt,
-    StmtClassDef, StmtFunctionDef, UnaryOp,
+    BoolOp, CmpOp, Comprehension, Expr, ExprBoolOp, ExprCompare, ExprContext, HasNodeIndex, Number,
+    Stmt, StmtClassDef, StmtFunctionDef, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange};
 
 use super::astring::as_string;
-use super::classes::{Env, py_repr};
+use super::classes::{Env, is_static, py_repr};
 use super::flow::{const_truth, own_returns};
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -1143,12 +1143,17 @@ impl Walk<'_, '_> {
         if first.is_none_or(|p| p.name().as_str() != base.id.as_str()) {
             return false;
         }
+        if is_static(func) {
+            return false;
+        }
         if name == "__dict__" {
             return true;
         }
         let mut found = AttrAssigns {
             name,
             values: Vec::new(),
+            stores: 0,
+            in_fn: false,
         };
         for stmt in &class.body {
             if let Stmt::Assign(a) = stmt {
@@ -1160,14 +1165,19 @@ impl Walk<'_, '_> {
             }
         }
         found.visit_body(&class.body);
-        matches!(found.values[..], [only] if literal_type(only))
+        // any other store (`+=`, unpacking, `for`, `with`, a `def`) types it differently
+        matches!(found.values[..], [only] if literal_type(only)) && found.stores == 1
     }
 }
 
-/// The values assigned to `.name` on any object in a class.
+/// The values assigned to `.name` on any object in a class, and how many
+/// times `name` is bound at all (as an attribute anywhere, as a name or a
+/// `def` in the class body).
 struct AttrAssigns<'a> {
     name: &'a str,
     values: Vec<&'a Expr>,
+    stores: usize,
+    in_fn: bool,
 }
 
 impl<'a> Visitor<'a> for AttrAssigns<'a> {
@@ -1179,7 +1189,25 @@ impl<'a> Visitor<'a> for AttrAssigns<'a> {
                 }
             }
         }
+        let outer = self.in_fn;
+        if let Stmt::FunctionDef(f) = stmt {
+            self.stores += usize::from(!outer && f.name.as_str() == self.name);
+            self.in_fn = true;
+        }
         visitor::walk_stmt(self, stmt);
+        self.in_fn = outer;
+    }
+
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        let stored = match expr {
+            Expr::Attribute(a) => a.attr.as_str() == self.name && a.ctx == ExprContext::Store,
+            Expr::Name(n) => {
+                !self.in_fn && n.id.as_str() == self.name && n.ctx == ExprContext::Store
+            }
+            _ => false,
+        };
+        self.stores += usize::from(stored);
+        visitor::walk_expr(self, expr);
     }
 }
 

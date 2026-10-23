@@ -274,3 +274,33 @@ def named_call(value):
     text = str(value)
     if not 'k' in text:
         pass
+
+
+class Rebound:
+    grown = 1
+    pair = 1
+    prop = 1
+    plain = 1
+
+    def __init__(self):
+        self.grown += 1.5
+        self.pair, other = None, 1
+
+    @property
+    def prop(self):
+        return object()
+
+    @staticmethod
+    def build(self):
+        if not self.plain < 3:
+            pass
+
+    def find(self):
+        if not self.grown < 3:
+            pass
+        if not self.pair < 3:
+            pass
+        if not self.prop < 3:
+            pass
+        if not self.plain < 3:
+            pass
