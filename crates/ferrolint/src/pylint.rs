@@ -18,20 +18,8 @@ pub struct Issue {
     pub name: Option<String>,
 }
 
-const CATEGORIES: [&str; 12] = [
-    "c",
-    "r",
-    "w",
-    "e",
-    "f",
-    "i",
-    "convention",
-    "refactor",
-    "warning",
-    "error",
-    "fatal",
-    "info",
-];
+// Pylint upper-cases the name and looks it up among the one-letter categories only.
+const CATEGORIES: [&str; 6] = ["c", "r", "w", "e", "f", "i"];
 
 /// The W0012 or R0022 for a `disable`/`enable`/pragma name that is no Pylint
 /// message, category, checker or `all`. `plugin_loaded` tells whether
@@ -50,7 +38,7 @@ pub fn message_issue(
     let owner = names::owner(name)
         .or_else(|| names::owner(&upper))
         .or_else(|| names::owner(&lower));
-    let known = lower == "all"
+    let known = name == "all"
         || lower.starts_with("rp")
         || CATEGORIES.contains(&lower.as_str())
         || (pylint_name && owner.is_none_or(plugin_loaded));
@@ -408,6 +396,25 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
         )
         .unwrap();
         assert_eq!(issues(&on, true, |_| true), []);
+    }
+
+    #[test]
+    fn names_are_case_sensitive_but_codes_and_categories_are_not() {
+        for ok in ["w0012", "R1710", "c", "E", "all", "IMPORTS", "rp0001"] {
+            assert!(message_issue("disable", ok, &|_| false).is_none(), "{ok}");
+        }
+        for bad in [
+            "ALL",
+            "convention",
+            "Warning",
+            "Unused-Import",
+            "UNUSED-IMPORT",
+            "c0501",
+        ] {
+            let issue = message_issue("disable", bad, &|_| false).unwrap();
+            assert_eq!(issue.code, "W0012", "{bad}");
+        }
+        assert!(message_issue("disable", "c0501", &|m| m.ends_with("for_any_all")).is_none());
     }
 
     #[test]
