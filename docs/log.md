@@ -2,6 +2,10 @@
 
 ## 2026-10-23
 
+* **native-rules.md**: the arity rules read a class of another module of the
+  project, a `*name` of a list or tuple literal, `f.__get__(...)`, `cls.method(...)`
+  in a metaclass as an unbound call, and `self.__new__(X)` whatever the bases.
+
 * **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
   imported from the project or an installed package, a method of a base from
   another module and `self.name()` set to such a function; `W0101` reads the

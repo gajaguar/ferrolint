@@ -1051,7 +1051,9 @@ Known divergences from Pylint, where Pylint infers the callee:
 
 * The callee is the one `W1114` resolves (see Batch B): a name bound once to
   a function of the file, `self.method` of the enclosing class, `cls(...)` in
-  a `classmethod` or a class of the file with one `__init__`. A decorator
+  a `classmethod`, a class of the file with one `__init__` or, for the arity
+  rules only, such a class of another module of the project (its own
+  `__init__`, no `__new__` along its bases). A decorator
   changes nothing but `E1123` of a function or constructor, left out when it
   has one (Pylint looks for the keyword among what the decorator returns). An
   imported function, a class method, an alias of a method
@@ -1061,15 +1063,20 @@ Known divergences from Pylint, where Pylint infers the callee:
 * A class is followed only when it has no `__new__`, metaclass or decorator and
   every base is a builtin class or such a class of the file. Pylint reads the
   constructor of an imported base too.
-* A call with a starred argument or a `**` is skipped, where Pylint unpacks a
-  literal list, tuple or dict written in the call.
+* A call with a `**` or a `*` of anything but a name bound once to a list or
+  tuple literal (`args = []` then `f(*args)` counts as no argument, whatever is
+  appended later, as Pylint reads it) is skipped, where Pylint also unpacks a
+  literal written in the call.
 * A call to a `ctypes` type that astroid's brain gives a `__init__(self,
   value)` (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the
   other `wintypes` names of those types) reports the missing `value`.
-  `self.__new__(Cls)` in a class with no base but `object` reports the missing
-  `cls` (astroid reads `object.__new__` as `(self, cls)`); with a `__new__`
-  of the class, a base from elsewhere or other arguments it is not judged, nor
-  is a method of an instance that a call returns. Left to type inference: a
+  `self.__new__(Cls)` in a class reports the missing `cls` whatever its bases
+  (astroid reads the `__new__` of an instance as `(self, cls)`); with other
+  arguments it is not judged, nor is a method of an instance that a call
+  returns. `f.__get__(a, b)` of a function of the file takes the parameters of
+  `f`, defaulted or not, and `type` (astroid builds that signature); positional
+  arguments only. `cls.method(...)` in a method of a class deriving from
+  `type` or `abc.ABCMeta` is an unbound call, `cls` counted as a parameter. Left to type inference: a
   callee from another module (`ws.send(...)` of a socket built elsewhere),
   `self.get(...)` on a receiver not named `self`, `functools.partial` objects
   (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class

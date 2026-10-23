@@ -16,19 +16,21 @@
 //! (`W1503`). `E1111` and `E1128` take the same callees but a constructor,
 //! and not the builtin methods (`lst.sort()`). Upgrade with a call inference.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashSet};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Expr, ExprCall, ParameterWithDefault, Stmt, StmtAssign, StmtClassDef, StmtFunctionDef,
-    StmtRaise,
+    Arguments, Expr, ExprCall, ParameterWithDefault, Stmt, StmtAssign, StmtClassDef,
+    StmtFunctionDef, StmtRaise,
 };
 
 use super::abstract_methods::raises_not_implemented;
-use super::classes::{Env, Local, const_repr, is_classmethod, is_static, locals, py_repr};
+use super::classes::{Env, Local, bases, const_repr, is_classmethod, is_static, locals, py_repr};
 use super::flow::own_returns;
 use super::misc::csv;
+use super::project::{ClassRef, Project};
 use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -214,6 +216,7 @@ impl Checker for Calls {
             classes: Vec::new(),
             defs: Vec::new(),
             annotated: HashSet::new(),
+            project: OnceCell::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -238,6 +241,8 @@ struct Walk<'a, 'e> {
     defs: Vec<&'a StmtFunctionDef>,
     /// The values of the annotated assignments met, by address.
     annotated: HashSet<usize>,
+    /// The project around the file, read when a call builds a class of another module.
+    project: OnceCell<Project>,
 }
 
 fn address(expr: &Expr) -> usize {
@@ -339,11 +344,145 @@ impl<'a> Walk<'a, '_> {
         if self.on(OUT_OF_ORDER) || self.on(SUPERSEDED) || ARITY.iter().any(|id| self.on(id)) {
             self.arguments(call);
         }
+        if self.on(MISSING) || self.on(TOO_MANY) {
+            self.descriptor(call);
+        }
+        if ARITY.iter().any(|id| self.on(id)) {
+            self.imported(call);
+        }
     }
 
-    /// `self.__new__(X)` in a class that derives from nothing but `object`: astroid reads
-    /// `object.__new__` as `(self, cls)`, so the one argument leaves `cls` without a value.
-    // shortcut: a class of the file only; a base from another module may define `__new__`.
+    /// `f.__get__(a, b)` of a function of the file: astroid gives `__get__` the
+    /// parameters of `f`, defaulted or not, and `type`.
+    // shortcut: positional arguments only; upgrade with a keyword match.
+    fn descriptor(&mut self, call: &ExprCall) {
+        let (Expr::Attribute(method), args) = (&*call.func, &call.arguments) else {
+            return;
+        };
+        let Expr::Name(name) = &*method.value else {
+            return;
+        };
+        if method.attr.as_str() != "__get__"
+            || !args.keywords.is_empty()
+            || args.args.iter().any(|a| matches!(a, Expr::Starred(_)))
+        {
+            return;
+        }
+        let Some(func) = self.env.func_of(name) else {
+            return;
+        };
+        let p = &func.parameters;
+        let wanted: Vec<&str> = (p.posonlyargs.iter().chain(&p.args))
+            .map(named)
+            .chain(["type"])
+            .collect();
+        let ctx = self.env.ctx;
+        let kind = if is_static(func) {
+            "staticmethod"
+        } else if is_classmethod(func) {
+            "classmethod"
+        } else {
+            "function"
+        };
+        if args.args.len() > wanted.len() && self.on(TOO_MANY) {
+            self.out.push(ctx.report(
+                TOO_MANY,
+                call,
+                format!("Too many positional arguments for {kind} call"),
+            ));
+        }
+        if self.on(MISSING) {
+            for missing in wanted.iter().skip(args.args.len()) {
+                self.out.push(ctx.report(
+                    MISSING,
+                    call,
+                    format!("No value for argument {} in {kind} call", py_repr(missing)),
+                ));
+            }
+        }
+    }
+
+    /// A class of another module of the project built by a call, which has its own
+    /// `__init__` and no `__new__` along its bases.
+    // shortcut: the project's own modules, not the installed packages; upgrade with their sources.
+    fn imported(&mut self, call: &ExprCall) {
+        if self.callee(call).is_some() {
+            return;
+        }
+        let Some(qualified) = self.env.qualified(&call.func).filter(|q| q.contains('.')) else {
+            return;
+        };
+        let project = self
+            .project
+            .get_or_init(|| Project::new(self.env.ctx.path, self.env.ctx.module));
+        let Some(class) = project.class(&project.absolute(&qualified)) else {
+            return;
+        };
+        let Some(callee) = class
+            .class()
+            .and_then(constructor)
+            .filter(|_| class.is_sole() && buildable(project, &class, 0))
+        else {
+            return;
+        };
+        let Some(count) = self.positional(&call.arguments) else {
+            return;
+        };
+        self.arity(call, &callee, count);
+    }
+
+    /// The number of positional arguments of a call, a `*name` of a list or tuple
+    /// literal counting as its elements; `None` when a `**` or another `*` hides them.
+    fn positional(&self, args: &Arguments) -> Option<usize> {
+        if args.keywords.iter().any(|k| k.arg.is_none()) {
+            return None;
+        }
+        args.args.iter().try_fold(0, |count, arg| match arg {
+            Expr::Starred(s) => self.env.literal_len(&s.value).map(|n| count + n),
+            _ => Some(count + 1),
+        })
+    }
+
+    /// `cls.method(...)` in a method of a metaclass: astroid infers `cls` as the class
+    /// itself, so a method of the metaclass is read unbound, its first parameter included.
+    // shortcut: a metaclass deriving from `type` or `abc.ABCMeta` through classes of the file.
+    fn metaclass_call(&self, call: &ExprCall) -> Option<Callee<'a>> {
+        let Expr::Attribute(attribute) = &*call.func else {
+            return None;
+        };
+        let Expr::Name(receiver) = &*attribute.value else {
+            return None;
+        };
+        let (class, _) = self.classes.last()?;
+        let method = self.defs.last()?;
+        let direct = super::classes::methods(&class.body)
+            .into_iter()
+            .any(|m| std::ptr::eq(m, *method));
+        let func = own_method(class, attribute.attr.as_str())?;
+        (direct
+            && !is_static(method)
+            && receiver.id.as_str() == named(method.parameters.args.first()?)
+            && self
+                .env
+                .binding(receiver)
+                .is_some_and(|b| b.kind == BindingKind::Parameter)
+            && bases(class).iter().any(|base| {
+                self.env
+                    .base_is(base, &|name| matches!(name, "type" | "abc.ABCMeta"))
+            }))
+        .then_some(Callee {
+            func,
+            kind: if is_static(func) {
+                "staticmethod"
+            } else {
+                "unbound method"
+            },
+            class: None,
+        })
+    }
+
+    /// `self.__new__(X)` in a class: astroid reads the `__new__` of an instance as
+    /// `(self, cls)` whatever the bases are, so the one argument leaves `cls` without a value.
     fn object_new(&self, call: &ExprCall) -> bool {
         let Expr::Attribute(method) = &*call.func else {
             return false;
@@ -356,13 +495,11 @@ impl<'a> Walk<'a, '_> {
             && (positional, keywords) == (1, 0)
             && !matches!(call.arguments.args[0], Expr::Starred(_))
             && receiver.id.as_str() == "self"
+            && !self.classes.is_empty()
             && self
                 .env
                 .binding(receiver)
                 .is_some_and(|b| b.kind == BindingKind::Parameter)
-            && self.classes.last().is_some_and(|(class, _)| {
-                self.env.plain(class, 0) && constructible(self.env, class, 0)
-            })
     }
 
     fn unittest(&mut self, call: &ExprCall) {
@@ -408,7 +545,9 @@ impl<'a> Walk<'a, '_> {
 
     /// The function a call calls, with how Pylint names the call.
     fn callee(&self, call: &ExprCall) -> Option<Callee<'a>> {
-        callee(self.env, &self.classes, call).or_else(|| self.cls_constructor(call))
+        (self.metaclass_call(call))
+            .or_else(|| callee(self.env, &self.classes, call))
+            .or_else(|| self.cls_constructor(call))
     }
 
     /// `cls(...)` in a classmethod, which builds the class that defines it.
@@ -445,11 +584,9 @@ impl<'a> Walk<'a, '_> {
         };
         let (func, in_class) = (callee.func, callee.kind != "function");
         let args = &call.arguments;
-        if args.args.iter().any(|a| matches!(a, Expr::Starred(_)))
-            || args.keywords.iter().any(|k| k.arg.is_none())
-        {
+        let Some(count) = self.positional(args) else {
             return;
-        }
+        };
         let p = &func.parameters;
         let mut params: Vec<&str> = p
             .posonlyargs
@@ -461,7 +598,7 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         if ARITY.iter().any(|id| self.on(id)) && self.settled(call, &callee) {
-            self.arity(call, &callee);
+            self.arity(call, &callee, count);
         }
         if self.on(OUT_OF_ORDER) {
             if in_class && params.first() == Some(&"self") {
@@ -513,11 +650,10 @@ impl<'a> Walk<'a, '_> {
     }
 
     /// Pylint's match of the arguments of a call against the parameters.
-    fn arity(&mut self, call: &ExprCall, callee: &Callee<'_>) {
+    fn arity(&mut self, call: &ExprCall, callee: &Callee<'_>, count: usize) {
         let (p, args) = (&callee.func.parameters, &call.arguments);
         // The bound `self` of a method or constructor is an argument too.
-        let positional =
-            args.args.len() + usize::from(matches!(callee.kind, "method" | "constructor"));
+        let positional = count + usize::from(matches!(callee.kind, "method" | "constructor"));
         let params: Vec<_> = p.posonlyargs.iter().chain(&p.args).collect();
         let mut given = vec![false; params.len()];
         let mut kw_given = vec![false; p.kwonlyargs.len()];
@@ -790,6 +926,22 @@ fn settled<'a>(
     }
 }
 
+/// Whether the constructor of the project's `class` is its `__init__`: no `__new__`
+/// along its bases, which are all `object`, a builtin or such a class.
+fn buildable(project: &Project, class: &ClassRef, depth: u8) -> bool {
+    let Some(def) = class.class() else {
+        return false;
+    };
+    let found = class.bases(project);
+    depth < 16
+        && !locals(&def.body).iter().any(|(n, _)| n == "__new__")
+        && found.len() == bases(def).len()
+        && found.iter().all(|base| match base {
+            Ok(base) => buildable(project, base, depth + 1),
+            Err(name) => !name.contains('.'),
+        })
+}
+
 /// Whether the constructor of `class` is its `__init__`: no `__new__`
 /// and no base but a builtin class or such a class of the file.
 fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
@@ -1007,5 +1159,28 @@ mod tests {
         let expected = include_str!("fixtures/call_arity.expected").trim_end();
         let ids = ["E1120", "E1121", "E1123", "E1124", "E1125"];
         assert_eq!(render(source, &[], &ids), expected);
+    }
+
+    #[test]
+    fn constructors_of_other_modules() {
+        use super::super::classes::render_at;
+
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "class Base:\n    def __init__(self, a, b):\n        pass\n\n\nclass Own(Base):\n    def __init__(self, a):\n        pass\n\n\nclass Newer:\n    def __new__(cls, *args):\n        return object.__new__(cls)\n\n    def __init__(self, a):\n        pass\n",
+        )
+        .unwrap();
+        let source = "from pkg import base\nfrom pkg.base import Base, Newer, Own\n\nBase(1)\nNewer()\nbase.Own()\nlst = []\nOwn(*lst)\nOwn(1)\n";
+        let ids = ["E1120", "E1121"];
+        let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
+        assert_eq!(
+            found,
+            "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call",
+            "{found}"
+        );
     }
 }

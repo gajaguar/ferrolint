@@ -26,7 +26,7 @@ pub struct Env<'a> {
     pub ctx: &'a Ctx<'a>,
     classes: HashMap<u32, &'a StmtClassDef>,
     funcs: HashMap<u32, &'a StmtFunctionDef>,
-    /// `Alias = Name` by the node id of `Alias`.
+    /// `Alias = Name`, `name = [...]` and `name = (...)` by the node id of the target.
     aliases: HashMap<u32, &'a Expr>,
 }
 
@@ -56,7 +56,8 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
                 }
             }
             Stmt::Assign(assign) => {
-                if let ([Expr::Name(target)], Expr::Name(_)) = (&assign.targets[..], &*assign.value)
+                if let ([Expr::Name(target)], Expr::Name(_) | Expr::List(_) | Expr::Tuple(_)) =
+                    (&assign.targets[..], &*assign.value)
                     && let Some(id) = ruff_python_ast::HasNodeIndex::node_index(target)
                         .load()
                         .as_u32()
@@ -166,6 +167,21 @@ impl<'a> Env<'a> {
             BindingKind::Assignment if depth < 8 => {
                 self.class_of_at(self.aliases.get(&binding.node?)?, depth + 1)
             }
+            _ => None,
+        }
+    }
+
+    /// The number of elements of the list or tuple literal that `expr` names, when
+    /// it is bound only once: where Pylint unpacks `*expr` into that many arguments.
+    pub fn literal_len(&self, expr: &Expr) -> Option<usize> {
+        let Expr::Name(name) = expr else { return None };
+        let binding = self.binding(name)?;
+        if binding.kind != BindingKind::Assignment || !self.ctx.model.is_sole_binding(binding.id) {
+            return None;
+        }
+        match self.aliases.get(&binding.node?)? {
+            Expr::List(list) => Some(list.elts.len()),
+            Expr::Tuple(tuple) => Some(tuple.elts.len()),
             _ => None,
         }
     }

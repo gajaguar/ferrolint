@@ -282,3 +282,93 @@ class Factory:
 
     def instance(cls):
         return cls()
+
+
+class WithBase(Factory):
+    def copy(self):
+        return self.__new__(WithBase)
+
+    def own(self):
+        return self.__new__(WithBase, 1)
+
+
+def descriptors():
+    import functools
+
+    def plain(a, b=1, *args, c, **kw):
+        return a, b, args, c, kw
+
+    def posonly(a, b, /):
+        return a, b
+
+    @staticmethod
+    def wrapped(a):
+        return a
+
+    @functools.wraps(plain)
+    def wraps(a):
+        return a
+
+    @classmethod
+    def method(cls):
+        return cls
+
+    wrapped.__get__(None)
+    wraps.__get__(None)
+    method.__get__(None)
+    plain.__get__(None, int)
+    plain.__get__(None, int, 1)
+    plain.__get__(None, int, 1, 2)
+    posonly.__get__(None, int)
+
+
+def unpacked(a, b):
+    return a, b
+
+
+def star():
+    empty = []
+    empty.append(1)
+    unpacked(*empty)
+    one = [1]
+    unpacked(*one)
+    unpacked(*one, 2)
+    unpacked(*one, b=2)
+    triple = (1, 2, 3)
+    unpacked(*triple)
+    many = []
+    if empty:
+        many = [1, 2]
+    unpacked(*many)
+    unknown = [*one]
+    unpacked(*unknown)
+
+
+class Meta(type):
+    def init(cls, name):
+        cls.setup(name)
+        cls.setup(cls, name)
+        cls.fixed(name)
+        cls.fixed()
+
+    def other(self):
+        self.setup()
+
+    @classmethod
+    def build(mcs):
+        mcs.setup(1)
+
+    def setup(cls, name):
+        return name
+
+    @staticmethod
+    def fixed(name):
+        return name
+
+
+class Ordinary:
+    def init(cls, name):
+        cls.setup(name)
+
+    def setup(cls, name):
+        return name
