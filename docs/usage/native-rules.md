@@ -1430,8 +1430,10 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
 * `R0401` is reported once per cycle at line 1 of the file that sorts last
   among the linted ones; Pylint attaches it to the file it checked last, in
   filesystem order. The cycles and their text agree.
-* `R0801` takes the files in name order and attaches the message to the last
-  one; Pylint takes them in the order of its file walk. Pylint prints the
+* `R0801` takes the files in name order and attaches the messages to the one
+  `os.walk` reaches last (a directory's files, then its subdirectories, in the
+  order the file system lists them), as Pylint does; that order is the file
+  system's, so it differs between machines. Pylint prints the
   lines of any one of the files (a set's iteration order); this prints those
   of the first. Several `R0401` or `R0801` findings of one run come out
   ordered by message, since both sit at the same position. The hash of a

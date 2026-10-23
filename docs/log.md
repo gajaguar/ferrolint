@@ -8,6 +8,8 @@
   calls of an assignment and of an `await`. `pytest.fail` and its kin no
   longer end a block, as pytest 8 makes them objects Pylint cannot infer.
 
+* **native-rules.md**: `R0801` sits on the file `os.walk` reaches last, as
+  Pylint attaches it, not the last by name.
 * **native-rules.md**: the arity rules (`E1120`, `E1121`, `E1124`, `E1125`)
   read a decorated function by its signature as written, as Pylint does
   (a `classmethod`, a property and its `setter` excepted), and follow

@@ -178,7 +178,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         }
         touched = project.touched();
     }
-    if duplicates && let Some(last) = units.last() {
+    if duplicates && let Some(last) = checked_last(arguments(params), &units) {
         out.extend(
             project_phase::duplicates(&units, &opts, params.registry)
                 .into_iter()
@@ -199,6 +199,41 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         );
     }
     (out, units)
+}
+
+/// The file Pylint checks last, where it attaches R0801: the one `os.walk`
+/// reaches last in the arguments' trees (a directory's files, then its
+/// subdirectories, in the order the file system lists them).
+// shortcut: R0401 still takes the last by name, and the cache key ignores
+// the listing order; move R0401 here when its corpora agree.
+fn checked_last(arguments: Vec<PathBuf>, units: &[Unit]) -> Option<&Unit> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let mut subdirs = Vec::new();
+        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                subdirs.push(entry.path());
+            } else {
+                out.push(entry.path());
+            }
+        }
+        for subdir in subdirs {
+            walk(&subdir, out);
+        }
+    }
+    let mut order = Vec::new();
+    for argument in arguments {
+        let real = fs::canonicalize(&argument).unwrap_or(argument);
+        walk(&real, &mut order);
+    }
+    // A file the walk does not reach ranks first; if none is reached, the last by name.
+    let rank: std::collections::HashMap<&PathBuf, usize> = order
+        .iter()
+        .enumerate()
+        .map(|(at, p)| (p, at + 1))
+        .collect();
+    units
+        .iter()
+        .max_by_key(|unit| rank.get(&unit.path).copied().unwrap_or(0))
 }
 
 fn finding(registry: &Registry, path: String, diagnostic: ferrolint_core::Diagnostic) -> Finding {
@@ -331,5 +366,35 @@ fn stamp_of(path: &Path) -> String {
             format!("{}:{modified}", meta.len())
         }
         Err(_) => "absent".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_file_checked_last_is_the_walk_s_not_the_name_s() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+        // By name `z.py` is last; the walk lists a directory's files first.
+        let units: Vec<Unit> = ["sub/a.py", "z.py"]
+            .iter()
+            .map(|name| {
+                fs::write(root.join(name), "").unwrap();
+                Unit {
+                    path: root.join(name),
+                    display: (*name).to_owned(),
+                    module: (*name).to_owned(),
+                    is_package: false,
+                    duplicates: true,
+                }
+            })
+            .collect();
+        assert_eq!(
+            checked_last(vec![root], &units).unwrap().display,
+            "sub/a.py"
+        );
     }
 }
