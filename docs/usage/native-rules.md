@@ -665,10 +665,21 @@ Known divergences:
   builtin exception has (`args`, `__cause__`, `with_traceback`, ...); the
   attributes of one exception (`errno`, `msg`) are not known here. `E0203`
   skips the `object` attributes too.
-* `W0201` is missed where Pylint drops a base it cannot infer and the class
-  here has an unknown MRO: a base that is a call (`getTableClass("glyf")`),
-  a `Base[Missing[T]]` whose argument is unresolvable, or a name Pylint
-  follows to a class.
+* A base that astroid certainly fails to infer is left out of the ancestors,
+  as Pylint leaves it out (for every rule that reads them): a name that only
+  imports of a module the environment lacks bind (`from exceptiongroup import
+  X` with `exceptiongroup` not installed), or a `Base[...]` whose value or
+  single index is such a name (`AbstractRaises[BaseExceptionGroup[T]]`). It
+  needs `VIRTUAL_ENV`; without it the class keeps an unknown MRO. A name that
+  something else also binds (`except ImportError: X = object`) stays unknown.
+  A name bound once to `make()`, a plain function of the file whose every
+  `return` names one class, is that class (a mixin factory).
+* `W0201` is missed where Pylint infers a base here unknown and the class has
+  an unknown MRO: a base that is a call into another module
+  (`getTableClass("glyf")` yields `DefaultTable` as well as what astroid cannot
+  infer; `getFormatSwitchingBaseTableClass("uint8")` a class picked from a
+  dict by its argument), a factory returning one of several classes, a factory
+  of another module, or a name Pylint follows to a class.
 * `__slots__` keeps astroid from recording an attribute outside them, for
   `R0902`, `W0201`, `E0202` and `E0203` alike, when the class and every
   ancestor of the file or project give plain slots (a string, list, tuple,

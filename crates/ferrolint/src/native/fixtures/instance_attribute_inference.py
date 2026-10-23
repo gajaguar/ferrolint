@@ -85,3 +85,25 @@ class Aliased:
         self.b = 1
 
     start = _begin
+
+
+def make_mixin():
+    class Made:
+        def __init__(self):
+            self.ready = 1
+
+        def load(self):
+            self.loaded = 1
+
+    return Made
+
+
+Mixin = make_mixin()
+
+
+class FromFactory(Mixin):
+    def run(self):
+        self.ready = 2
+        self.loaded = 2
+        self.own = 1
+

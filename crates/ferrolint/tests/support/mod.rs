@@ -341,16 +341,24 @@ impl Project {
 
     /// Run the linter in the project directory.
     pub fn run(&self, args: &[&str]) -> Run {
-        let output = Command::new(env!("CARGO_BIN_EXE_ferrolint"))
+        self.run_in(args, None)
+    }
+
+    /// As [`Project::run`], with `VIRTUAL_ENV` set to `venv` when given.
+    pub fn run_in(&self, args: &[&str], venv: Option<&Path>) -> Run {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ferrolint"));
+        command
             .args(args)
             .current_dir(self.path())
             // the caller's virtualenv would change which imports resolve
             .env_remove("VIRTUAL_ENV")
             .env("HOME", self.join(".home"))
             .env("XDG_CONFIG_HOME", self.join(".home"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap();
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+        if let Some(venv) = venv {
+            command.env("VIRTUAL_ENV", venv);
+        }
+        let output = command.output().unwrap();
         Run {
             code: output.status.code().unwrap_or(-1),
             stdout: String::from_utf8(output.stdout).unwrap(),

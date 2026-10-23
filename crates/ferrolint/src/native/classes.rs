@@ -11,6 +11,7 @@ use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{Decorator, Expr, ExprName, Number, Stmt, StmtClassDef, StmtFunctionDef};
 use ruff_text_size::{Ranged, TextRange};
 
+use super::flow::own_returns;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -226,6 +227,34 @@ impl<'a> Env<'a> {
             Expr::Tuple(tuple) => Some(tuple.elts.len()),
             _ => None,
         }
+    }
+
+    /// The class of this file that `name = make(...)` makes, when `make` is a
+    /// plain function of this file whose every `return` names that one class
+    /// (the factory of a mixin).
+    pub fn made_class(&self, expr: &Expr) -> Option<&'a StmtClassDef> {
+        let Expr::Name(name) = expr else { return None };
+        let binding = self.binding(name)?;
+        if binding.kind != BindingKind::Assignment || !self.ctx.model.is_sole_binding(binding.id) {
+            return None;
+        }
+        let Expr::Call(call) = self.aliases.get(&binding.node?)? else {
+            return None;
+        };
+        let Expr::Name(callee) = &*call.func else {
+            return None;
+        };
+        let func = self.func_of(callee)?;
+        if func.is_async || !func.decorator_list.is_empty() {
+            return None;
+        }
+        let mut classes = own_returns(&func.body)
+            .into_iter()
+            .map(|r| r.value.as_deref().and_then(|value| self.class_of(value)));
+        let first = classes.next()??;
+        classes
+            .all(|class| class.is_some_and(|class| std::ptr::eq(class, first)))
+            .then_some(first)
     }
 
     /// The function of this file that `name` calls, when it is bound only once.

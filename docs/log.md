@@ -12,6 +12,11 @@
   file with one `return`; an `if` expression of two constants of different
   types is not judged.
 
+* **native-rules.md**: a base that only imports of a missing module bind, or
+  a `Base[...]` holding one, is left out of the ancestors as Pylint leaves
+  it out (with `VIRTUAL_ENV`), and a name bound to a mixin factory is the
+  class it returns: `W0201` and the other ancestor rules read those classes.
+
 * **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
   imported from the project or an installed package, a method of a base from
   another module and `self.name()` set to such a function; `W0101` reads the

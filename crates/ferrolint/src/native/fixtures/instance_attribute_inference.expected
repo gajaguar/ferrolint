@@ -8,3 +8,6 @@
 71:W0201:Attribute 'a' defined outside __init__
 74:W0201:Attribute 'c' defined outside __init__
 85:W0201:Attribute 'b' defined outside __init__
+96:W0201:Attribute 'loaded' defined outside __init__
+107:W0201:Attribute 'loaded' defined outside __init__
+108:W0201:Attribute 'own' defined outside __init__
