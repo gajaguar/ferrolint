@@ -218,8 +218,8 @@ call:
   and its kin are not listed: with every pytest tried (7.4.4, 8.0.2, 8.4.2,
   9.1.1) Pylint cannot infer them, so they never end a block. A call anywhere
   in an assignment or an expression statement ends a block for `W0101`, not
-  one in the header of an `if` or `for`. A file that Ruff's parser rejects (`raise;stmt` on one line) has no
-  findings but the syntax error.
+  one in the header of an `if` or `for`. A file that Ruff's parser rejects
+  (`raise;stmt` on one line) has no findings but the syntax error.
 * `R1710` follows a `raise` inside a `try` as Pylint does: the exception is
   the class named by the call, and a handler that names it must end in a
   return. A raised name that is not a class is assumed to be inferable,
