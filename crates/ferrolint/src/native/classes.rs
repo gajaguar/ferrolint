@@ -26,7 +26,7 @@ pub struct Env<'a> {
     pub ctx: &'a Ctx<'a>,
     classes: HashMap<u32, &'a StmtClassDef>,
     funcs: HashMap<u32, &'a StmtFunctionDef>,
-    /// `Alias = Name`, `name = [...]` and `name = (...)` by the node id of the target.
+    /// `Alias = value` by the node id of `Alias`.
     aliases: HashMap<u32, &'a Expr>,
 }
 
@@ -56,8 +56,7 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
                 }
             }
             Stmt::Assign(assign) => {
-                if let ([Expr::Name(target)], Expr::Name(_) | Expr::List(_) | Expr::Tuple(_)) =
-                    (&assign.targets[..], &*assign.value)
+                if let [Expr::Name(target)] = &assign.targets[..]
                     && let Some(id) = ruff_python_ast::HasNodeIndex::node_index(target)
                         .load()
                         .as_u32()
@@ -134,6 +133,45 @@ impl<'a> Env<'a> {
         }
     }
 
+    /// Every dotted name `expr` may stand for. A name bound in several branches
+    /// (`X = int` under `if`, `X = long` under `else`; an import under `try` and
+    /// another under `except`) stands for each value, as Pylint infers them.
+    // shortcut: takes every binding of the name, also one a later binding shadows;
+    // upgrade when a shadowed base shows up.
+    pub fn qualified_all(&self, expr: &Expr) -> Vec<String> {
+        let Expr::Name(name) = expr else {
+            return self.qualified(expr).into_iter().collect();
+        };
+        let Some(binding) = self.binding(name) else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+        for bound in self.ctx.model.same_name(binding.id) {
+            let found = match bound.kind {
+                BindingKind::FromImport => bound.origin,
+                BindingKind::Assignment => bound
+                    .node
+                    .and_then(|node| self.aliases.get(&node))
+                    .and_then(|value| match value {
+                        // `Alias = Cls[T]` is `Cls`.
+                        Expr::Subscript(s) => self.qualified(&s.value),
+                        other => self.qualified(other),
+                    }),
+                _ => None,
+            };
+            out.extend(found.filter(|q| !out.contains(q)));
+        }
+        if out.is_empty() {
+            out.extend(self.qualified(expr));
+        }
+        out
+    }
+
+    /// The value of the `name = value` that binds the name at node `node`.
+    pub fn assigned(&self, node: u32) -> Option<&'a Expr> {
+        self.aliases.get(&node).copied()
+    }
+
     /// The class of this file that `expr` names, when it is bound only once,
     /// directly or through `Alias = Class`.
     pub fn class_of(&self, expr: &Expr) -> Option<&'a StmtClassDef> {
@@ -165,7 +203,11 @@ impl<'a> Env<'a> {
             BindingKind::ClassDef => self.classes.get(&binding.node?).copied(),
             // `A = B` and `B = A` would loop.
             BindingKind::Assignment if depth < 8 => {
-                self.class_of_at(self.aliases.get(&binding.node?)?, depth + 1)
+                let value = self.aliases.get(&binding.node?)?;
+                if !value.is_name_expr() {
+                    return None;
+                }
+                self.class_of_at(value, depth + 1)
             }
             _ => None,
         }

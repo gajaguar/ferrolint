@@ -6,6 +6,12 @@
   project, a `*name` of a list or tuple literal, `f.__get__(...)`, `cls.method(...)`
   in a metaclass as an unbound call, and `self.__new__(X)` whatever the bases.
 
+* **native-rules.md**: `C0103` follows a base bound in several branches
+  (`X = int` / `X = long`, an import under `try` and `except`), also from
+  another module of the project, and takes the value of a function of the
+  file with one `return`; an `if` expression of two constants of different
+  types is not judged.
+
 * **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
   imported from the project or an installed package, a method of a base from
   another module and `self.name()` set to such a function; `W0101` reads the

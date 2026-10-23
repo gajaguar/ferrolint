@@ -30,8 +30,8 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use regex::Regex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    CmpOp, Comprehension, ExceptHandler, Expr, ExprContext, ExprTuple, Operator, Pattern, Stmt,
-    StmtClassDef, StmtFunctionDef, StmtIf, StmtTry, TypeParam, UnaryOp,
+    CmpOp, Comprehension, ExceptHandler, Expr, ExprContext, ExprTuple, Number, Operator, Pattern,
+    Stmt, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry, TypeParam, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange};
 
@@ -40,6 +40,7 @@ use super::flow::own_returns;
 use super::misc::{Names as Lists, catches_import_error, csv, imported_names};
 use super::project::{ClassRef, Project};
 use super::scopes::{Step, exclusive};
+use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
 use crate::class_methods;
 use crate::wit::BindingKind;
@@ -1090,7 +1091,15 @@ impl<'a> Walk<'a, '_> {
             }
             Expr::BoolOp(b) if all(&b.values.iter().collect::<Vec<_>>()) => Val::Const,
             Expr::Compare(c) if all(&c.operands.iter().collect::<Vec<_>>()) => Val::Const,
-            Expr::If(i) if all(&[&*i.body, &*i.orelse]) => Val::Const,
+            // astroid joins the two arms only when they have one Python type.
+            // shortcut: a test that astroid infers (`True`, `sys.platform`) picks one arm there;
+            // upgrade with a value model.
+            Expr::If(i) if all(&[&*i.body, &*i.orelse]) => {
+                match (self.const_kind(&i.body, 0), self.const_kind(&i.orelse, 0)) {
+                    (Some(a), Some(b)) if a != b => Val::Unknown,
+                    _ => Val::Const,
+                }
+            }
             // astroid cannot infer a dict that unpacks what it does not know.
             Expr::Dict(d)
                 if d.items
@@ -1131,6 +1140,32 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// The Python type of a literal, or of a module name bound once to one.
+    fn const_kind(&self, expr: &Expr, depth: u8) -> Option<&'static str> {
+        Some(match expr {
+            Expr::NoneLiteral(_) => "None",
+            Expr::BooleanLiteral(_) => "bool",
+            Expr::StringLiteral(_) | Expr::FString(_) => "str",
+            Expr::BytesLiteral(_) => "bytes",
+            Expr::NumberLiteral(n) => match n.value {
+                Number::Int(_) => "int",
+                Number::Float(_) => "float",
+                Number::Complex { .. } => "complex",
+            },
+            Expr::Name(name)
+                if depth < 6 && self.env.binding(name).is_some_and(|b| b.scope == 0) =>
+            {
+                match self.binds.get(name.id.as_str()).map(Vec::as_slice) {
+                    Some([only]) if only.kind == Bk::Name => {
+                        return self.const_kind(only.value?, depth + 1);
+                    }
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        })
+    }
+
     fn name_val(&self, name: &ruff_python_ast::ExprName, value: &Expr, depth: u8) -> Val {
         if self.env.class_of(value).is_some() {
             return Val::Class;
@@ -1161,6 +1196,15 @@ impl<'a> Walk<'a, '_> {
                 } else {
                     Val::Unknown
                 }
+            }
+            // A variable of a function that is bound once, as `d` in `d = {}; return d`.
+            BindingKind::Assignment
+                if binding.scope != 0 && self.ctx().model.is_sole_binding(binding.id) =>
+            {
+                binding
+                    .node
+                    .and_then(|node| self.env.assigned(node))
+                    .map_or(Val::Unknown, |v| self.val(v, depth + 1))
             }
             BindingKind::Assignment if binding.scope == 0 => {
                 match self.binds.get(name.id.as_str()).map(Vec::as_slice) {
@@ -1214,6 +1258,27 @@ impl<'a> Walk<'a, '_> {
                     .as_deref()
                     .is_some_and(|e| self.env.class_of(e).is_some())
             })
+    }
+
+    /// What a call of a function of the file infers to: classes when every return is one, and
+    /// the value of its only return otherwise, as astroid joins values of one Python type only.
+    // shortcut: a decorated, async or generator function, and several returns of values
+    // that are not classes, are not judged; upgrade with the inferred Python type.
+    fn returns_val(&self, func: &StmtFunctionDef, depth: u8) -> Val {
+        if self.returns_class(func) {
+            return Val::Class;
+        }
+        let returns = own_returns(&func.body);
+        let [only] = returns[..] else {
+            return Val::Unknown;
+        };
+        if !func.decorator_list.is_empty() || func.is_async || is_generator(func) {
+            return Val::Unknown;
+        }
+        match only.value.as_deref().map(|e| self.val(e, depth + 1)) {
+            Some(val @ (Val::Const | Val::Other | Val::Func)) => val,
+            _ => Val::Unknown,
+        }
     }
 
     /// Whether `value` calls a container type on something that is not a
@@ -1302,14 +1367,10 @@ impl<'a> Walk<'a, '_> {
                 return Val::Other;
             }
             return match &*call.func {
-                Expr::Name(name)
-                    if self
-                        .env
-                        .func_of(name)
-                        .is_some_and(|f| self.returns_class(f)) =>
-                {
-                    Val::Class
-                }
+                Expr::Name(name) => self
+                    .env
+                    .func_of(name)
+                    .map_or(Val::Unknown, |f| self.returns_val(f, depth)),
                 _ => Val::Unknown,
             };
         };
@@ -1331,7 +1392,9 @@ impl<'a> Walk<'a, '_> {
             | "enum.IntFlag"
             | "typing.TypeVar"
             | "typing.ParamSpec"
-            | "typing.TypeVarTuple" => Val::Unknown,
+            | "typing.TypeVarTuple"
+            | "typing.TypeAliasType"
+            | "typing_extensions.TypeAliasType" => Val::Unknown,
             "dict" | "list" | "set" | "frozenset" | "tuple" | "object" => Val::Other,
             q if self.project.returns_class(&self.project.absolute(q)) => Val::Class,
             q => {
@@ -1546,11 +1609,13 @@ impl<'a> Walk<'a, '_> {
             if let Some(local) = self.env.class_of(base) {
                 out.push(Anc::Local(local));
                 self.local_ancestors(local, out, depth + 1);
-            } else if let Some(qualified) = self.qualified(base) {
-                let qualified = self.project.absolute(&qualified);
-                match self.project.class(&qualified) {
-                    Some(remote) => self.remote_ancestors(&remote, out, depth + 1),
-                    None => out.push(Anc::External(qualified)),
+            } else {
+                for qualified in self.env.qualified_all(base) {
+                    let qualified = self.project.absolute(&qualified);
+                    match self.project.class(&qualified) {
+                        Some(remote) => self.remote_ancestors(&remote, out, depth + 1),
+                        None => self.external(qualified, out),
+                    }
                 }
             }
         }
@@ -1561,11 +1626,21 @@ impl<'a> Walk<'a, '_> {
         if depth >= 16 {
             return;
         }
-        for base in class.bases(&self.project) {
+        for base in class.bases_all(&self.project) {
             match base {
                 Ok(remote) => self.remote_ancestors(&remote, out, depth + 1),
-                Err(qualified) => out.push(Anc::External(qualified)),
+                Err(qualified) => self.external(qualified, out),
             }
+        }
+    }
+
+    /// A class the project does not hold, or what a name of the project that aliases one stands for.
+    fn external(&self, qualified: String, out: &mut Vec<Anc<'a>>) {
+        let aliased = self.project.unalias(&qualified);
+        if aliased.is_empty() {
+            out.push(Anc::External(qualified));
+        } else {
+            out.extend(aliased.into_iter().map(Anc::External));
         }
     }
 
@@ -2227,6 +2302,23 @@ mod tests {
         let found = lint_at(source, &package.join("child.py"), "pkg.child");
         let lines: Vec<_> = found.iter().map(|(line, _)| *line).collect();
         assert_eq!(lines, [12], "{found:?}");
+    }
+
+    #[test]
+    fn bases_bound_in_several_branches_of_another_module() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("compat.py"),
+            "import sys\n\nif sys.version_info[0] == 3:\n    number = int\nelse:\n    number = long\n\ntry:\n    from ordered import Odd\nexcept ImportError:\n    from collections import OrderedDict as Odd\n\n\nclass Ordered(Odd):\n    pass\n",
+        )
+        .unwrap();
+        let source = "from pkg.compat import number, Ordered\n\n\nclass A(number):\n    def __new__(Cls, Value): pass\n    def ownA(self): pass\n\n\nclass B(Ordered):\n    def popitem(self, Last): pass\n    def ownB(self): pass\n";
+        let found = lint_at(source, &package.join("child.py"), "pkg.child");
+        let lines: Vec<_> = found.iter().map(|(line, _)| *line).collect();
+        assert_eq!(lines, [6, 11], "{found:?}");
     }
 
     fixture!(module_level_names, "names_module", []);

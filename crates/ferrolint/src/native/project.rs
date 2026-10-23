@@ -31,7 +31,7 @@ use ruff_python_parser::{ParseOptions, Parsed};
 
 use ferrolint_core::LineIndex;
 
-use super::classes::{bases, locals};
+use super::classes::{bases, blocks, locals};
 use super::flow::{no_return, own_returns};
 use crate::c_module_names;
 use crate::class_methods;
@@ -158,8 +158,8 @@ pub struct Module {
     parsed: Parsed<ModModule>,
     /// The package that relative imports of the module start from.
     package: String,
-    /// What each name the top level imports stands for.
-    imports: HashMap<String, String>,
+    /// What each name the top level imports stands for, once per import.
+    imports: HashMap<String, Vec<String>>,
     /// The modules that `from m import *` reads, in order.
     stars: Vec<String>,
     lines: LineIndex,
@@ -358,6 +358,36 @@ impl Project {
         })
     }
 
+    /// What `module.name` stands for when the module binds `name` by `name = X`, also under `if`
+    /// and `try`, and `X` is a name it imports or a builtin: `no_limit_int = int` is `int`.
+    // shortcut: only a plain name on the right, not an attribute; upgrade with inference.
+    pub fn unalias(&self, qualified: &str) -> Vec<String> {
+        fn walk(body: &[Stmt], name: &str, loaded: &Module, out: &mut Vec<String>) {
+            for stmt in body {
+                match stmt {
+                    Stmt::Assign(a) if matches!(&a.targets[..], [Expr::Name(t)] if t.id.as_str() == name) => {
+                        if let Expr::Name(value) = &*a.value {
+                            let imported = loaded.imports.get(value.id.as_str());
+                            out.extend(
+                                imported.map_or_else(|| vec![value.id.to_string()], Clone::clone),
+                            );
+                        }
+                    }
+                    other => blocks(other)
+                        .into_iter()
+                        .for_each(|b| walk(b, name, loaded, out)),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        if let Some((module, name)) = qualified.rsplit_once('.')
+            && let Some(loaded) = self.load(module)
+        {
+            walk(&loaded.parsed.syntax().body, name, &loaded, &mut out);
+        }
+        out
+    }
+
     /// The class `qualified` names (`pkg.module.Class`), also when `pkg.module`
     /// only imports it.
     pub fn class(&self, qualified: &str) -> Option<ClassRef> {
@@ -382,7 +412,7 @@ impl Project {
         if depth >= 8 {
             return None;
         }
-        if let Some(origin) = loaded.imports.get(name) {
+        if let Some(origin) = loaded.imports.get(name).and_then(|o| o.last()) {
             return self.class_at(origin, depth + 1);
         }
         if let Some(target) = alias(&loaded, module, name) {
@@ -469,7 +499,7 @@ impl Project {
         !returns.is_empty()
             && returns.iter().all(|r| {
                 matches!(r.value.as_deref(), Some(Expr::Name(n))
-                    if imports.get(n.id.as_str()).is_some_and(|q| self.class(q).is_some()))
+                    if imports.get(n.id.as_str()).and_then(|q| q.last()).is_some_and(|q| self.class(q).is_some()))
             })
     }
 }
@@ -1115,12 +1145,22 @@ impl ClassRef {
     /// The classes that this one derives from and the project holds, and the
     /// qualified names of the rest.
     pub fn bases(&self, project: &Project) -> Vec<Result<ClassRef, String>> {
+        self.bases_by(project, false)
+    }
+
+    /// Like [`Self::bases`], but a base imported in several branches
+    /// (`try: from a import B` / `except: from b import B`) stands for each import, as Pylint infers it.
+    pub fn bases_all(&self, project: &Project) -> Vec<Result<ClassRef, String>> {
+        self.bases_by(project, true)
+    }
+
+    fn bases_by(&self, project: &Project, all: bool) -> Vec<Result<ClassRef, String>> {
         let Some(class) = self.class() else {
             return Vec::new();
         };
         bases(class)
             .iter()
-            .filter_map(|base| {
+            .flat_map(|base| {
                 // `Base[T]` derives from `Base`.
                 let (base, subscripted) = match base {
                     Expr::Subscript(s) => (&*s.value, true),
@@ -1132,9 +1172,26 @@ impl ClassRef {
                         return None;
                     };
                     class_methods::methods(&name.id).map(|_| Err(name.id.to_string()))
-                })?;
+                });
                 // astroid infers `typing.X[...]` as an empty class.
-                (!(subscripted && found.as_ref().is_ok_and(Self::is_typing))).then_some(found)
+                let Some(found) = found else {
+                    return Vec::new();
+                };
+                if subscripted && found.as_ref().is_ok_and(Self::is_typing) {
+                    return Vec::new();
+                }
+                match (&found, base) {
+                    (Err(_), Expr::Name(name)) if all => {
+                        match self.module.imports.get(name.id.as_str()) {
+                            Some(origins) => origins
+                                .iter()
+                                .map(|q| project.class(q).ok_or_else(|| q.clone()))
+                                .collect(),
+                            None => vec![found],
+                        }
+                    }
+                    _ => vec![found],
+                }
             })
             .collect()
     }
@@ -1176,6 +1233,7 @@ impl Module {
             Expr::Name(name) => self
                 .imports
                 .get(name.id.as_str())
+                .and_then(|origins| origins.last())
                 .cloned()
                 .or_else(|| (name.id.as_str() == "object").then(|| "object".to_owned())),
             Expr::Attribute(attribute) => Some(format!(
@@ -1204,7 +1262,8 @@ fn alias(loaded: &Module, module: &str, name: &str) -> Option<String> {
                     let Expr::Name(base) = &*attr.value else {
                         return None;
                     };
-                    Some(format!("{}.{}", loaded.imports.get(base.id.as_str())?, attr.attr))
+                    let origin = loaded.imports.get(base.id.as_str())?.last()?;
+                    Some(format!("{origin}.{}", attr.attr))
                 }
                 _ => None,
             }
@@ -1356,7 +1415,7 @@ fn stdlib(env: &Path) -> Option<PathBuf> {
 fn collect_imports(
     body: &[Stmt],
     package: &str,
-    out: &mut HashMap<String, String>,
+    out: &mut HashMap<String, Vec<String>>,
     stars: &mut Vec<String>,
 ) {
     for stmt in body {
@@ -1364,10 +1423,11 @@ fn collect_imports(
             Stmt::Import(import) => {
                 for alias in &import.names {
                     let first = alias.name.split('.').next().unwrap_or_default();
-                    match &alias.asname {
-                        Some(asname) => out.insert(asname.to_string(), alias.name.to_string()),
-                        None => out.insert(first.to_owned(), first.to_owned()),
+                    let (local, origin) = match &alias.asname {
+                        Some(asname) => (asname.to_string(), alias.name.to_string()),
+                        None => (first.to_owned(), first.to_owned()),
                     };
+                    out.entry(local).or_default().push(origin);
                 }
             }
             Stmt::ImportFrom(import) => {
@@ -1382,7 +1442,7 @@ fn collect_imports(
                     } else {
                         format!("{prefix}.{}", alias.name)
                     };
-                    out.insert(local, origin);
+                    out.entry(local).or_default().push(origin);
                 }
             }
             Stmt::If(s) => {

@@ -503,8 +503,13 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   class); those names are not judged here. A value that cannot be told is
   skipped, as Pylint skips what it cannot infer. A call of a capitalized
   imported name is taken as an instance, a lower-case imported name as a
-  function, and a call of a function of the file that returns only classes
-  as a class.
+  function, a call of a function of the file that returns only classes as a
+  class, and a call of one without decorator, `async` or `yield` that has a
+  single `return` as the value of it (a literal, a display, a nested function
+  or a variable bound once). An `if` expression of two constants of different
+  types is not judged, as astroid cannot join them; one whose test astroid
+  infers (`True`, `sys.platform`) picks an arm there and is not judged here
+  either.
 * An ancestor's methods and attributes are looked up in the classes of the
   file and in the other modules of the project, which are found as files
   under the directories above the linted file and followed through
@@ -526,8 +531,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   astroid infers one value, also through `name = module.Class` in a package,
   a class defined in an `except` handler, a function that returns a class of
   the project, a metaclass called with a name, bases and a namespace and the
-  functional `Enum("Name", ...)`. A class bound twice (a fallback in
-  `try`/`except` or `if`, a base bound in both branches of an `if`), a class
+  functional `Enum("Name", ...)`. A base bound in several branches
+  (`X = int` under `if`, `X = long` under `else`; an import under `try` and
+  another under `except`) stands for each value, also in another module of
+  the project, as Pylint takes every value of a base. A class value bound
+  twice (a fallback in `try`/`except` or `if`), a class
   returned by a call of an installed package, a standard library class
   missing from the class table (`_Fraction = Fraction`), the value of a
   standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`

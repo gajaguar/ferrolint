@@ -49,3 +49,8 @@
 132:C0103:Method name "getItem" doesn't conform to snake_case naming style
 138:C0103:Attribute name "camelField" doesn't conform to snake_case naming style
 142:C0103:Attribute name "otherCamel" doesn't conform to snake_case naming style
+157:C0103:Argument name "Arg" doesn't conform to snake_case naming style
+157:C0103:Method name "ownWide" doesn't conform to snake_case naming style
+162:C0103:Argument name "Arg" doesn't conform to snake_case naming style
+162:C0103:Method name "ownMany" doesn't conform to snake_case naming style
+173:C0103:Method name "ownSub" doesn't conform to snake_case naming style

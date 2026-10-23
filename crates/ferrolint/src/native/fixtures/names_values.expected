@@ -22,3 +22,8 @@
 106:C0103:Constant name "snake_join" doesn't conform to UPPER_CASE naming style
 107:C0103:Constant name "bytesDecode" doesn't conform to UPPER_CASE naming style
 110:C0103:Constant name "fmtDone" doesn't conform to UPPER_CASE naming style
+135:C0103:Constant name "madeMap" doesn't conform to UPPER_CASE naming style
+136:C0103:Variable name "madeFn" doesn't conform to snake_case naming style
+138:C0103:Constant name "_none" doesn't conform to UPPER_CASE naming style
+140:C0103:Constant name "snake_same" doesn't conform to UPPER_CASE naming style
+141:C0103:Constant name "sameArms" doesn't conform to UPPER_CASE naming style

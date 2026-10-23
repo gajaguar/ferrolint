@@ -111,3 +111,36 @@ fmtDone = "{} {a}".format(1, a=2)
 snake_fmt_missing = "{a}".format(**globals())
 snake_fmt_args = "{}".format(unknown_thing())
 stdSubscript = logging.StreamHandler[int]
+
+
+def make_map():
+    built = {}
+    built["a"] = 1
+    return built
+
+
+def make_fn():
+    def inner():
+        pass
+
+    return inner
+
+
+def make_two(x):
+    if x:
+        return 1
+    return "a"
+
+
+madeMap = make_map()
+madeFn = make_fn()
+madeTwo = make_two(1)
+_none = None
+snake_mixed = _none if unknown_thing() else "a"
+snake_same = 1 if unknown_thing() else 2
+sameArms = "a" if unknown_thing() else "b"
+mixedArms = 1 if unknown_thing() else 2.0
+mixedNone = None if unknown_thing() else "a"
+mixedName = _none if unknown_thing() else "a"
+import typing_extensions
+aliasType = typing_extensions.TypeAliasType("aliasType", int)
