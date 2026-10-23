@@ -192,9 +192,7 @@ pub fn load(path: &Path) -> Option<Loaded> {
     let source = String::from_utf8(bytes).ok()?;
     let options = ParseOptions::from(ruff_python_ast::PySourceType::Python)
         .with_target_version(ruff_python_ast::PythonVersion::latest());
-    let parsed = ruff_python_parser::parse_unchecked(&source, options)
-        .try_into_module()
-        .unwrap_or_else(|| unreachable!("Python source parses to a module"));
+    let parsed = crate::checks::parse(&source, options);
     if parsed.has_syntax_errors() {
         return None;
     }

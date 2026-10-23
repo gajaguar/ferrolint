@@ -217,7 +217,14 @@ fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Descripti
         AnyNodeRef::StmtGlobal(_) => plain(K::Global),
         AnyNodeRef::StmtNonlocal(_) => plain(K::Nonlocal),
         AnyNodeRef::StmtExpr(_) => plain(K::Expr),
-        AnyNodeRef::StmtPass(_) => plain(K::Pass),
+        // `checks::parse` parses a bare `raise;` as `pass `: the source still says `raise`.
+        AnyNodeRef::StmtPass(pass) => plain(
+            if flattener.source[pass.start().to_usize()..].starts_with("raise") {
+                K::Raise
+            } else {
+                K::Pass
+            },
+        ),
         AnyNodeRef::StmtBreak(_) => plain(K::Break),
         AnyNodeRef::StmtContinue(_) => plain(K::Continue),
         AnyNodeRef::ExprBoolOp(expr) => detailed(K::BoolOp, expr.op.as_str().to_owned()),

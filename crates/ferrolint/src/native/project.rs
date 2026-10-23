@@ -24,10 +24,10 @@ use std::sync::{LazyLock, Mutex};
 
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Pattern, Stmt, StmtClassDef,
-    StmtImportFrom,
+    Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Pattern, PySourceType, Stmt,
+    StmtClassDef, StmtImportFrom,
 };
-use ruff_python_parser::Parsed;
+use ruff_python_parser::{ParseOptions, Parsed};
 
 use ferrolint_core::LineIndex;
 
@@ -336,7 +336,10 @@ impl Project {
         }
         self.touched.borrow_mut().insert(file.clone());
         let source = std::fs::read_to_string(file).ok()?;
-        let parsed = ruff_python_parser::parse_module(&source).ok()?;
+        let parsed = crate::checks::parse(&source, ParseOptions::from(PySourceType::Python));
+        if !parsed.errors().is_empty() {
+            return None;
+        }
         let package = if is_package {
             name.to_owned()
         } else {
