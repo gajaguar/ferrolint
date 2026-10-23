@@ -165,6 +165,25 @@ fn global_statement() {
 }
 
 #[test]
+fn global_statement_leaves_w0601_and_w0602_to_pylint() {
+    // Pylint: 10 and 25 are W0602 (read only, or the statement has a W0602
+    // name), 20 is W0601 (never defined at module level); 15, 30, 35, 40 and 45 are W0603.
+    let source = "import os\n\nro = 1\nrw = 1\nundef = None\nfrom os import sep\n\n\ndef read_only():\n    global ro\n    return ro\n\n\ndef reassigned():\n    global rw\n    rw = 2\n\n\ndef undefined_name():\n    global nowhere\n    nowhere = 3\n\n\ndef mixed():\n    global ro, rw\n    rw = 4\n\n\ndef imported_then_set():\n    global sep\n    sep = '/'\n\n\ndef local_import():\n    global json\n    import json\n\n\ndef module_attribute():\n    global __file__\n    __file__ = 'x'\n\n\ndef except_name():\n    global ro\n    try:\n        pass\n    except ValueError as ro:\n        pass\n";
+    assert_eq!(
+        findings("ferrolint-plugin-global-statement", source),
+        [
+            "15: Using the global statement",
+            "20: Global variable 'nowhere' undefined at the module level",
+            "30: Using the global statement",
+            "35: Using the global statement",
+            "36: Import outside toplevel (json)",
+            "40: Using the global statement",
+            "45: Using the global statement"
+        ]
+    );
+}
+
+#[test]
 fn bare_except() {
     let source = "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept ValueError:\n    pass\n\ntry:\n    pass\nexcept:\n    cleanup()\n    raise\n\ntry:\n    pass\nexcept:\n    if x:\n        raise\n";
     assert_eq!(

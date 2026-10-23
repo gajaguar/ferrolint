@@ -347,7 +347,7 @@ Not ported:
   ancestors of a method to excuse an override. The `global` logic of `W0602`
   is still here, to tell `W0601` from it. Pylint skips `W0603` for a
   statement that gets `W0601` or `W0602`; the `global-statement` plugin
-  reports it anyway.
+  reads the same two cases from the statement's names and skips it too.
 * `E0601` `used-before-assignment` shares the filter of `E0606` but gets its
   other cases from `try` blocks, which are not run (see below).
 
