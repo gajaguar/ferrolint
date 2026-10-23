@@ -106,4 +106,3 @@ class FromFactory(Mixin):
         self.ready = 2
         self.loaded = 2
         self.own = 1
-

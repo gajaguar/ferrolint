@@ -1086,20 +1086,20 @@ Known divergences from Pylint, where Pylint infers the callee:
   tuple literal (`args = []` then `f(*args)` counts as no argument, whatever is
   appended later, as Pylint reads it) is skipped, where Pylint also unpacks a
   literal written in the call.
-* A call to a `ctypes` type that astroid's brain gives a `__init__(self,
-  value)` (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the
-  other `wintypes` names of those types) reports the missing `value`.
+* A call to a `ctypes` type that astroid's brain gives a `__init__(self, value)`
+  (`c_int()`, `c_ulong()`, also `ctypes.wintypes.DWORD()` and the other
+  `wintypes` names of those types) reports the missing `value`.
   `self.__new__(Cls)` in a class reports the missing `cls` whatever its bases
   (astroid reads the `__new__` of an instance as `(self, cls)`); with other
   arguments it is not judged, nor is a method of an instance that a call
   returns. `f.__get__(a, b)` of a function of the file takes the parameters of
   `f`, defaulted or not, and `type` (astroid builds that signature); positional
-  arguments only. `cls.method(...)` in a method of a class deriving from
-  `type` or `abc.ABCMeta` is an unbound call, `cls` counted as a parameter. Left to type inference: a
-  callee from another module (`ws.send(...)` of a socket built elsewhere),
-  `self.get(...)` on a receiver not named `self`, `functools.partial` objects
-  (`E1124`), `__get__` and `cls.method(x)` on an unbound method, a class
-  returned by a call, and the stdlib signatures
+  arguments only. `cls.method(...)` in a method of a class deriving from `type`
+  or `abc.ABCMeta` is an unbound call, `cls` counted as a parameter. Left to
+  type inference: a callee from another module (`ws.send(...)` of a socket built
+  elsewhere), `self.get(...)` on a receiver not named `self`,
+  `functools.partial` objects (`E1124`), `__get__` and `cls.method(x)` on an
+  unbound method, a class returned by a call, and the stdlib signatures
   (`base64.urlsafe_b64decode(data, padded=True)`).
 * `E1121` of `array.__new__(cls, 'i', args)` (a C type whose signature
   Pylint reads as `__new__(cls, typecode)`) and of `attrs.define` classes
@@ -1118,12 +1118,12 @@ Known divergences from Pylint, where Pylint infers the callee:
   something that is not a name, and the class is judged again as part of each
   class that contains it. A function shows with its parameters as astroid
   prints them (`Cls.__f(self, a, b: int = 1, *rest, **kw)`).
-* `R0903` `too-few-public-methods`: fewer public methods, counted over the
-  class and its bases, than `min-public-methods` (default 2), plus the special
-  methods the class itself defines other than `__init__`. Exceptions, enums,
+* `R0903` `too-few-public-methods`: fewer public methods, counted over the class
+  and its bases, than `min-public-methods` (default 2), plus the special methods
+  the class itself defines other than `__init__`. Exceptions, enums,
   metaclasses, named tuples, typed dicts, dataclasses and `attrs` classes are
-  exempt, and so is a class with an ancestor that `exclude-too-few-public-methods`
-  matches.
+  exempt, and so is a class with an ancestor that
+  `exclude-too-few-public-methods` matches.
 * `E0239` `inherit-non-class`, `E0243` `invalid-class-object` and `W0143`
   `comparison-with-callable`: a base that is a function, a lambda, a literal
   or an instance of a class of the file; `X.__class__ = value` where the value

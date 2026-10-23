@@ -11,7 +11,7 @@ use support::Project;
 const SOURCE: &str = "\
 from typing import Generic, TypeVar
 
-from nomod import Gone
+from missing import Gone
 
 T = TypeVar(\"T\")
 
