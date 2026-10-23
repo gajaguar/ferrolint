@@ -1106,6 +1106,12 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   class, a module, a call of a class of the file and a name bound once to one
   of those. A call of a function, a name bound twice, an imported name, a
   parameter and an attribute of an object have no answer and stay silent.
+  `W0143` also takes the `__new__` of a builtin class for a function and a
+  `getattr` of a parameter for no function. It stays silent where Pylint
+  infers across modules: a function of an imported project module
+  (`setters.validate`, `genericTypeValidator`), a function a call returns
+  (`setters.pipe(...)`), a standard library function (`signal.default_int_handler`)
+  and a value unpacked from a tuple of conditional expressions.
 * `E0239` prints a base written as an f-string as written; Pylint rewrites its
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the

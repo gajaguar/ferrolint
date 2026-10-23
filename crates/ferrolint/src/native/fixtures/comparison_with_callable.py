@@ -185,3 +185,13 @@ def top(param, default=None, other=func):
     y = [func == 1]
     z = (func == 1) == 2
     return x, y, z
+
+
+def builtin_new(obj, other):
+    new = getattr(obj, "__new__", None)
+    if new != object.__new__:
+        pass
+    if other != int.__new__:
+        pass
+    if other != dict.fromkeys:
+        pass
