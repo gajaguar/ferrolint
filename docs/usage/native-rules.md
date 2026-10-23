@@ -1153,18 +1153,19 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   not hold (a missing optional dependency) is left out of the count, as
   astroid cannot import it, unless the name is bound more than once.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
-  class, a module, a call of a class of the file and a name bound once to one
-  of those, also as an element of a tuple unpacking. A call of a function, a name bound twice, an imported name, a
-  parameter and an attribute of an object have no answer and stay silent.
-  `W0143` also takes the `__new__` of a builtin class for a function and a
-  `getattr` of a parameter for no function. It stays silent where Pylint
-  infers across modules: a function of an imported project module
+  class, a module, a call of a class of the file and a name bound once to one of
+  those, also as an element of a tuple unpacking. A call of a function, a name
+  bound twice, an imported name, a parameter and an attribute of an object have
+  no answer and stay silent. `W0143` also takes the `__new__` of a builtin class
+  for a function and a `getattr` of a parameter for no function. It stays silent
+  where Pylint infers across modules: a function of an imported project module
   (`setters.validate`, `genericTypeValidator`), a function a call returns
-  (`setters.pipe(...)`), a standard library function (`signal.default_int_handler`)
-  and a value unpacked from a tuple of conditional expressions.
-  Pylint also counts an uninferable operand as no function, which needs
-  inference to tell from an operand it cannot see: `validator ==
-  genericTypeValidator` where `validator` is a `dict.get(...)` result.
+  (`setters.pipe(...)`), a standard library function
+  (`signal.default_int_handler`) and a value unpacked from a tuple of
+  conditional expressions. Pylint also counts an uninferable operand as no
+  function, which needs inference to tell from an operand it cannot see:
+  `validator == genericTypeValidator` where `validator` is a `dict.get(...)`
+  result.
 * `E0239` prints a base written as an f-string as written; Pylint rewrites its
   quotes.
 * `W0238` takes `type(self).__x` for the class itself, where Pylint infers the
