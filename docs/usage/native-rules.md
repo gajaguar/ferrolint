@@ -1231,7 +1231,9 @@ Known divergences:
   `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
   from the items of every key or value. `value` is a tuple, list, set or dict
   display, a name bound once to one, a call of a function of the file whose
-  only `return` returns one, or the view of such a dict. The tuple rule words
+  only `return` returns one, or the view of such a dict; a slice of the
+  `*args` of the enclosing function holds no value (`a, b = args[:2]` says
+  `right side has 0 values`). The tuple rule words
   the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
   as `defined at line N` otherwise. A starred name on the left, an abstract
   enclosing class, a starred element in the display and a dict with `**other`
@@ -1255,7 +1257,8 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
   a conditional expression, a slice or a sum, an attribute such as `self.v`,
   a property, a classmethod, a lambda and a method called as `Class.method()`
-  are not judged. A display with a starred element, such as `(*t, 1)`, and a
+  are not judged, nor is a slice of an attribute that `__init__` sets to `[]`
+  (`s = self.stack[:]; return s`) or a callee that another module defines. A display with a starred element, such as `(*t, 1)`, and a
   dict with `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
   A list that a method returns after other statements emptied or filled it

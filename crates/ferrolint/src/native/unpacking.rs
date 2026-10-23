@@ -5,13 +5,16 @@
 //! shortcut: Pylint infers `value`. Here it is a tuple, list, set or dict
 //! display, a name bound once to one, a call of a function of the file with
 //! one `return` of one, or `.keys()`, `.values()` and `.items()` of a dict
-//! display so reached; any other value is not judged. Upgrade with inference.
+//! display so reached, or a slice of the `*args` of the enclosing function,
+//! which holds no value; any other value is not judged. Upgrade with inference.
 
 use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprCall, ExprDict, Number, Stmt, StmtAssign, StmtClassDef, StmtFor};
+use ruff_python_ast::{
+    Expr, ExprCall, ExprDict, Number, Stmt, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef,
+};
 use ruff_text_size::Ranged;
 
 use super::abstract_methods::class_is_abstract;
@@ -63,6 +66,7 @@ impl Checker for Unpacking {
             out,
             assigned: assigned_values(body),
             classes: Vec::new(),
+            functions: Vec::new(),
         };
         walk.visit_body(body);
     }
@@ -71,7 +75,8 @@ impl Checker for Unpacking {
 /// What a value is, for the count of the names it unpacks into.
 enum Shape<'a> {
     /// A tuple, list or set display.
-    Sequence(&'a Expr, usize),
+    /// `None` for the empty tuple of a sliced `*args`.
+    Sequence(Option<&'a Expr>, usize),
     /// A dict display, or one of its views.
     Dict(View, &'a ExprDict),
 }
@@ -92,6 +97,8 @@ struct Walk<'a, 'e> {
     assigned: HashMap<u32, &'a Expr>,
     /// The enclosing classes, with whether each is abstract.
     classes: Vec<(&'a StmtClassDef, bool)>,
+    /// The enclosing functions, innermost last.
+    functions: Vec<&'a StmtFunctionDef>,
 }
 
 /// Whether a dict display has only `key: value` items, no `**other`.
@@ -187,7 +194,31 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
+    /// Whether `expr` slices the `*args` of the innermost function: Pylint
+    /// infers an empty tuple, whatever the bounds.
+    fn sliced_varargs(&self, expr: &Expr) -> bool {
+        let Expr::Subscript(sub) = expr else {
+            return false;
+        };
+        let (Expr::Name(name), Expr::Slice(_), Some(func)) =
+            (&*sub.value, &*sub.slice, self.functions.last())
+        else {
+            return false;
+        };
+        func.parameters
+            .vararg
+            .as_ref()
+            .is_some_and(|v| v.name.as_str() == name.id.as_str())
+            && self
+                .env
+                .binding(name)
+                .is_some_and(|b| b.kind == BindingKind::Parameter)
+    }
+
     fn shape(&self, expr: &'a Expr) -> Option<Shape<'a>> {
+        if self.sliced_varargs(expr) {
+            return Some(Shape::Sequence(None, 0));
+        }
         if let Expr::Call(ExprCall {
             func, arguments, ..
         }) = expr
@@ -220,7 +251,7 @@ impl<'a> Walk<'a, '_> {
                 };
                 // astroid expands a starred element when it infers the display
                 (!elts.iter().any(Expr::is_starred_expr))
-                    .then_some(Shape::Sequence(display, elts.len()))
+                    .then_some(Shape::Sequence(Some(display), elts.len()))
             }
             _ => None,
         }
@@ -243,10 +274,12 @@ impl<'a> Walk<'a, '_> {
         };
         let (id, details, values) = match shape {
             Shape::Sequence(display, values) => {
-                let details = if self.line(display) == self.line(assign) {
-                    format!("'{}'", as_string(ctx.source, display))
-                } else {
-                    format!("defined at line {}", self.line(display))
+                let details = match display {
+                    None => String::new(),
+                    Some(d) if self.line(d) == self.line(assign) => {
+                        format!("'{}'", as_string(ctx.source, d))
+                    }
+                    Some(d) => format!("defined at line {}", self.line(d)),
                 };
                 (TUPLE, format!("sequence {details}"), values)
             }
@@ -315,6 +348,12 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
                 self.classes.push((class, abstract_));
                 visitor::walk_stmt(self, stmt);
                 self.classes.pop();
+                return;
+            }
+            Stmt::FunctionDef(func) => {
+                self.functions.push(func);
+                visitor::walk_stmt(self, stmt);
+                self.functions.pop();
                 return;
             }
             Stmt::Assign(assign) => self.assign(assign),
