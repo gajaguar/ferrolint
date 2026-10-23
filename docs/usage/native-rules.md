@@ -248,8 +248,9 @@ call:
   folds operations and comparisons of constants and names that hold them.
   The code a message quotes is written as astroid does.
 * `C0117` fires for a comparison whose two sides have a known type: a
-  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal or to such a call,
-  a call of a builtin class, `len` of one of these, `self.__dict__`, or
+  literal (not `None`), `*args`, `**kwargs`, a name bound once to a literal or
+  to such a call, a call of a builtin class, `len` of one of these,
+  `self.__dict__`, or
   `self.name` / `cls.name` when the enclosing class assigns `name` once, to
   a literal (a base class is not read). An instance of a class, a property
   or an attribute set from a parameter is not known, though Pylint infers it.
@@ -1270,8 +1271,9 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   a conditional expression, a slice or a sum, an attribute such as `self.v`,
   a property, a classmethod, a lambda and a method called as `Class.method()`
   are not judged, nor is a slice of an attribute that `__init__` sets to `[]`
-  (`s = self.stack[:]; return s`) or a callee that another module defines. A display with a starred element, such as `(*t, 1)`, and a
-  dict with `**other` are left out, where Pylint expands them, and an
+  (`s = self.stack[:]; return s`) or a callee that another module defines. A
+  display with a starred element, such as `(*t, 1)`, and a dict with
+  `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
   A list that a method returns after other statements emptied or filled it
   (`args = self.popall()`), a slice of `*args` (`F, A = B[:2]`) and a value
