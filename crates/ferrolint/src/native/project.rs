@@ -20,6 +20,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::{LazyLock, Mutex};
 
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
@@ -397,19 +398,35 @@ impl Project {
     /// shortcut: the function must be defined in the module the name is given
     /// in, and the standard library is not read; upgrade with import resolution.
     pub fn never_returns(&self, qualified: &str) -> Option<bool> {
+        /// The answers of the run, by search path and name: the files of a
+        /// package share them, and each would else parse the same module.
+        // shortcut: never evicted or re-read, so a file edited during the run keeps
+        // its first answer; upgrade if a long-lived process ever lints.
+        type Answers = Mutex<HashMap<(Vec<PathBuf>, String), Option<bool>>>;
+        static ANSWERS: LazyLock<Answers> = LazyLock::new(Mutex::default);
         let (module, name) = qualified.rsplit_once('.')?;
         if self.is_stdlib(module) {
             return None;
         }
-        self.load(module)?
-            .parsed
-            .syntax()
-            .body
-            .iter()
-            .find_map(|stmt| match stmt {
-                Stmt::FunctionDef(f) if f.name.as_str() == name && no_return(f) => Some(f.is_async),
-                _ => None,
-            })
+        let key = (self.roots.clone(), qualified.to_owned());
+        if let Some(answer) = ANSWERS.lock().ok()?.get(&key) {
+            return *answer;
+        }
+        let answer = self.load(module).and_then(|loaded| {
+            loaded
+                .parsed
+                .syntax()
+                .body
+                .iter()
+                .find_map(|stmt| match stmt {
+                    Stmt::FunctionDef(f) if f.name.as_str() == name && no_return(f) => {
+                        Some(f.is_async)
+                    }
+                    _ => None,
+                })
+        });
+        ANSWERS.lock().ok()?.insert(key, answer);
+        answer
     }
 
     /// Whether every `return` of the function `qualified` names
@@ -1380,6 +1397,27 @@ fn collect_imports(
 #[cfg(test)]
 mod tests {
     use super::Project;
+
+    #[test]
+    fn a_function_annotated_no_return_is_found_again_from_another_file() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write(
+            "lib/stop.py",
+            "def die() -> NoReturn:\n    raise SystemExit\n\n\ndef ok():\n    pass\n",
+        );
+        write("lib/a.py", "");
+        write("lib/b.py", "");
+        for file in ["a", "b"] {
+            let project = Project::new(&root.path().join(format!("lib/{file}.py")), "lib.x");
+            assert_eq!(project.never_returns("lib.stop.die"), Some(false));
+            assert_eq!(project.never_returns("lib.stop.ok"), None);
+        }
+    }
 
     #[test]
     fn an_inner_package_named_like_the_top_one_does_not_hide_it() {
