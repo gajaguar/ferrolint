@@ -53,7 +53,7 @@ pub fn message_issue(
     let known = lower == "all"
         || lower.starts_with("rp")
         || CATEGORIES.contains(&lower.as_str())
-        || (pylint_name && owner.is_none_or(|module| plugin_loaded(module)));
+        || (pylint_name && owner.is_none_or(plugin_loaded));
     if known {
         return None;
     }

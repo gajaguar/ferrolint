@@ -272,6 +272,6 @@ mod tests {
                 "pylint.extensions.dict_init_mutate" | "pylint.extensions.no_self_use"
             )
         };
-        assert!(codes(&loaded).is_empty());
+        assert_eq!(codes(&loaded), Vec::<String>::new());
     }
 }
