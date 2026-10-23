@@ -14,3 +14,6 @@
 124:W0631:Using possibly undefined loop variable 'total'
 139:W0631:Using possibly undefined loop variable 'pos'
 162:W0631:Using possibly undefined loop variable 'name'
+188:W0631:Using possibly undefined loop variable 'item'
+193:W0631:Using possibly undefined loop variable 'item'
+198:W0631:Using possibly undefined loop variable 'item'

@@ -169,3 +169,30 @@ def six_range(values):
     for i in range(len(values)):
         pass
     return i
+
+
+class Holder:
+    def __init__(self):
+        self.full = [self]
+        self.empty = []
+        self.calls = make()
+
+    def over_full(self):
+        for item in self.full:
+            pass
+        return item
+
+    def over_empty(self):
+        for item in self.empty:
+            pass
+        return item
+
+    def over_call(self):
+        for item in self.calls:
+            pass
+        return item
+
+    def over_other(self, other):
+        for item in other.full:
+            pass
+        return item

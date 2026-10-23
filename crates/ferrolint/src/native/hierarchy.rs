@@ -277,6 +277,12 @@ impl<'a> Hierarchy<'a, '_> {
         matches!(self.known_mro(class, 0), Err(Fail::Inconsistent))
     }
 
+    /// The C3 linearization of `class` without the bases the project cannot
+    /// read, `None` when the rest cannot be merged.
+    pub fn known_order(&self, class: &Class<'a>) -> Option<Vec<Class<'a>>> {
+        self.known_mro(class, 0).ok()
+    }
+
     fn known_mro(&self, class: &Class<'a>, depth: u8) -> Result<Vec<Class<'a>>, Fail> {
         let key = class.key();
         if let Some(found) = self.known.borrow().get(&key) {
@@ -453,6 +459,18 @@ mod tests {
                 &["W0231"]
             ),
             "10:W0231:__init__ method from base class 'Q' is not called"
+        );
+    }
+
+    #[test]
+    fn a_subscripted_protocol_base_has_no_init_to_call() {
+        let source = "from typing import Protocol, TypeVar\n\nT = TypeVar(\"T\")\n\nclass P(Protocol[T]):\n    def __init__(self, a):\n        self.a = a\n\nclass C(P[int]):\n    def __init__(self):\n        self.b = 1\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", source)],
+                &["W0231"]
+            ),
+            ""
         );
     }
 

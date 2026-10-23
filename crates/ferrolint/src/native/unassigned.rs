@@ -22,7 +22,7 @@ use ruff_text_size::Ranged;
 
 use super::Ctx;
 use super::classes::{Env, py_repr};
-use super::scopes::{Def, DefKind, Info, Kind, Step, Use, UseKind};
+use super::scopes::{Def, DefKind, Info, Kind, Step, Use, UseKind, first_self_assign};
 
 pub(super) const POSSIBLY: &str = "E0606";
 
@@ -404,6 +404,17 @@ fn truthiness(info: &Info<'_>, scope: usize, test: &Expr, depth: u8) -> Option<b
         }),
         Expr::UnaryOp(u) if u.op == UnaryOp::Not => {
             truthiness(info, scope, &u.operand, depth).map(|v| !v)
+        }
+        // astroid's `infer_hasattr`: `True` when the class assigns the attribute.
+        // shortcut: not found, or an ancestor's attribute, stays unknown; upgrade with the MRO.
+        Expr::Call(call)
+            if matches!(&*call.func, Expr::Name(f) if f.id.as_str() == "hasattr")
+                && info.lookup(scope, "hasattr").is_none() =>
+        {
+            let [Expr::Name(receiver), Expr::StringLiteral(attr)] = &call.arguments.args[..] else {
+                return None;
+            };
+            first_self_assign(info, scope, receiver.id.as_str(), attr.value.to_str()).map(|_| true)
         }
         Expr::Name(n) if n.id.as_str() == "TYPE_CHECKING" => Some(false),
         Expr::Attribute(a) if a.attr.as_str() == "TYPE_CHECKING" => Some(false),

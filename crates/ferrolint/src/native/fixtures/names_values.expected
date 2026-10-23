@@ -11,3 +11,14 @@
 41:C0103:Constant name "a_cmp" doesn't conform to UPPER_CASE naming style
 52:C0103:Variable name "SessionMaker" doesn't conform to snake_case naming style
 69:C0103:Variable name "Other" doesn't conform to snake_case naming style
+90:C0103:Class name "metaMade" doesn't conform to PascalCase naming style
+91:C0103:Constant name "metaTwo" doesn't conform to UPPER_CASE naming style
+92:C0103:Class name "enumMade" doesn't conform to PascalCase naming style
+95:C0103:Class name "pastDate" doesn't conform to PascalCase naming style
+97:C0103:Constant name "dictNested" doesn't conform to UPPER_CASE naming style
+102:C0103:Variable name "enumInFn" doesn't conform to snake_case naming style
+103:C0103:Variable name "enumIntFn" doesn't conform to snake_case naming style
+105:C0103:Constant name "strUpper" doesn't conform to UPPER_CASE naming style
+106:C0103:Constant name "snake_join" doesn't conform to UPPER_CASE naming style
+107:C0103:Constant name "bytesDecode" doesn't conform to UPPER_CASE naming style
+110:C0103:Constant name "fmtDone" doesn't conform to UPPER_CASE naming style

@@ -7,9 +7,11 @@
 //!
 //! shortcut: R0903 judges a class only when every base is a class the
 //! project can read, a builtin exception or `type`, so a class derived from
-//! another builtin or from a module the project cannot find is never
-//! reported; and `type(self).__x` is the one call W0238 takes for the class,
-//! where Pylint infers the callee. Upgrade with inference.
+//! another builtin or from a class of a module that exists but whose class
+//! the project cannot read is never reported (a base from a module the
+//! environment lacks is left out, as Pylint does); and `type(self).__x` is
+//! the one call W0238 takes for the class, where Pylint infers the callee.
+//! Upgrade with inference.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -421,7 +423,7 @@ impl<'a> Walk<'a, '_, '_> {
         {
             return;
         }
-        let Some(mro) = self.hierarchy.mro(&start) else {
+        let Some(mro) = self.hierarchy.known_order(&start) else {
             return;
         };
         let mut done = HashSet::new();
@@ -512,6 +514,23 @@ fn is_exception(name: &str) -> bool {
 }
 
 impl<'a> Scan<'_, 'a, '_, '_> {
+    /// Whether the name that `base` starts with has one binding in a class of this file.
+    fn bound_once(&self, class: &Class<'a>, base: &Expr) -> bool {
+        let mut head = base;
+        while let Expr::Attribute(attribute) = head {
+            head = &attribute.value;
+        }
+        let env = self.walk.hierarchy.env;
+        match (class, head) {
+            (Class::Local(_), Expr::Name(name)) => env
+                .binding(name)
+                .is_some_and(|binding| env.ctx.model.is_sole_binding(binding.id)),
+            // shortcut: a remote file's rebinding is not checked, upgrade with its own bindings
+            (Class::Remote(_), _) => true,
+            _ => false,
+        }
+    }
+
     fn class(&mut self, class: &Class<'a>, depth: u8) {
         let hierarchy = self.walk.hierarchy;
         let Some(def) = class.def() else {
@@ -555,6 +574,13 @@ impl<'a> Scan<'_, 'a, '_, '_> {
                     });
                 }
                 Some(name) if is_exception(name) || name == "type" => self.exempt = true,
+                // astroid cannot import the module, so Pylint counts the class without the
+                // base; a name bound twice may stand for another import there.
+                Some(name)
+                    if name
+                        .rsplit_once('.')
+                        .is_some_and(|(module, _)| hierarchy.project.is_missing(module))
+                        && self.bound_once(class, base) => {}
                 // an enum, named tuple or typed dict is exempt already
                 _ => self.unknown = true,
             }

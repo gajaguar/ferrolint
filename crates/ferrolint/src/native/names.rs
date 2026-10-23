@@ -36,6 +36,7 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::{Env, Local, bases, locals, py_repr};
+use super::flow::own_returns;
 use super::misc::{Names as Lists, catches_import_error, csv, imported_names};
 use super::project::{ClassRef, Project};
 use super::scopes::{Step, exclusive};
@@ -662,6 +663,8 @@ enum Parent<'a> {
 enum Val {
     Const,
     Class,
+    /// The functional `Enum(...)`: a class for a module name, an instance for a variable.
+    Enum,
     Func,
     Other,
     Unknown,
@@ -1088,6 +1091,14 @@ impl<'a> Walk<'a, '_> {
             Expr::BoolOp(b) if all(&b.values.iter().collect::<Vec<_>>()) => Val::Const,
             Expr::Compare(c) if all(&c.operands.iter().collect::<Vec<_>>()) => Val::Const,
             Expr::If(i) if all(&[&*i.body, &*i.orelse]) => Val::Const,
+            // astroid cannot infer a dict that unpacks what it does not know.
+            Expr::Dict(d)
+                if d.items
+                    .iter()
+                    .any(|i| i.key.is_none() && !i.value.is_dict_expr()) =>
+            {
+                Val::Unknown
+            }
             Expr::List(_) | Expr::Tuple(_) | Expr::Set(_) | Expr::Dict(_) => Val::Other,
             // astroid has no inference for a comprehension.
             Expr::ListComp(_) | Expr::SetComp(_) | Expr::DictComp(_) | Expr::Generator(_) => {
@@ -1108,7 +1119,7 @@ impl<'a> Walk<'a, '_> {
                 Some(q)
                     if q.starts_with("typing.")
                         || q.starts_with("collections.abc.")
-                        || self.is_class(Some(q)) =>
+                        || (!stdlib_class(q) && self.is_class(Some(q))) =>
                 {
                     Val::Class
                 }
@@ -1166,9 +1177,11 @@ impl<'a> Walk<'a, '_> {
     /// Whether `qualified` names a class that the project defines, once.
     fn is_class(&self, qualified: Option<&str>) -> bool {
         qualified.is_some_and(|q| {
-            self.project
-                .class(&self.project.absolute(q))
-                .is_some_and(|class| class.is_sole())
+            stdlib_class(q)
+                || self
+                    .project
+                    .class(&self.project.absolute(q))
+                    .is_some_and(|class| class.is_sole())
         })
     }
 
@@ -1194,26 +1207,98 @@ impl<'a> Walk<'a, '_> {
 
     /// Whether a function of the file returns, wherever it returns, a class.
     fn returns_class(&self, func: &StmtFunctionDef) -> bool {
-        struct Returns<'a>(Vec<&'a Expr>);
-        impl<'a> Visitor<'a> for Returns<'a> {
-            fn visit_stmt(&mut self, stmt: &'a Stmt) {
-                match stmt {
-                    Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
-                    Stmt::Return(r) => self.0.extend(r.value.as_deref()),
-                    _ => visitor::walk_stmt(self, stmt),
-                }
-            }
-            fn visit_expr(&mut self, _: &'a Expr) {}
+        let returns = own_returns(&func.body);
+        !returns.is_empty()
+            && returns.iter().all(|r| {
+                r.value
+                    .as_deref()
+                    .is_some_and(|e| self.env.class_of(e).is_some())
+            })
+    }
+
+    /// Whether `value` calls a container type on something that is not a
+    /// display, which astroid infers to an instance and not to a container.
+    fn container_instance(&self, value: &Expr) -> bool {
+        let Expr::Call(call) = value else {
+            return false;
+        };
+        matches!(
+            self.qualified(&call.func).as_deref(),
+            Some("list" | "tuple" | "set" | "frozenset" | "dict")
+        ) && call.arguments.args.first().is_some_and(|a| {
+            !matches!(
+                a,
+                Expr::List(_) | Expr::Tuple(_) | Expr::Set(_) | Expr::Dict(_)
+            )
+        })
+    }
+
+    /// astroid evaluates `"...".format(...)` itself, so it is a constant only when every argument is
+    /// one and the template's fields are all supplied; `**` arguments supply nothing.
+    // shortcut: only a literal template, not a named constant one, upgrade when one shows up.
+    fn format_is_const(
+        &self,
+        func: &ruff_python_ast::ExprAttribute,
+        call: &ruff_python_ast::ExprCall,
+        depth: u8,
+    ) -> bool {
+        let Expr::StringLiteral(template) = &*func.value else {
+            return false;
+        };
+        let args = &call.arguments;
+        let keywords: Vec<_> = args
+            .keywords
+            .iter()
+            .filter_map(|k| k.arg.as_ref().map(|a| (a.as_str(), &k.value)))
+            .collect();
+        if !args
+            .args
+            .iter()
+            .chain(keywords.iter().map(|(_, v)| *v))
+            .all(|e| self.val(e, depth + 1) == Val::Const)
+        {
+            return false;
         }
-        let mut returns = Returns(Vec::new());
-        returns.visit_body(&func.body);
-        !returns.0.is_empty() && returns.0.iter().all(|e| self.env.class_of(e).is_some())
+        let mut next = 0;
+        let text = template.value.to_str().replace("{{", "").replace("}}", "");
+        text.split('{').skip(1).all(|field| {
+            let name = field
+                .split(['}', '!', ':', '.', '['])
+                .next()
+                .unwrap_or_default();
+            match name.parse::<usize>() {
+                Ok(i) => i < args.args.len(),
+                Err(_) if name.is_empty() => {
+                    next += 1;
+                    next <= args.args.len()
+                }
+                Err(_) => keywords.iter().any(|(k, _)| *k == name),
+            }
+        })
     }
 
     fn call_val(&self, call: &ruff_python_ast::ExprCall, depth: u8) -> Val {
         let all = |values: &[&Expr]| values.iter().all(|e| self.val(e, depth + 1) == Val::Const);
+        // The `str` and `bytes` methods that astroid infers to a constant, whatever the arguments.
+        if let Expr::Attribute(a) = &*call.func
+            && STR_METHODS.contains(&a.attr.as_str())
+            && all(&[&*a.value])
+            && (a.attr.as_str() != "format" || self.format_is_const(a, call, depth))
+        {
+            return Val::Const;
+        }
         let Some(callee) = self.qualified(&call.func) else {
-            if self.env.class_of(&call.func).is_some() || self.class_above(&call.func) {
+            if let Some(class) = self.env.class_of(&call.func) {
+                // A metaclass called with a name, bases and a namespace builds a class.
+                return if call.arguments.args.len() == 3 && self.is_metaclass(class) {
+                    Val::Class
+                } else if self.is_enum(class) {
+                    Val::Unknown
+                } else {
+                    Val::Other
+                };
+            }
+            if self.class_above(&call.func) {
                 return Val::Other;
             }
             return match &*call.func {
@@ -1238,8 +1323,17 @@ impl<'a> Walk<'a, '_> {
             | "collections.namedtuple"
             | "typing_extensions.NewType"
             | "typing_extensions.TypedDict" => Val::Class,
+            "enum.Enum" => Val::Enum,
+            // astroid infers the other enums' functional calls to nothing.
+            "enum.IntEnum"
+            | "enum.StrEnum"
+            | "enum.Flag"
+            | "enum.IntFlag"
+            | "typing.TypeVar"
+            | "typing.ParamSpec"
+            | "typing.TypeVarTuple" => Val::Unknown,
             "dict" | "list" | "set" | "frozenset" | "tuple" | "object" => Val::Other,
-            "typing.TypeVar" | "typing.ParamSpec" | "typing.TypeVarTuple" => Val::Unknown,
+            q if self.project.returns_class(&self.project.absolute(q)) => Val::Class,
             q => {
                 let last = q.rsplit('.').next().unwrap_or_default();
                 if q.contains('.') && last.starts_with(|c: char| c.is_ascii_uppercase()) {
@@ -1336,7 +1430,7 @@ impl<'a> Walk<'a, '_> {
         let val = self.val(value, 0);
         match val {
             Val::Unknown => return,
-            Val::Class => return self.check("class", name, range, None),
+            Val::Class | Val::Enum => return self.check("class", name, range, None),
             _ => {}
         }
         let line = line_of(self.ctx(), range);
@@ -1353,16 +1447,23 @@ impl<'a> Walk<'a, '_> {
             && !reassigned(true)
             && !reassigned(false)
             && self.loops == 0;
+        // astroid cannot infer `+=` on the instance that `list(x)` builds.
+        let instance = binds
+            .iter()
+            .any(|b| b.kind == Bk::Name && b.value.is_some_and(|v| self.container_instance(v)));
         // Pylint's inference of every binding of the name: an uninferable binding.
         let unknown = binds.iter().any(|b| match b.kind {
             Bk::Name => b.value.is_none_or(|v| self.val(v, 0) == Val::Unknown),
             Bk::FromImport | Bk::Foreign => true,
             // astroid cannot infer `+=` of a display that holds a `*starred`.
-            Bk::Aug => b.value.is_some_and(|v| match v {
-                Expr::Tuple(t) => t.elts.iter().any(Expr::is_starred_expr),
-                Expr::List(l) => l.elts.iter().any(Expr::is_starred_expr),
-                _ => false,
-            }),
+            Bk::Aug => {
+                instance
+                    || b.value.is_some_and(|v| match v {
+                        Expr::Tuple(t) => t.elts.iter().any(Expr::is_starred_expr),
+                        Expr::List(l) => l.elts.iter().any(Expr::is_starred_expr),
+                        _ => false,
+                    })
+            }
             Bk::Def | Bk::Class | Bk::Import => false,
         });
         let all_exclusive = binds.len() > 1
@@ -1502,6 +1603,12 @@ impl<'a> Walk<'a, '_> {
         self.ancestors(class)
             .iter()
             .any(|anc| matches!(anc, Anc::External(q) if enum_class(q)))
+    }
+
+    fn is_metaclass(&self, class: &'a StmtClassDef) -> bool {
+        self.ancestors(class)
+            .iter()
+            .any(|anc| matches!(anc, Anc::External(q) if q == "type" || q == "abc.ABCMeta"))
     }
 
     fn is_dataclass(&self, class: &StmtClassDef) -> bool {
@@ -1784,7 +1891,7 @@ impl<'a> Walk<'a, '_> {
                 self.visit_expr(type_);
             }
             self.handlers
-                .push(catches_import_error(h).then(|| imported_names(&t.body)));
+                .push(catches_import_error(h).then(|| imported_names(std::slice::from_ref(stmt))));
             if let Some(name) = &h.name {
                 self.store(name.as_str(), name.range(), OTHER, Parent::Direct);
             }
@@ -1817,6 +1924,28 @@ fn is_class_var(annotation: &Expr) -> bool {
     last_name(annotation) == Some("ClassVar")
 }
 
+const STR_METHODS: [&str; 19] = [
+    "capitalize",
+    "center",
+    "count",
+    "decode",
+    "encode",
+    "find",
+    "format",
+    "index",
+    "join",
+    "ljust",
+    "lower",
+    "lstrip",
+    "replace",
+    "rjust",
+    "rstrip",
+    "strip",
+    "swapcase",
+    "title",
+    "upper",
+];
+
 /// A builtin name that is a class.
 fn builtin_class(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_uppercase())
@@ -1844,6 +1973,14 @@ fn builtin_class(name: &str) -> bool {
                 | "staticmethod"
                 | "classmethod"
         )
+}
+
+/// A standard library class that astroid infers to a class. Not the ones the
+/// table lists without methods (`Enum` and `Flag`, which its enum brain
+/// rewrites; `ABC`, left out too) and not `Element`, rebound by its C module.
+fn stdlib_class(qualified: &str) -> bool {
+    class_methods::methods(qualified).is_some_and(|m| !m.is_empty())
+        && qualified != "xml.etree.ElementTree.Element"
 }
 
 /// A `typing` name that is a class or a special form, not a function.
@@ -2064,6 +2201,32 @@ mod tests {
             ],
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn classes_found_through_functions_and_handlers_of_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(
+            package.join("__init__.py"),
+            "from . import base\nAlias = base.Cls\n",
+        )
+        .unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "class Cls:\n    def run(self):\n        pass\n\n\ntry:\n    import x\nexcept ImportError:\n    class Fallback(dict):\n        pass\n",
+        )
+        .unwrap();
+        std::fs::write(
+            package.join("utils.py"),
+            "from functools import cache\n\n\n@cache\ndef get_cls():\n    from pkg.base import Cls\n\n    return Cls\n\n\ndef get_obj():\n    from pkg.base import Cls\n\n    return Cls()\n",
+        )
+        .unwrap();
+        let source = "from pkg import Alias\nfrom pkg.base import Fallback\nfrom pkg.utils import get_cls, get_obj\n\n\nclass F(Fallback):\n    def setdefault(self, Key): pass\n\n\ndef make():\n    Klass = get_cls()\n    Obj = get_obj()\n    return Klass, Obj\n\n\nclass G(Alias):\n    def run(self, Key): pass\n";
+        let found = lint_at(source, &package.join("child.py"), "pkg.child");
+        let lines: Vec<_> = found.iter().map(|(line, _)| *line).collect();
+        assert_eq!(lines, [12], "{found:?}");
     }
 
     fixture!(module_level_names, "names_module", []);

@@ -31,6 +31,7 @@ use ruff_python_parser::Parsed;
 use ferrolint_core::LineIndex;
 
 use super::classes::{bases, locals};
+use super::flow::own_returns;
 use crate::c_module_names;
 use crate::class_methods;
 
@@ -244,10 +245,20 @@ impl Project {
     pub fn with_packages(path: &Path, module: &str) -> Self {
         let mut project = Self::new(path, module);
         if let Some((library, packages)) = environment() {
+            project.stdlib = Some(library.clone());
             project.roots.push(library);
             project.roots.extend(packages);
         }
         project
+    }
+
+    /// Whether the environment is known and holds no module `name`, so that
+    /// astroid cannot import it either.
+    pub fn is_missing(&self, name: &str) -> bool {
+        // A bare `.` names the package itself.
+        self.stdlib.is_some()
+            && !name.trim_start_matches('.').is_empty()
+            && self.spec(&self.absolute(name)).is_none()
     }
 
     /// The modules that `from m import *` names at the top level of `body`.
@@ -369,8 +380,8 @@ impl Project {
         if let Some(origin) = loaded.imports.get(name) {
             return self.class_at(origin, depth + 1);
         }
-        if let Some(target) = alias(&loaded.parsed.syntax().body, name) {
-            return self.class_at(&format!("{module}.{target}"), depth + 1);
+        if let Some(target) = alias(&loaded, module, name) {
+            return self.class_at(&target, depth + 1);
         }
         loaded
             .stars
@@ -379,10 +390,46 @@ impl Project {
     }
 }
 
+impl Project {
+    /// Whether every `return` of the function `qualified` names
+    /// (`pkg.module.func`) gives a class of the project that the function
+    /// imports or the module imports.
+    ///
+    /// shortcut: the function must be defined in the module the name is
+    /// given in, not re-exported; upgrade with the contract's module index.
+    pub fn returns_class(&self, qualified: &str) -> bool {
+        let Some((module, name)) = qualified.rsplit_once('.') else {
+            return false;
+        };
+        let Some(loaded) = self.load(module) else {
+            return false;
+        };
+        let Some(func) = loaded
+            .parsed
+            .syntax()
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                Stmt::FunctionDef(f) if f.name.as_str() == name => Some(f),
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        let mut imports = loaded.imports.clone();
+        collect_imports(&func.body, &loaded.package, &mut imports, &mut Vec::new());
+        let returns = own_returns(&func.body);
+        !returns.is_empty()
+            && returns.iter().all(|r| {
+                matches!(r.value.as_deref(), Some(Expr::Name(n))
+                    if imports.get(n.id.as_str()).is_some_and(|q| self.class(q).is_some()))
+            })
+    }
+}
+
 /// The modules whose names astroid's brain plugins add to, so a name that
 /// their source lacks may still be there.
 const BRAINS: &[&str] = &[
-    "collections",
     "ctypes",
     "crypt",
     "curses",
@@ -527,8 +574,12 @@ impl Project {
             let listing = self.listing(dir);
             let package = dir.join(part);
             if listing.entry(part) == Some(true) {
-                if self.listing(&package).entry("__init__.py") == Some(false) {
-                    return Some(Spec::source(package.join("__init__.py"), true));
+                // astroid's finder takes a package with only `__init__.pyi` for a source package.
+                let inner = self.listing(&package);
+                for init in ["__init__.py", "__init__.pyi"] {
+                    if inner.entry(init) == Some(false) {
+                        return Some(Spec::source(package.join(init), true));
+                    }
                 }
                 if !listing.has_compiled(part)
                     && listing.entry(&format!("{part}.py")) != Some(false)
@@ -593,7 +644,9 @@ impl Project {
         let defined = brain
             || match &spec.kind {
                 // A file that does not parse binds names that cannot be told.
-                Kind::Source { .. } => self.names_of(name).is_none_or(|names| names.contains(attr)),
+                Kind::Source { .. } => self
+                    .names_of(name)
+                    .is_none_or(|names| names.contains(attr) || names.contains("*")),
                 Kind::Builtin(names) => attr.starts_with('_') || names.contains(&attr),
                 Kind::Extension => self.loads_extension(name),
                 Kind::Made => true,
@@ -771,7 +824,15 @@ impl Project {
             match item {
                 Late::Name(name) => add_name(out, &name, all),
                 Late::Star(origin) => {
-                    let _ = self.public_at(&origin, depth + 1, out);
+                    // A source that does not parse brings names that cannot be told: `*` stands for them.
+                    let told = self.public_at(&origin, depth + 1, out).is_some();
+                    if !told
+                        && self
+                            .spec(&origin)
+                            .is_some_and(|s| matches!(s.kind, Kind::Source { .. }))
+                    {
+                        out.push("*".into());
+                    }
                 }
             }
         }
@@ -1049,15 +1110,12 @@ impl ClassRef {
             }));
         }
         let Some(qualified) = self.module.qualify(expr) else {
-            // A name that `from module import *` binds.
+            // A name that `from module import *` binds, or `Alias = Class`.
             let Expr::Name(name) = expr else {
                 return None;
             };
-            return self
-                .module
-                .stars
-                .iter()
-                .find_map(|star| project.class(&format!("{star}.{}", name.id)))
+            return project
+                .class(&format!("{}.{}", self.module.name, name.id))
                 .map(Ok);
         };
         Some(project.class(&qualified).ok_or(qualified))
@@ -1083,17 +1141,24 @@ impl Module {
     }
 }
 
-/// `Y` of the last `name = Y` of the top level, a name that may be a class.
+/// The qualified `Y` of the last `name = Y` of the top level, where `Y` is a name of the module
+/// or an attribute of a module it imports (`name = decoder.Decoder`), that may be a class.
 ///
 /// shortcut: a name bound in the module itself, not under `if` or `try`;
 /// upgrade with inference.
-fn alias<'m>(body: &'m [Stmt], name: &str) -> Option<&'m str> {
-    body.iter().rev().find_map(|stmt| match stmt {
+fn alias(loaded: &Module, module: &str, name: &str) -> Option<String> {
+    loaded.parsed.syntax().body.iter().rev().find_map(|stmt| match stmt {
         Stmt::Assign(a)
             if matches!(&a.targets[..], [Expr::Name(target)] if target.id.as_str() == name) =>
         {
             match &*a.value {
-                Expr::Name(value) => Some(value.id.as_str()),
+                Expr::Name(value) => Some(format!("{module}.{}", value.id)),
+                Expr::Attribute(attr) => {
+                    let Expr::Name(base) = &*attr.value else {
+                        return None;
+                    };
+                    Some(format!("{}.{}", loaded.imports.get(base.id.as_str())?, attr.attr))
+                }
                 _ => None,
             }
         }
@@ -1112,7 +1177,16 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
                     std::iter::once(&s.body).chain(s.elif_else_clauses.iter().map(|c| &c.body));
                 found = nested.filter_map(|b| find_class(b, name)).last().or(found);
             }
-            Stmt::Try(t) => found = find_class(&t.body, name).or(found),
+            Stmt::Try(t) => {
+                let handlers = t.handlers.iter().map(|h| {
+                    let ExceptHandler::ExceptHandler(h) = h;
+                    &h.body
+                });
+                let nested = std::iter::once(&t.body)
+                    .chain(handlers)
+                    .chain([&t.orelse, &t.finalbody]);
+                found = nested.filter_map(|b| find_class(b, name)).last().or(found);
+            }
             _ => {}
         }
     }
@@ -1338,6 +1412,38 @@ mod tests {
         let bases = project.class("app.child.Child").unwrap().bases(&project);
         assert_eq!(bases.len(), 1);
         assert_eq!(bases[0].as_ref().unwrap().qname(), "app.base.Base");
+    }
+
+    #[test]
+    fn a_base_bound_by_an_alias_of_its_module_is_found() {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("app/__init__.py", "");
+        write("app/views.py", "");
+        write(
+            "app/child.py",
+            "class Base:\n    pass\n\nAlias = Base\n\nclass Child(Alias):\n    pass\n",
+        );
+        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let bases = project.class("app.child.Child").unwrap().bases(&project);
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].as_ref().unwrap().qname(), "app.child.Base");
+    }
+
+    #[test]
+    fn a_module_is_missing_only_where_the_environment_is_known() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("here.py"), "").unwrap();
+        let mut project = Project::new(&root.path().join("mod.py"), "mod");
+        assert!(!project.is_missing("absent"));
+        project.stdlib = Some(root.path().to_path_buf());
+        assert!(project.is_missing("absent"));
+        assert!(!project.is_missing("here"));
+        assert!(!project.is_missing("."));
     }
 
     #[test]

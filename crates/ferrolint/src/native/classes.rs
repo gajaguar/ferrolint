@@ -26,11 +26,14 @@ pub struct Env<'a> {
     pub ctx: &'a Ctx<'a>,
     classes: HashMap<u32, &'a StmtClassDef>,
     funcs: HashMap<u32, &'a StmtFunctionDef>,
+    /// `Alias = Name` by the node id of `Alias`.
+    aliases: HashMap<u32, &'a Expr>,
 }
 
 struct Collect<'a, 'm> {
     classes: &'m mut HashMap<u32, &'a StmtClassDef>,
     funcs: &'m mut HashMap<u32, &'a StmtFunctionDef>,
+    aliases: &'m mut HashMap<u32, &'a Expr>,
 }
 
 impl<'a> Visitor<'a> for Collect<'a, '_> {
@@ -52,6 +55,15 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
                     self.funcs.insert(id, func);
                 }
             }
+            Stmt::Assign(assign) => {
+                if let ([Expr::Name(target)], Expr::Name(_)) = (&assign.targets[..], &*assign.value)
+                    && let Some(id) = ruff_python_ast::HasNodeIndex::node_index(target)
+                        .load()
+                        .as_u32()
+                {
+                    self.aliases.insert(id, &assign.value);
+                }
+            }
             _ => {}
         }
         visitor::walk_stmt(self, stmt);
@@ -60,16 +72,19 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
 
 impl<'a> Env<'a> {
     pub fn new(ctx: &'a Ctx<'a>) -> Self {
-        let (mut classes, mut funcs) = (HashMap::new(), HashMap::new());
+        let (mut classes, mut funcs, mut aliases) =
+            (HashMap::new(), HashMap::new(), HashMap::new());
         Collect {
             classes: &mut classes,
             funcs: &mut funcs,
+            aliases: &mut aliases,
         }
         .visit_body(&ctx.parsed.syntax().body);
         Self {
             ctx,
             classes,
             funcs,
+            aliases,
         }
     }
 
@@ -118,13 +133,26 @@ impl<'a> Env<'a> {
         }
     }
 
-    /// The class of this file that `expr` names, when it is bound only once.
+    /// The class of this file that `expr` names, when it is bound only once,
+    /// directly or through `Alias = Class`.
     pub fn class_of(&self, expr: &Expr) -> Option<&'a StmtClassDef> {
+        self.class_of_at(expr, 0)
+    }
+
+    fn class_of_at(&self, expr: &Expr, depth: u8) -> Option<&'a StmtClassDef> {
         let Expr::Name(name) = expr else { return None };
         let binding = self.binding(name)?;
-        (binding.kind == BindingKind::ClassDef && self.ctx.model.is_sole_binding(binding.id))
-            .then(|| self.classes.get(&binding.node?).copied())
-            .flatten()
+        if !self.ctx.model.is_sole_binding(binding.id) {
+            return None;
+        }
+        match binding.kind {
+            BindingKind::ClassDef => self.classes.get(&binding.node?).copied(),
+            // `A = B` and `B = A` would loop.
+            BindingKind::Assignment if depth < 8 => {
+                self.class_of_at(self.aliases.get(&binding.node?)?, depth + 1)
+            }
+            _ => None,
+        }
     }
 
     /// The function of this file that `name` calls, when it is bound only once.
