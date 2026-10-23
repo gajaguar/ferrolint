@@ -1,6 +1,6 @@
 # Directory Update Log
 
-## 2026-10-22
+## 2026-10-23
 
 * **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
   imported from the project or an installed package, a method of a base from
@@ -10,6 +10,9 @@
 
 * **native-rules.md**: `R0801` sits on the file `os.walk` reaches last, as
   Pylint attaches it, not the last by name.
+
+## 2026-10-22
+
 * **native-rules.md**: the arity rules (`E1120`, `E1121`, `E1124`, `E1125`)
   read a decorated function by its signature as written, as Pylint does
   (a `classmethod`, a property and its `setter` excepted), and follow
