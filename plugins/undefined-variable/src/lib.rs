@@ -1,6 +1,8 @@
 //! A port of Pylint's `undefined-variable` (E0602): a name read that no
-//! scope and no builtin defines. A module with a star import is left
-//! alone, since it may define anything.
+//! scope and no builtin defines. A module with a star import the host
+//! cannot tell the names of is left alone, since it may define anything.
+
+use std::collections::HashSet;
 
 use ferrolint_plugin_sdk::prelude::*;
 
@@ -51,7 +53,10 @@ fn catches_name_error(node: &Node<'_>, cx: &Context<'_>) -> bool {
 
 #[derive(Default)]
 struct UndefinedVariable {
+    /// A star import whose names the host cannot tell.
     star_import: bool,
+    /// The names the other star imports bind.
+    starred: HashSet<String>,
     undefined: Vec<(String, Range)>,
 }
 
@@ -70,7 +75,10 @@ impl Checker for UndefinedVariable {
 
     fn visit(&mut self, node: &Node<'_>, cx: &mut Context<'_>) {
         match node.kind {
-            NodeKind::Alias if node.name == Some("*") => self.star_import = true,
+            NodeKind::Alias if node.name == Some("*") => match cx.star_names(node) {
+                Some(names) => self.starred.extend(names),
+                None => self.star_import = true,
+            },
             NodeKind::Name if node.context == ExprContext::Load => {
                 let Some(name) = node.name else {
                     return;
@@ -92,6 +100,9 @@ impl Checker for UndefinedVariable {
             return;
         }
         for (name, range) in self.undefined.drain(..) {
+            if self.starred.contains(&name) {
+                continue;
+            }
             cx.report(Diagnostic::new(
                 CODE,
                 format!("Undefined variable '{name}'"),

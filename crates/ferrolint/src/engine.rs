@@ -2,7 +2,7 @@
 //! them in parallel (or replay them from the cache) and gather the findings
 //! into one deterministic order.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -677,6 +677,7 @@ impl Linter<'_> {
         let mut aborts = Vec::new();
         if parsed.has_no_syntax_errors() && !missing.is_empty() {
             let context = PluginContext {
+                path: file.path,
                 module: file.module,
                 display: file.display,
                 source: &source,
@@ -716,6 +717,7 @@ impl Linter<'_> {
         );
         let ast = flat.pack();
         let data = Arc::new(FileData {
+            stars: star_names(&flat, context.path, context.module),
             flat,
             ast,
             model,
@@ -799,6 +801,7 @@ type PluginOutcome = std::result::Result<Vec<Diagnostic>, Diagnostic>;
 
 /// What a plugin run needs of the file.
 struct PluginContext<'a> {
+    path: &'a Path,
     module: &'a str,
     display: &'a str,
     source: &'a str,
@@ -806,6 +809,28 @@ struct PluginContext<'a> {
     parsed: &'a Parsed<ModModule>,
     py_version: Option<(u32, u32)>,
     options: &'a [(String, String)],
+}
+
+/// What each `from m import *` of the file binds, by alias node, for the
+/// plugins' `modules` query. A module the project cannot tell is left out.
+fn star_names(flat: &ast::Flat, path: &Path, module: &str) -> HashMap<u32, Vec<String>> {
+    let mut project = None;
+    let mut stars = HashMap::new();
+    for (id, node) in (0..).zip(&flat.nodes) {
+        if node.kind != wit::NodeKind::Alias || flat.string(node.name) != Some("*") {
+            continue;
+        }
+        let import = &flat.nodes[node.parent.unwrap_or_default() as usize];
+        let project = project.get_or_insert_with(|| native::Project::new(path, module));
+        let origin = project.absolute(flat.string(import.detail).unwrap_or_default());
+        // `*` among the names stands for a source that does not parse.
+        if let Some(names) = project.public_names(&origin)
+            && !names.iter().any(|name| name == "*")
+        {
+            stars.insert(id, names);
+        }
+    }
+    stars
 }
 
 /// The dotted module name Python imports a file under: its stem, prefixed

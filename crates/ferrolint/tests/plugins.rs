@@ -11,11 +11,20 @@ use support::Project;
 
 /// Lint `source` with one plugin and return `line: message` per finding.
 fn findings(package: &str, source: &str) -> Vec<String> {
+    findings_beside(package, "", source)
+}
+
+/// As [`findings`], with a `tokens.py` of `tokens` beside `case.py` when it
+/// is not empty. Its own findings would show, so it must have none.
+fn findings_beside(package: &str, tokens: &str, source: &str) -> Vec<String> {
     let project = Project::new();
     let plugin = project.plugin(package, "plugin.wasm");
     project
         .write("ferrolint.toml", plugin)
         .write("case.py", source);
+    if !tokens.is_empty() {
+        project.write("tokens.py", tokens);
+    }
     let run = project.run(&["--no-cache"]);
     assert!(run.code <= 1, "{run:?}");
     run.finding_lines()
@@ -52,6 +61,26 @@ fn undefined_variable() {
     let star = "from os import *\nprint(sep)\n";
     assert_eq!(
         findings("ferrolint-plugin-undefined-variable", star),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn undefined_variable_reads_the_names_a_project_star_import_binds() {
+    // Pylint binds the public names of the module and ignores its `__all__`.
+    let tokens = "__all__ = ['alpha']\nalpha = 1\nbeta = 2\n_hidden = 3\n";
+    let source = "from tokens import *\nprint(alpha, beta, _hidden, missing)\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-undefined-variable", tokens, source),
+        [
+            "2: Undefined variable '_hidden'",
+            "2: Undefined variable 'missing'"
+        ]
+    );
+    // A module beside a star it cannot find keeps the plugin silent.
+    let unknown = "from tokens import *\nfrom nowhere import *\nprint(alpha, beta, missing)\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-undefined-variable", tokens, unknown),
         Vec::<String>::new()
     );
 }
@@ -293,12 +322,29 @@ fn self_assigning_variable_skips_a_class_body() {
     );
 }
 
-/// The unused-import component with every `@0.4.0` interface name spelled
+#[test]
+fn unused_import_leaves_a_name_an_earlier_project_star_import_binds() {
+    let tokens = "alpha = 1\nbeta = 2\n";
+    // `import os` comes before the star, so it owns the name; `beta` and
+    // `alpha` come after it, so the star does, and Pylint reports them as `W0614`.
+    let source =
+        "import os\nfrom tokens import *\nimport beta\nfrom tokens import alpha\nimport gamma\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-unused-import", tokens, source),
+        [
+            "1: Unused import os",
+            "2: Unused import(s) beta and alpha from wildcard import of tokens",
+            "5: Unused import gamma"
+        ]
+    );
+}
+
+/// The unused-import component with every `@0.4.1` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
 fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.0");
+    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.1");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -330,9 +376,17 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 }
 
 #[test]
+fn a_plugin_built_against_the_patch_before_is_loaded() {
+    // 0.4.1 only adds an interface, which a 0.4.0 build does not import.
+    let run = lint_with(&respelled_plugin(*b"@0.4.0"));
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("Unused import os"), "{run:?}");
+}
+
+#[test]
 fn a_plugin_built_against_an_older_contract_is_refused() {
     // Before 1.0 a minor bump of the contract is incompatible, whatever it
-    // adds, so 0.4.0 refuses a 0.3.x build as it does a 0.2.x one.
+    // adds, so 0.4.1 refuses a 0.3.x build as it does a 0.2.x one.
     for version in [*b"@0.2.1", *b"@0.3.1"] {
         let run = lint_with(&respelled_plugin(version));
         assert_eq!(run.code, 2, "{run:?}");

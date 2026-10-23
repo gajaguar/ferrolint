@@ -17,6 +17,12 @@
   it out (with `VIRTUAL_ENV`), and a name bound to a mixin factory is the
   class it returns: `W0201` and the other ancestor rules read those classes.
 
+* **Plugin star imports**: Contract 0.4.1 adds `modules.star-names`.
+  `undefined-variable` (`E0602`) reads the names a project `from m import *`
+  binds, and `unused-import` (`W0611`) leaves an import that an earlier star
+  binds. Updated `requirements/plugin-contract.md`, `usage/plugins.md` and
+  `usage/writing-a-plugin.md`.
+
 * **native-rules.md**: `W0101` and `R1710` follow a `NoReturn` function
   imported from the project or an installed package, a method of a base from
   another module and `self.name()` set to such a function; `W0101` reads the

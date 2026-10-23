@@ -34,6 +34,12 @@ pub trait Semantic {
     fn plugin_options(&self) -> Vec<(String, String)> {
         Vec::new()
     }
+    /// The names the `from m import *` at the alias `node` binds, or none
+    /// when the host cannot tell. A native test that does not care answers
+    /// that it cannot.
+    fn star_names(&self, _node: u32) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// A comment of the file: its range and its text, `#` included.
@@ -74,6 +80,10 @@ impl Semantic for HostSemantic {
 
     fn plugin_options(&self) -> Vec<(String, String)> {
         crate::bindings::ferrolint::plugin::settings::plugin_options()
+    }
+
+    fn star_names(&self, node: u32) -> Option<Vec<String>> {
+        crate::bindings::ferrolint::plugin::modules::star_names(node)
     }
 }
 
@@ -208,6 +218,12 @@ impl<'a> Context<'a> {
 
     pub fn resolve(&self, node: &Node<'_>) -> Option<Binding> {
         self.semantic.resolve(node.id)
+    }
+
+    /// The names the `from m import *` at the alias `node` binds, or none
+    /// when the host cannot tell (see the contract's `modules` interface).
+    pub fn star_names(&self, node: &Node<'_>) -> Option<Vec<String>> {
+        self.semantic.star_names(node.id)
     }
 
     /// The host's best-effort type of the expression at `node`; check

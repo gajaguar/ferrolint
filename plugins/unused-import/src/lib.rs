@@ -15,8 +15,10 @@
 //! name that a string annotation (a union excepted) or a `# type:` comment
 //! mentions, the module-level imports of an `__init__.py`, and at module
 //! level every import of a name after the first unused one (by bound name
-//! in a function). A name a star import of another file may bind is not
-//! known: Pylint then leaves the import alone, this port reports it.
+//! in a function). A module-level `import x` or `from m import x` after a
+//! star import that binds `x` is the star's, not reported. The names come
+//! from the host (`Context::star_names`); a star it cannot tell binds none
+//! here, so the import is reported, where Pylint may take it for the star's.
 
 use std::collections::HashSet;
 
@@ -32,6 +34,8 @@ struct UnusedImport {
     /// The names in string annotations and `# type:` comments: like Pylint,
     /// they excuse an import of that name anywhere in the file.
     type_names: HashSet<String>,
+    /// The star imports whose names the host told, by alias node.
+    stars: Vec<(u32, Vec<String>)>,
 }
 
 /// An import alias that binds a name.
@@ -122,6 +126,16 @@ impl Checker for UnusedImport {
             if (import.scope == 0 && in_init) || !checked.insert((import.scope, key)) {
                 continue;
             }
+            // Pylint gives the name to the first statement that binds it: an earlier star.
+            if import.scope == 0
+                && import.dotted == import.name
+                && self
+                    .stars
+                    .iter()
+                    .any(|(star, names)| *star < import.alias && names.contains(&import.name))
+            {
+                continue;
+            }
             if import.skip
                 || [Some(&import.dotted), import.asname.as_ref()]
                     .into_iter()
@@ -152,7 +166,12 @@ impl UnusedImport {
             NodeKind::ImportFrom => Some(statement.detail.unwrap_or("")),
             _ => return,
         };
-        if module == Some("__future__") || dotted == "*" {
+        if dotted == "*" {
+            self.stars
+                .extend(cx.star_names(alias).map(|names| (alias.id, names)));
+            return;
+        }
+        if module == Some("__future__") {
             return;
         }
         let scope = cx.scope(alias);

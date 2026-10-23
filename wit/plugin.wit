@@ -1,4 +1,4 @@
-package ferrolint:plugin@0.4.0;
+package ferrolint:plugin@0.4.1;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -333,6 +333,18 @@ interface settings {
     plugin-options: func() -> list<tuple<string, string>>;
 }
 
+/// What the host knows of the other files of the project. A host of 0.4.1
+/// still loads a plugin built against 0.4.0, which imports nothing of it.
+@since(version = 0.4.1)
+interface modules {
+    /// The names the `from m import *` at the `alias` node binds, in the
+    /// module's order. None when the host cannot tell: `m` is not a file
+    /// under the project's directories (nor a C module it knows), or its
+    /// source, or one it star-imports, does not parse. Like Pylint, it
+    /// ignores the `__all__` of `m`.
+    star-names: func(alias: u32) -> option<list<string>>;
+}
+
 /// The plugin's exports.
 interface checker {
     use types.{ast, diagnostic, file, plugin-info};
@@ -354,5 +366,7 @@ world plugin {
     import comments;
     @since(version = 0.3.1)
     import settings;
+    @since(version = 0.4.1)
+    import modules;
     export checker;
 }

@@ -30,8 +30,17 @@ answers to its Pylint msg-id and symbol as well as its code.
   fixtures (acceptance test AC-10).
 * The others follow their Pylint checker's main behavior; each crate's
   doc comment lists what it leaves out, such as names used only in a type
-  comment for `unused-variable` or every name of a module with a star
-  import for `undefined-variable`.
+  comment for `unused-variable`.
+* `undefined-variable` and `unused-import` ask the host for the names a
+  `from m import *` binds (`modules.star-names`): the public names of a
+  file found above the linted one, a C module of the standard library the
+  host has a table for, or one that star-imports them, ignoring the
+  `__all__` of `m` as Pylint does. A name read that no star binds is
+  reported, and an `import x` after a star that binds `x` is the star's, as
+  in Pylint. A star the host cannot tell (a module it does not find, such as
+  an installed package, or one that does not parse) keeps `undefined-variable`
+  silent for the whole file. The answer depends on another file, so it is as
+  stale as the [result cache](../requirements/result-cache.md) is.
 * `bare-except` skips an `except:` whose body has a `raise` among its own
   statements, as Pylint's `_is_raising` does; a `raise` under an `if` still
   counts as bare.
