@@ -97,6 +97,10 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         return (Vec::new(), Vec::new());
     }
     let units = units(params, files, &opts, &enabled);
+    // The listing order is not a file's content, so the key must name the anchor.
+    let anchor = duplicates
+        .then(|| checked_last(arguments(params), &units))
+        .flatten();
     let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
     let key = params.cache.map(|cache| {
         let hashes: Vec<String> = files
@@ -110,6 +114,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         let mut parts = vec!["project".to_owned(), format!("{:?}", params.py_version)];
         parts.push(format!("{:?}", params.options));
         parts.push(format!("{cyclic}{duplicates}"));
+        parts.push(anchor.map(|u| u.display.clone()).unwrap_or_default());
         // The roots decide how an absolute import resolves, whatever the names.
         parts.push(format!("{:?}", roots(params, &opts)));
         for name in ["VIRTUAL_ENV", "PYTHONPATH"] {
@@ -178,7 +183,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         }
         touched = project.touched();
     }
-    if duplicates && let Some(last) = checked_last(arguments(params), &units) {
+    if let Some(last) = anchor {
         out.extend(
             project_phase::duplicates(&units, &opts, params.registry)
                 .into_iter()
@@ -204,8 +209,8 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
 /// The file Pylint checks last, where it attaches R0801: the one `os.walk`
 /// reaches last in the arguments' trees (a directory's files, then its
 /// subdirectories, in the order the file system lists them).
-// shortcut: R0401 still takes the last by name, and the cache key ignores
-// the listing order; move R0401 here when its corpora agree.
+// shortcut: R0401 still takes the last by name; move R0401 here when its
+// corpora agree.
 fn checked_last(arguments: Vec<PathBuf>, units: &[Unit]) -> Option<&Unit> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let mut subdirs = Vec::new();
@@ -223,7 +228,11 @@ fn checked_last(arguments: Vec<PathBuf>, units: &[Unit]) -> Option<&Unit> {
     let mut order = Vec::new();
     for argument in arguments {
         let real = fs::canonicalize(&argument).unwrap_or(argument);
-        walk(&real, &mut order);
+        if real.is_file() {
+            order.push(real);
+        } else {
+            walk(&real, &mut order);
+        }
     }
     // A file the walk does not reach ranks first; if none is reached, the last by name.
     let rank: std::collections::HashMap<&PathBuf, usize> = order
@@ -393,8 +402,11 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            checked_last(vec![root], &units).unwrap().display,
+            checked_last(vec![root.clone()], &units).unwrap().display,
             "sub/a.py"
         );
+        // A file argument is checked where it stands: the last argument wins.
+        let files = vec![root.join("z.py"), root.join("sub/a.py")];
+        assert_eq!(checked_last(files, &units).unwrap().display, "sub/a.py");
     }
 }

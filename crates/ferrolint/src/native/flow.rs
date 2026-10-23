@@ -1439,6 +1439,8 @@ mod fixtures {
             found,
             "4:R1710:Either all return statements in a function should return an expression, or none of them should."
         );
+        let dead = "import pytest\n\n\ndef g():\n    pytest.fail('no')\n    print(1)\n";
+        assert_eq!(crate::native::classes::render(dead, &[], BATCH_C), "");
     }
 
     #[test]

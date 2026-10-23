@@ -344,6 +344,8 @@ impl Project {
         let output = Command::new(env!("CARGO_BIN_EXE_ferrolint"))
             .args(args)
             .current_dir(self.path())
+            // the caller's virtualenv would change which imports resolve
+            .env_remove("VIRTUAL_ENV")
             .env("HOME", self.join(".home"))
             .env("XDG_CONFIG_HOME", self.join(".home"))
             .env("GIT_CONFIG_NOSYSTEM", "1")

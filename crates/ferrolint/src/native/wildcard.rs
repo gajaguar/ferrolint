@@ -223,7 +223,7 @@ mod tests {
             ),
             (
                 "pkg/user.py",
-                "from pkg.m import *\nfrom .listed import *\nfrom pkg.gone import *\nfrom json import *\n\nprint(a, x)\n",
+                "from pkg.m import *\nfrom .listed import *\nfrom pkg.gone import *\nfrom nowhere import *\n\nprint(a, x)\n",
             ),
         ];
         assert_eq!(
@@ -275,7 +275,7 @@ mod tests {
             ("pkg/listed.py", "if True:\n    __all__ = ['a']\na = 1\n"),
             (
                 "pkg/user.py",
-                "from pkg.plain import *\nfrom .listed import *\nfrom . import *\nfrom json import *\n",
+                "from pkg.plain import *\nfrom .listed import *\nfrom . import *\nfrom nowhere import *\n",
             ),
         ];
         let ids = ["W0401"];
@@ -284,14 +284,14 @@ mod tests {
             "1:W0401:Wildcard import pkg.plain\n\
              2:W0401:Wildcard import listed\n\
              3:W0401:Wildcard import \n\
-             4:W0401:Wildcard import json"
+             4:W0401:Wildcard import nowhere"
         );
         let allowed = [("allow-wildcard-with-all", "yes")];
         assert_eq!(
             run_with(&files, "pkg/user.py", "pkg.user", &allowed, &ids),
             "1:W0401:Wildcard import pkg.plain\n\
              3:W0401:Wildcard import \n\
-             4:W0401:Wildcard import json"
+             4:W0401:Wildcard import nowhere"
         );
     }
 

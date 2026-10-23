@@ -101,3 +101,4 @@
 263:C0117:Consider changing "not 'k' in cls.__dict__" to "'k' not in cls.__dict__"
 269:C0117:Consider changing "not 'k' in self.cells" to "'k' not in self.cells"
 275:C0117:Consider changing "not 'k' in text" to "'k' not in text"
+305:C0117:Consider changing "not self.plain < 3" to "self.plain >= 3"
