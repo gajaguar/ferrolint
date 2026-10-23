@@ -632,7 +632,21 @@ impl Linter<'_> {
             return Ok((entry, Vec::new()));
         };
         let known = |name: &str| setup.registry.resolve(name).is_some();
-        entry.host = checks::check(&source, &parsed, &index, file.module, &known);
+        let plugin_loaded = |module: &str| {
+            setup
+                .options
+                .iter()
+                .find(|(key, _)| key == "load-plugins")
+                .is_some_and(|(_, value)| value.split(',').any(|name| name.trim() == module))
+        };
+        entry.host = checks::check(
+            &source,
+            &parsed,
+            &index,
+            file.module,
+            &known,
+            &plugin_loaded,
+        );
         if parsed.has_no_syntax_errors() && native::wanted(enabled) {
             let flat = ast::flatten(&source, &index, parsed.syntax());
             let model = Model::build(

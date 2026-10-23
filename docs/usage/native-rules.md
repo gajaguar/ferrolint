@@ -710,7 +710,9 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
   not `disable`, `enable`, `disable-next`, `disable-msg` or `enable-msg`.
 * `W0012` `unknown-option-value`: a `disable` or `enable` option, or a pragma,
   names a message, category or checker Pylint does not know. A name the rule
-  registry resolves, such as a plugin's rule, is known.
+  registry resolves, such as a plugin's rule, is known. A message or checker
+  of a `pylint.extensions.*` or `pylint_django` plugin is known only when
+  `load-plugins` names that plugin, as Pylint registers its names only then.
 * `R0022` `useless-option-value`: the same, for a message Pylint removed or
   moved to an extension.
 * `E0013` `bad-plugin-value`: a `load-plugins` module is in no project
@@ -725,9 +727,6 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* `no-self-use` and `R0201` in a `disable` or `enable` option are `R0022`
-  unless `pylint.extensions.no_self_use` is in `load-plugins`. In an inline
-  pragma they still count as known.
 * A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint
