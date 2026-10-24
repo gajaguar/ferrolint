@@ -8,6 +8,7 @@
 //! default list needs. Upgrade both with an inference of calls and imports.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use regex::Regex;
@@ -77,6 +78,20 @@ pub(super) fn csv(ctx: &Ctx<'_>, key: &str, default: &str) -> Vec<String> {
         .collect()
 }
 
+/// `Regex::new` once per pattern for the whole run: the options are the same for every file, and
+/// compiling the naming patterns for each file was a third of the time of a run.
+pub(super) fn regex(pattern: &str) -> Option<Regex> {
+    static COMPILED: LazyLock<Mutex<HashMap<String, Option<Regex>>>> =
+        LazyLock::new(Mutex::default);
+    let Ok(mut compiled) = COMPILED.lock() else {
+        return Regex::new(pattern).ok();
+    };
+    compiled
+        .entry(pattern.to_owned())
+        .or_insert_with(|| Regex::new(pattern).ok())
+        .clone()
+}
+
 /// Pylint's `regexp_csv`: patterns split at the commas outside brackets.
 pub(super) fn regexps(text: &str) -> Vec<Regex> {
     let (mut items, mut depth, mut current) = (Vec::new(), 0_i32, String::new());
@@ -97,7 +112,7 @@ pub(super) fn regexps(text: &str) -> Vec<Regex> {
         .iter()
         .map(|item| item.trim())
         .filter(|item| !item.is_empty())
-        .filter_map(|item| Regex::new(&format!("^(?:{item})")).ok())
+        .filter_map(|item| regex(&format!("^(?:{item})")))
         .collect()
 }
 
@@ -641,6 +656,15 @@ mod tests {
     use std::path::Path;
 
     use super::super::classes::{render, render_at};
+    use super::regex;
+
+    #[test]
+    fn a_pattern_compiles_once_and_a_bad_one_stays_rejected() {
+        let (first, second) = (regex("^(?:a+)"), regex("^(?:a+)"));
+        assert!(first.is_some_and(|re| re.is_match("aab")));
+        assert!(second.is_some_and(|re| !re.is_match("b")));
+        assert!(regex("(").is_none() && regex("(").is_none());
+    }
 
     #[test]
     fn disallowed_names() {

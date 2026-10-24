@@ -26,7 +26,7 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::{Env, Local, bases, is_classmethod, is_static, locals, methods, py_repr};
 use super::hierarchy::{Class, Hierarchy};
-use super::misc::csv;
+use super::misc::{csv, regex};
 use super::slots::{names, slots_values};
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -726,7 +726,7 @@ impl Checker for InstanceAttrs {
         .any(|name| name == "attribute-defined-outside-init")
         .then(|| {
             let pattern = ctx.option("mixin-class-rgx").unwrap_or(".*[Mm]ixin");
-            Regex::new(&format!("^(?:{pattern})")).ok()
+            regex(&format!("^(?:{pattern})"))
         })
         .flatten();
         let body = &ctx.parsed.syntax().body;
