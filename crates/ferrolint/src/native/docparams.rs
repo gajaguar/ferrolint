@@ -33,6 +33,7 @@ use super::docstring::Docstring;
 use super::extensions::loaded;
 use super::flow::{builtin_ancestors, builtin_exception};
 use super::hierarchy::{Class, Hierarchy};
+use super::misc::regex;
 use super::overrides::is_overload;
 use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
@@ -208,7 +209,7 @@ fn pattern(ctx: &Ctx<'_>, key: &str, default: Option<&str>) -> Option<Regex> {
         .option(key)
         .or(default)
         .filter(|text| !text.is_empty())?;
-    Regex::new(&format!("^(?:{text})")).ok()
+    regex(&format!("^(?:{text})"))
 }
 
 impl Options {

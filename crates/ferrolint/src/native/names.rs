@@ -37,7 +37,7 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::{Env, Local, bases, locals, py_repr};
 use super::flow::own_returns;
-use super::misc::{Names as Lists, catches_import_error, csv, imported_names};
+use super::misc::{Names as Lists, catches_import_error, csv, imported_names, regex};
 use super::project::{ClassRef, Project};
 use super::scopes::{Step, exclusive};
 use super::statements::is_generator;
@@ -331,7 +331,7 @@ impl Cfg {
                 ),
             };
             let rx = (!predefined)
-                .then(|| Regex::new(&format!(r"\A(?:{source})")).ok())
+                .then(|| regex(&format!(r"\A(?:{source})")))
                 .flatten();
             rules.insert(
                 kind,
