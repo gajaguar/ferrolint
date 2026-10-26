@@ -46,6 +46,11 @@ pub trait Semantic {
     fn overridden_parameters(&self, _method: u32) -> Option<Vec<String>> {
         None
     }
+    /// The names the module's `__all__` lists, or none when the host cannot
+    /// tell. A native test that does not care answers that it cannot.
+    fn all_names(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// A comment of the file: its range and its text, `#` included.
@@ -94,6 +99,10 @@ impl Semantic for HostSemantic {
 
     fn overridden_parameters(&self, method: u32) -> Option<Vec<String>> {
         crate::bindings::ferrolint::plugin::modules::overridden_parameters(method)
+    }
+
+    fn all_names(&self) -> Option<Vec<String>> {
+        crate::bindings::ferrolint::plugin::modules::all_names()
     }
 }
 
@@ -241,6 +250,13 @@ impl<'a> Context<'a> {
     /// the host cannot tell (see the contract's `modules` interface).
     pub fn overridden_parameters(&self, method: &Node<'_>) -> Option<Vec<String>> {
         self.semantic.overridden_parameters(method.id)
+    }
+
+    /// The names the module's `__all__` makes Pylint take for used, empty
+    /// when it lists none, or none when the host cannot tell (see the
+    /// contract's `modules` interface).
+    pub fn all_names(&self) -> Option<Vec<String>> {
+        self.semantic.all_names()
     }
 
     /// The host's best-effort type of the expression at `node`; check

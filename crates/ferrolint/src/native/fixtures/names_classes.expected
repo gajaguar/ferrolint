@@ -56,3 +56,4 @@
 173:C0103:Method name "ownSub" doesn't conform to snake_case naming style
 183:C0103:Attribute name "Size" doesn't conform to snake_case naming style
 184:C0103:Attribute name "dwKind" doesn't conform to snake_case naming style
+190:C0103:Argument name "SEP" doesn't conform to snake_case naming style

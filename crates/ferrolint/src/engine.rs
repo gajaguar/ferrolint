@@ -575,7 +575,13 @@ impl Linter<'_> {
         let stored = self
             .cache
             .zip(key.as_deref())
-            .and_then(|(cache, key)| cache.entry(key));
+            .and_then(|(cache, key)| cache.entry(key))
+            .filter(|entry| {
+                entry
+                    .stamps
+                    .iter()
+                    .all(|(path, stamp)| project_run::stamp_of(Path::new(path)) == *stamp)
+            });
         let complete = stored.as_ref().is_some_and(|entry| {
             entry.unparsable
                 || wanted.iter().all(|&position| {
@@ -661,6 +667,7 @@ impl Linter<'_> {
                 .find(|(key, _)| key == "load-plugins")
                 .is_some_and(|(_, value)| value.split(',').any(|name| name.trim() == module))
         };
+        native::take_reads();
         entry.host = checks::check(
             &source,
             &parsed,
@@ -692,6 +699,15 @@ impl Linter<'_> {
             };
             entry.host.extend(native::check(&ctx, enabled));
         }
+        entry.stamps = native::take_reads()
+            .into_iter()
+            .map(|path| {
+                (
+                    path.to_string_lossy().into_owned(),
+                    project_run::stamp_of(&path),
+                )
+            })
+            .collect();
         entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
         let missing: Vec<usize> = wanted
@@ -755,8 +771,16 @@ impl Linter<'_> {
             path: context.path,
             roots: context.roots,
         });
+        // `listed_in_all` answers for a file without `__all__` too, but costs a project.
+        let all_names = if context.source.contains("__all__") {
+            native::Project::with_packages(context.path, context.module, context.roots)
+                .listed_in_all(&context.parsed.syntax().body)
+        } else {
+            Some(Vec::new())
+        };
         let data = Arc::new(FileData {
             overridden,
+            all_names,
             stars: star_names(&flat, context),
             flat,
             ast,

@@ -31,9 +31,11 @@ interface a rule would ask it through is in the
 * **The value a name stands for.** `C0103` (a constant that comes from a
   call or an attribute chain, such as `ctypes.c_size_t`), `W0632` (an
   iterable that is a function result or another module's dict), `W0143` and
-  `W0125` (an operand of a comparison or a condition), `W0614` (an `__all__`
-  that is `list(m.__all__)` or a name: ferrolint reports nothing for the
-  file).
+  `W0125` (an operand of a comparison or a condition), `W0614` and `W0611` (an
+  `__all__` that is a call of a function of the project, a slice, a product,
+  or a name that a branch rebinds, such as `__all__ = helper()`: ferrolint
+  reports nothing for the file where Pylint reads the list the call
+  returns).
 * **A class that is not a plain class statement.** `R0903` (a base that a
   call returns), `W0223` (methods of a C class such as `io.IOBase`), `R0901`
   (an ancestor list that doubles through a C class) and `W0237` or `W0221`
@@ -55,7 +57,9 @@ The type of a call result or attribute:
 
 * `W0201` 32 [5]: `self._storage.cvar = _CVar()`, an instance reached
   through an attribute.
-* `R0902` 6: `self.x = ...` through an instance a call returns.
+* `R0902` 6: `self.x = ...` through an instance a call returns, or through
+  a field (`self.worker_fixup.worker = worker`), which adds an attribute
+  to the count.
 * `E1120` 5 and `E1121` 4: `obj = cls()` where `cls` is a metaclass, and
   `type(self)(value)`.
 * `E1102` 14 [3]: `self.callback()` where an attribute holds a value that is
@@ -70,7 +74,18 @@ The type of a call result or attribute:
 The value a name stands for:
 
 * `C0103` 68 [13]: `_CACERT_CTX = as_file(...)`, a constant that is the
-  result of a call, or an alias such as `ctypes.c_size_t`.
+  result of a call, or an alias such as `ctypes.c_size_t`. Pylint also
+  stays silent on a variable that infers to a class, which needs the value:
+  `Pool = self.BlockingPool if threads else self.Pool`, `Task = self.Task`,
+  `Listener, Client = table[key]`, `MetaBase = getattr(base, "Meta", object)`
+  and `Hashability = Props.Hashability` where a decorator call rebinds
+  `Props`. Four more: a class or an attribute of an installed package
+  (`DataError = exceptions.InvalidData`, a method that overrides
+  `kombu.mixins.ConsumerMixin`, `self.Completer = ...`); `self.cssText = x`
+  in a class whose instances other modules assign `rule.cssText = x` to,
+  where astroid names the first assignment it met; and a constant read
+  under a test it fails (`version = f"{LEVEL:x}"` in the `else` of
+  `if LEVEL == 0x0F`), which astroid narrows to nothing.
 * `W0632` 2: `a, b = unpack(x)`, a function of an extension module.
 * `W0125` 11 [1] and `W0143` 11: `if self.auth:` and `url.port == 80`,
   where an attribute holds a value Pylint infers as a constant or a
@@ -78,7 +93,8 @@ The value a name stands for:
 * `C1803` 5: `result == {}`, which needs the type of `result`.
 * `E0702` 2 [3]: `raise heartbeat_error[0]` where the list holds `None`.
 * `W0631` 2: a loop variable used after a loop that may not run, in a file
-  Pylint infers further than the flow here.
+  Pylint infers further than the flow here: `for tz in get_options():`,
+  where a function returns a tuple.
 
 A class that is not a plain class statement:
 

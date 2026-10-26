@@ -379,6 +379,23 @@ fn unused_import_leaves_a_name_an_earlier_project_star_import_binds() {
 }
 
 #[test]
+fn unused_import_reads_the_all_the_host_reads() {
+    // The host resolves `m.__all__` and `list(...)`; `sorted(...)` is no list for astroid.
+    let tokens = "__all__ = ['os']\n";
+    let used =
+        "import os\nimport sys\nimport tokens\n__all__ = list(tokens.__all__)\nprint(tokens)\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-unused-import", tokens, used),
+        ["2: Unused import sys"]
+    );
+    let sorted = "import os\n__all__ = sorted(['os'])\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-unused-import", tokens, sorted),
+        ["1: Unused import os"]
+    );
+}
+
+#[test]
 fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_the_name() {
     // `import _pkg.sub` binds `_pkg`, a dummy name to Pylint in a function.
     let source = "def f():\n    import _pkg.sub\n    import pkg.sub\n";
@@ -392,12 +409,12 @@ fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_th
     );
 }
 
-/// The unused-import component with every `@0.4.2` interface name spelled
+/// The unused-import component with every `@0.4.3` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
 fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.2");
+    let (prefix, current) = (b"ferrolint:plugin/", b"@0.4.3");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -430,16 +447,18 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 
 #[test]
 fn a_plugin_built_against_the_patch_before_is_loaded() {
-    // 0.4.2 only adds a function, which a 0.4.1 build does not import.
-    let run = lint_with(&respelled_plugin(*b"@0.4.1"));
-    assert_eq!(run.code, 1, "{run:?}");
-    assert!(run.stdout.contains("Unused import os"), "{run:?}");
+    // 0.4.3 only adds a function, which a 0.4.2 build does not import.
+    for version in [*b"@0.4.1", *b"@0.4.2"] {
+        let run = lint_with(&respelled_plugin(version));
+        assert_eq!(run.code, 1, "{run:?}");
+        assert!(run.stdout.contains("Unused import os"), "{run:?}");
+    }
 }
 
 #[test]
 fn a_plugin_built_against_an_older_contract_is_refused() {
     // Before 1.0 a minor bump of the contract is incompatible, whatever it
-    // adds, so 0.4.2 refuses a 0.3.x build as it does a 0.2.x one.
+    // adds, so 0.4.3 refuses a 0.3.x build as it does a 0.2.x one.
     for version in [*b"@0.2.1", *b"@0.3.1"] {
         let run = lint_with(&respelled_plugin(version));
         assert_eq!(run.code, 2, "{run:?}");

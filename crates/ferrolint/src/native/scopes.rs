@@ -26,6 +26,7 @@ use super::misc::py_match;
 use super::project::Project;
 use super::unassigned;
 use super::{Checker, Ctx, rule};
+use crate::wit::BindingKind;
 
 const UNDEFINED: &str = "W0601";
 const REDEFINED: &str = "W0621";
@@ -1085,6 +1086,29 @@ fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, dept
         Expr::Set(s) => !s.elts.is_empty(),
         Expr::Dict(d) => !d.items.is_empty(),
         Expr::Attribute(attr) => match &*attr.value {
+            Expr::Name(receiver) if live_container(ctx, receiver, attr.attr.as_str()) => true,
+            // `module.Class.ATTR`, a non-empty display in a class of the project.
+            owner @ Expr::Attribute(_) => {
+                let Some(qualified) = Env::new(ctx).qualified(owner) else {
+                    return false;
+                };
+                let project = Project::new(ctx.path, ctx.module, ctx.roots);
+                project
+                    .class(&project.absolute(&qualified))
+                    .and_then(|found| {
+                        found.class().and_then(|class| {
+                            class.body.iter().find_map(|stmt| match stmt {
+                                Stmt::Assign(a)
+                                    if matches!(&a.targets[..], [Expr::Name(n)] if n.id.as_str() == attr.attr.as_str()) =>
+                                {
+                                    Some(display_len(&a.value) > 0)
+                                }
+                                _ => None,
+                            })
+                        })
+                    })
+                    .unwrap_or(false)
+            }
             Expr::Name(receiver) => {
                 first_self_assign(info, scope, receiver.id.as_str(), attr.attr.as_str())
                     .is_some_and(|value| safe_iterable(ctx, info, scope, value, 4))
@@ -1105,6 +1129,35 @@ fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, dept
         }
         _ => false,
     }
+}
+
+/// The number of elements of a list, tuple, set or dict display.
+fn display_len(value: &Expr) -> usize {
+    match value {
+        Expr::List(l) => l.elts.len(),
+        Expr::Tuple(t) => t.elts.len(),
+        Expr::Set(s) => s.elts.len(),
+        Expr::Dict(d) => d.items.len(),
+        _ => 0,
+    }
+}
+
+/// Whether `receiver.attr` is a container of `sys` or `os`, which astroid builds from the
+/// running interpreter and so finds non-empty.
+fn live_container(ctx: &Ctx<'_>, receiver: &ruff_python_ast::ExprName, attr: &str) -> bool {
+    let Some(binding) = Env::new(ctx)
+        .binding(receiver)
+        .filter(|b| b.kind == BindingKind::Import)
+    else {
+        return false;
+    };
+    matches!(
+        (binding.origin.as_deref(), attr),
+        (
+            Some("sys"),
+            "meta_path" | "path" | "modules" | "builtin_module_names"
+        ) | (Some("os"), "environ")
+    )
 }
 
 /// The value of the first `receiver.attr = value` of the class around the method
@@ -1341,6 +1394,22 @@ mod tests {
         let source = include_str!("fixtures/redefined_outer_name.py");
         let expected = include_str!("fixtures/redefined_outer_name.expected").trim_end();
         assert_eq!(render(source, &[], &["W0621"]), expected);
+    }
+
+    #[test]
+    fn a_loop_over_a_display_a_class_of_the_project_holds() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("model.py"),
+            "class Kind:\n    ALL = {'a': 1}\n    NONE = []\n",
+        )
+        .unwrap();
+        let path = root.path().join("main.py");
+        let source = "import model\n\nfor full in model.Kind.ALL:\n    pass\ndel full\n\nfor empty in model.Kind.NONE:\n    pass\ndel empty\n";
+        assert_eq!(
+            render_at(source, &path, "main", &[], &["W0631"]),
+            "9:W0631:Using possibly undefined loop variable 'empty'"
+        );
     }
 
     #[test]

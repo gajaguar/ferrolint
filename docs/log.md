@@ -2,6 +2,18 @@
 
 ## 2026-10-26
 
+* **Native rules, native-rules.md**: `E1120`, `E1121`, `E1123`, `E1125` and
+  `W1114` follow a call to an undecorated function of another module of the
+  project.
+* **Result cache, result-cache.md**: a file's entry records what the native
+  rules read from other modules and replays only while it is unchanged.
+* **Native rules, native-rules.md**: `W0614` reads `list(...)`, `tuple(...)`
+  and a name for `__all__`, and takes no name for used where astroid infers
+  no list or tuple (`sorted(...)`, a set, a list plus a tuple), as Pylint
+  does. **Plugin star imports, plugins.md**: Contract 0.4.3 adds
+  `modules.all-names`; `unused-import` (`W0611`) reads `__all__` through it.
+  Updated `requirements/plugin-contract.md`, `usage/writing-a-plugin.md` and
+  `usage/inference-dependent-rules.md`.
 * **Native rules, native-rules.md**: `E0202` spares a method with a
   decorator that subclasses `property` or comes from a module that is
   nowhere, and names the module as the run's root does. `E0401` finds
@@ -11,6 +23,11 @@
   bound later to Pylint's `E0601` and reads `del x` as a use.
 * **Rules that wait for type inference, inference-dependent-rules.md**:
   Added `R1710`, `W0614`, and the `R0903` and `W0221` cases of a rebound base.
+* **Rules that wait for type inference, inference-dependent-rules.md**: Added
+  the open `C0103`, `R0902` and `W0631` lines found on the large corpus.
+* **Native rules, native-rules.md**: `C0103` reads `Base[int]` as `Base`, a
+  class a function defines and returns, `Outer.Inner`, and `type()` of a call it
+  cannot infer; `W0631` knows `sys.path` and a display in a class of the project.
 
 ## 2026-10-25
 

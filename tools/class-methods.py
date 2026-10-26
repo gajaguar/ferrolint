@@ -58,7 +58,8 @@ logging.handlers.RotatingFileHandler logging.handlers.SMTPHandler logging.handle
 logging.handlers.SysLogHandler logging.handlers.TimedRotatingFileHandler
 logging.handlers.WatchedFileHandler optparse.OptionParser queue.Queue tarfile.TarFile
 urllib.request.BaseHandler weakref.WeakValueDictionary xml.sax.ContentHandler
-xml.sax.handler.ContentHandler zipfile.ZipFile
+xml.sax.handler.ContentHandler zipfile.ZipFile fractions.Fraction ctypes._Pointer unittest.TextTestRunner
+xml.sax.expatreader.ExpatParser
 """.split()
 
 

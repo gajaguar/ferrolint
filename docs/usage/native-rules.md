@@ -307,9 +307,14 @@ Imports:
   ignores the `__all__` of the imported module, skips an `__init__.py`
   and a star in a function or class, and counts the names of the file's own
   first `__all__` as read: a list or tuple of strings, `+` of two of one
-  kind, `*seq` inside one, and `m.__all__` of a module it reads (a `from m
-  import __all__` too); when that binding is anything else (a call) it
-  reports nothing; a name that a function, class or comprehension
+  kind, `*seq` inside one, `list(...)` and `tuple(...)` of one, a name
+  assigned before (its last assignment, not rebound in a branch or by an
+  import), and `m.__all__` of a module it reads (a `from m import __all__`
+  too). A value astroid infers to no list or tuple lists no name, so every
+  name is reported: `sorted(...)`, a set, a comprehension, `None`, a list
+  plus a tuple, a name assigned only later. When the value is a call or a
+  name it cannot read, a slice or a product, it reports nothing; a name that
+  a function, class or comprehension
   binds itself (a variable, a parameter) and reads there is not a use of the
   wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
@@ -388,9 +393,11 @@ Known divergences from Pylint, where Pylint infers a value or a call:
 * `E0606` runs the `if` filter of Pylint (`_uncertain_nodes_if_tests`),
   the `except`-name filter and the `del` rule, for the first read of a name
   in a module, function or class. An `if` test is a constant when it is a
-  literal, `TYPE_CHECKING` or a name bound once to a literal; Pylint also
-  infers the platform and version checks (`sys.platform == "linux"`), whose
-  result then depends on the interpreter, and reports `E0601` instead.
+  literal, `TYPE_CHECKING` or a name bound once to a literal, or a
+  comparison of `sys.platform` with a string, which is judged against the
+  platform ferrolint runs on, as Pylint judges it against its own: the two
+  agree only when both run on the same system. Pylint also infers version
+  checks (`sys.version_info >= (3, 9)`), which are not judged here.
   Pylint treats two tests alike when it cannot infer either of them, which
   it does for a call of a builtin function of unknown arguments
   (`isinstance`, `len`, `print`, ...); the list in `unassigned.rs` is what
@@ -476,6 +483,10 @@ Names (`C0103`, `C0105`, `C0131`, `C0132`):
   ancestor's is not judged, `Final` and enum members are class constants,
   a dataclass field is an instance attribute, and a PEP 695 type
   parameter or `type` alias is checked as its kind.
+  A base written `Base[int]` is `Base`. A variable that holds a class is
+  not judged: a class of the file or the project, `Outer.Inner`, what a
+  function of the project defines and returns, and `type(x)` unless `x` is
+  a call ferrolint cannot infer.
 * `C0105` `typevar-name-incorrect-variance`, `C0131`
   `typevar-double-variance` and `C0132` `typevar-name-mismatch`.
 * `C0102` `blacklisted-name` is the old name of `C0104`; Pylint 4 reports
@@ -1109,15 +1120,18 @@ Known divergences from Pylint, where Pylint infers the callee:
 
 * The callee is the one `W1114` resolves (see Batch B): a name bound once to
   a function of the file, `self.method` of the enclosing class, `cls(...)` in
-  a `classmethod`, a class of the file with one `__init__` or, for the arity
-  rules only, such a class of another module of the project (its own
-  `__init__`, no `__new__` along its bases). A decorator
-  changes nothing but `E1123` of a function or constructor, left out when it
-  has one (Pylint looks for the keyword among what the decorator returns). An
-  imported function, a class method, an alias of a method
-  (`g = f`), a method that `self.name = ...` replaces, a function or an
-  `__init__` defined twice and `self.__init__` (which Pylint does not judge)
-  are not followed.
+  a `classmethod`, a class of the file with one `__init__`, such a class of
+  another module of the project (arity rules only; its own `__init__`, no
+  `__new__` along its bases) or an undecorated function that another module
+  of the project defines once at its top level, reached by a name or a module
+  alias bound once by an import (`from m import f`, `import m; m.f()`; not a
+  module with a star import, nor one that only re-exports the function). A
+  decorator changes nothing but `E1123` of a function or constructor, left
+  out when it has one (Pylint looks for the keyword among what the decorator
+  returns). A decorated or conditionally defined imported function, a class
+  method, an alias of a method (`g = f`), a method that `self.name = ...`
+  replaces, a function or an `__init__` defined twice and `self.__init__`
+  (which Pylint does not judge) are not followed.
 * A class is followed only when it has no `__new__` or metaclass (a class
   decorator changes nothing, as in Pylint) and every base is a builtin class,
   such a class of the file or such a class of another module of the project.
@@ -1555,9 +1569,9 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   directory above the top package of that file as its root.
 * `W0631` is not reported when Pylint infers the iterable as a non-empty
   sequence. That holds for `for x in f()` where `f` returns a tuple or list
-  literal, for `enumerate(sys.meta_path)` and for a dict of another module
-  (`pkg.Cls.TABLE`): ferrolint follows only literals, names bound to them and
-  `self` attributes.
+  literal. ferrolint follows literals, names bound to them, `self`
+  attributes, `sys.path`, `sys.meta_path`, `sys.modules` and `os.environ`,
+  and a display a class of the project holds (`pkg.Cls.TABLE`).
 * `R0902` counts an attribute that another class assigns through an inferred
   instance (`self.worker_fixup.worker = w`, a property returning the class);
   ferrolint counts the `self.x` of the class itself.

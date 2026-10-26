@@ -31,6 +31,9 @@ answers to its Pylint msg-id and symbol as well as its code.
 * The others follow their Pylint checker's main behavior; each crate's
   doc comment lists what it leaves out, such as names used only in a type
   comment for `unused-variable`.
+* `unused-import` counts a name the module's `__all__` lists as used, as the
+  host reads that list (`modules.all-names`, the same reading as `W0614`);
+  where the host cannot tell, the file's literal `__all__` lists stand.
 * `undefined-variable` and `unused-import` ask the host for the names a
   `from m import *` binds (`modules.star-names`): the public names of a
   file found on the search path of the run (as `import-error` looks), beside

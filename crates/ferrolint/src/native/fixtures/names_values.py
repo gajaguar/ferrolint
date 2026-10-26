@@ -170,3 +170,21 @@ has_other = hasattr(unknown_thing(), "x")
 is_none = 1 is None
 host_sep = os.sep
 host_max = sys.maxsize > 2**32
+
+
+import fractions
+import re
+
+# astroid cannot infer the type of `re.compile("")`.
+PATTERN_TYPE = type(re.compile(""))
+
+
+class Holder:
+    class Mode:
+        pass
+
+
+def local_classes():
+    _Fraction = fractions.Fraction
+    Mode = Holder.Mode
+    return _Fraction, Mode
