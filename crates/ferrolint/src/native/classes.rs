@@ -99,15 +99,32 @@ impl<'a> Env<'a> {
     /// The dotted name `expr` stands for, with imports followed to their
     /// origin (`enum.IntFlag` for `IntFlag` after `from enum import IntFlag`).
     pub fn qualified(&self, expr: &Expr) -> Option<String> {
+        self.qualified_at(expr, 0)
+    }
+
+    fn qualified_at(&self, expr: &Expr, depth: u8) -> Option<String> {
         match expr {
             Expr::Name(name) => {
                 let mut binding = self.binding(name)?;
                 // `try: import m` / `except ImportError: m = None`: Pylint
                 // infers the module among the values of `m`.
                 if binding.kind == BindingKind::Assignment {
-                    binding = self.ctx.model.same_name(binding.id).into_iter().find(|b| {
-                        matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
-                    })?;
+                    let imported =
+                        self.ctx.model.same_name(binding.id).into_iter().find(|b| {
+                            matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
+                        });
+                    let Some(imported) = imported else {
+                        // `Structure = ctypes.Structure`, the only binding of the name.
+                        return match self.aliases.get(&binding.node?)? {
+                            value @ (Expr::Name(_) | Expr::Attribute(_))
+                                if depth < 8 && self.ctx.model.is_sole_binding(binding.id) =>
+                            {
+                                self.qualified_at(value, depth + 1)
+                            }
+                            _ => None,
+                        };
+                    };
+                    binding = imported;
                 }
                 match binding.kind {
                     BindingKind::Builtin => Some(binding.name),
@@ -127,7 +144,7 @@ impl<'a> Env<'a> {
             }
             Expr::Attribute(attribute) => Some(format!(
                 "{}.{}",
-                self.qualified(&attribute.value)?,
+                self.qualified_at(&attribute.value, depth)?,
                 attribute.attr
             )),
             _ => None,

@@ -640,6 +640,18 @@ mod tests {
     }
 
     #[test]
+    fn a_name_bound_to_an_empty_class_adds_no_method_to_count() {
+        let main = "import ctypes\n\nStructure = ctypes.Structure\n\nclass S(Structure):\n    _fields_ = []\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["R0903"]
+            ),
+            "5:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
     fn a_c_class_without_public_method_adds_none_to_count() {
         let main = "import ast\nimport types\nimport typing\n\nclass A(ast.AST):\n    x = 1\n\nclass B(types.ModuleType):\n    x = 1\n\nclass C(typing.ContextManager[\"C\"]):\n    x = 1\n";
         assert_eq!(
