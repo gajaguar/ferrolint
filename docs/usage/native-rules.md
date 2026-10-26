@@ -481,6 +481,10 @@ Names (`C0103`, `C0105`, `C0131`, `C0132`):
   ancestor's is not judged, `Final` and enum members are class constants,
   a dataclass field is an instance attribute, and a PEP 695 type
   parameter or `type` alias is checked as its kind.
+  A base written `Base[int]` is `Base`. A variable that holds a class is
+  not judged: a class of the file or the project, `Outer.Inner`, what a
+  function of the project defines and returns, and `type(x)` unless `x` is
+  a call ferrolint cannot infer.
 * `C0105` `typevar-name-incorrect-variance`, `C0131`
   `typevar-double-variance` and `C0132` `typevar-name-mismatch`.
 * `C0102` `blacklisted-name` is the old name of `C0104`; Pylint 4 reports
@@ -1563,9 +1567,9 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   directory above the top package of that file as its root.
 * `W0631` is not reported when Pylint infers the iterable as a non-empty
   sequence. That holds for `for x in f()` where `f` returns a tuple or list
-  literal, for `enumerate(sys.meta_path)` and for a dict of another module
-  (`pkg.Cls.TABLE`): ferrolint follows only literals, names bound to them and
-  `self` attributes.
+  literal. ferrolint follows literals, names bound to them, `self`
+  attributes, `sys.path`, `sys.meta_path`, `sys.modules` and `os.environ`,
+  and a display a class of the project holds (`pkg.Cls.TABLE`).
 * `R0902` counts an attribute that another class assigns through an inferred
   instance (`self.worker_fixup.worker = w`, a property returning the class);
   ferrolint counts the `self.x` of the class itself.
