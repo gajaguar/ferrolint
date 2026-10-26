@@ -106,3 +106,18 @@ class FromFactory(Mixin):
         self.ready = 2
         self.loaded = 2
         self.own = 1
+
+
+class Owner:
+    def build(self):
+        class Inner:
+            def __init__(self):
+                self.blob = 1
+
+            @staticmethod
+            def revive():
+                self = Inner.__new__(Inner)
+                self.blob = 2
+                return self
+
+        return Inner
