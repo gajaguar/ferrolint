@@ -393,9 +393,11 @@ Known divergences from Pylint, where Pylint infers a value or a call:
 * `E0606` runs the `if` filter of Pylint (`_uncertain_nodes_if_tests`),
   the `except`-name filter and the `del` rule, for the first read of a name
   in a module, function or class. An `if` test is a constant when it is a
-  literal, `TYPE_CHECKING` or a name bound once to a literal; Pylint also
-  infers the platform and version checks (`sys.platform == "linux"`), whose
-  result then depends on the interpreter, and reports `E0601` instead.
+  literal, `TYPE_CHECKING` or a name bound once to a literal, or a
+  comparison of `sys.platform` with a string, which is judged against the
+  platform ferrolint runs on, as Pylint judges it against its own: the two
+  agree only when both run on the same system. Pylint also infers version
+  checks (`sys.version_info >= (3, 9)`), which are not judged here.
   Pylint treats two tests alike when it cannot infer either of them, which
   it does for a call of a builtin function of unknown arguments
   (`isinstance`, `len`, `print`, ...); the list in `unassigned.rs` is what
