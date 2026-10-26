@@ -2,6 +2,9 @@
 
 ## 2026-10-26
 
+* **Native rules, native-rules.md**: `E1120`, `E1121`, `E1123`, `E1125` and
+  `W1114` follow a call to an undecorated function of another module of the
+  project.
 * **Result cache, result-cache.md**: a file's entry records what the native
   rules read from other modules and replays only while it is unchanged.
 * **Native rules, native-rules.md**: `E0202` spares a method with a

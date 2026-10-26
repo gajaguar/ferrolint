@@ -1109,15 +1109,18 @@ Known divergences from Pylint, where Pylint infers the callee:
 
 * The callee is the one `W1114` resolves (see Batch B): a name bound once to
   a function of the file, `self.method` of the enclosing class, `cls(...)` in
-  a `classmethod`, a class of the file with one `__init__` or, for the arity
-  rules only, such a class of another module of the project (its own
-  `__init__`, no `__new__` along its bases). A decorator
-  changes nothing but `E1123` of a function or constructor, left out when it
-  has one (Pylint looks for the keyword among what the decorator returns). An
-  imported function, a class method, an alias of a method
-  (`g = f`), a method that `self.name = ...` replaces, a function or an
-  `__init__` defined twice and `self.__init__` (which Pylint does not judge)
-  are not followed.
+  a `classmethod`, a class of the file with one `__init__`, such a class of
+  another module of the project (arity rules only; its own `__init__`, no
+  `__new__` along its bases) or an undecorated function that another module
+  of the project defines once at its top level, reached by a name or a module
+  alias bound once by an import (`from m import f`, `import m; m.f()`; not a
+  module with a star import, nor one that only re-exports the function). A
+  decorator changes nothing but `E1123` of a function or constructor, left
+  out when it has one (Pylint looks for the keyword among what the decorator
+  returns). A decorated or conditionally defined imported function, a class
+  method, an alias of a method (`g = f`), a method that `self.name = ...`
+  replaces, a function or an `__init__` defined twice and `self.__init__`
+  (which Pylint does not judge) are not followed.
 * A class is followed only when it has no `__new__` or metaclass (a class
   decorator changes nothing, as in Pylint) and every base is a builtin class,
   such a class of the file or such a class of another module of the project.
