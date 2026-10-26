@@ -144,3 +144,12 @@ mixedNone = None if unknown_thing() else "a"
 mixedName = _none if unknown_thing() else "a"
 import typing_extensions
 aliasType = typing_extensions.TypeAliasType("aliasType", int)
+low_str = str(unknown_thing())
+low_int = int(unknown_thing())
+low_float = float(unknown_thing())
+WIDTH = 0
+if unknown_thing():
+    WIDTH = int(unknown_thing())
+SPAN = 0
+if unknown_thing():
+    SPAN = str(unknown_thing())

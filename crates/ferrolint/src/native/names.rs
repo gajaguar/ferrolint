@@ -100,6 +100,7 @@ impl Checker for Naming {
             main: 0,
             project: Project::new(ctx.path, ctx.module),
             cache: RefCell::default(),
+            outside: std::cell::OnceCell::new(),
         };
         let module = ctx.module.rsplit('.').next().unwrap_or_default();
         if !module.is_empty() {
@@ -689,6 +690,8 @@ struct Walk<'a, 'c> {
     project: Project,
     /// The known ancestors of each class, by the start of its name.
     cache: RefCell<HashMap<u32, Rc<Vec<Anc<'a>>>>>,
+    /// The attributes that code outside a class gives its instances, by class address.
+    outside: std::cell::OnceCell<HashMap<usize, Vec<(&'a str, TextRange)>>>,
 }
 
 /// An ancestor of a class.
@@ -1378,6 +1381,19 @@ impl<'a> Walk<'a, '_> {
         match callee.as_str() {
             "type" if matches!(args.len(), 1 | 3) => Val::Class,
             "int" | "str" | "bool" | "len" if !args.is_empty() && all(&args) => Val::Const,
+            // astroid builds a `str` constant whatever the argument is, and an
+            // instance for the other builtin types when it cannot fold it.
+            "str" | "int" | "float" | "bytes"
+                if !args.is_empty()
+                    && call.arguments.keywords.is_empty()
+                    && !args.iter().any(|a| a.is_starred_expr()) =>
+            {
+                if callee == "str" {
+                    Val::Const
+                } else {
+                    Val::Other
+                }
+            }
             "typing.NewType"
             | "typing.NamedTuple"
             | "typing.TypedDict"
@@ -1883,6 +1899,29 @@ impl<'a> Walk<'a, '_> {
                     found: &mut found,
                 }
                 .visit_body(&method.body);
+            }
+        }
+        // astroid adds what code outside the class assigns to its instances last, and a
+        // `__slots__` keeps it out.
+        // shortcut: a class with `__slots__` is not given them, whatever the slots.
+        let slotted = super::classes::locals(&class.body)
+            .iter()
+            .any(|(name, _)| name == "__slots__");
+        let outside = self
+            .outside
+            .get_or_init(|| super::instance_attrs::outside_attrs(self.env));
+        for &(name, range) in outside
+            .get(&std::ptr::from_ref(class).addr())
+            .filter(|_| !slotted)
+            .into_iter()
+            .flatten()
+        {
+            if !found.iter().any(|a| a.name == name) {
+                found.push(Attr {
+                    name: name.to_owned(),
+                    range,
+                    is_final: false,
+                });
             }
         }
         found

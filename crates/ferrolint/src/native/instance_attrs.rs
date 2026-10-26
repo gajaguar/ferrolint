@@ -729,23 +729,10 @@ impl Checker for InstanceAttrs {
             regex(&format!("^(?:{pattern})"))
         })
         .flatten();
-        let body = &ctx.parsed.syntax().body;
-        let mut values = Values(HashMap::new());
-        values.visit_body(body);
-        let mut clients = Clients {
-            env: &env,
-            values: values.0,
-            frames: Vec::new(),
-            classes: Vec::new(),
-            cls: Vec::new(),
-            store: Use::Assign,
-            out: HashMap::new(),
-        };
-        clients.visit_body(body);
         let mut walk = Walk {
             env: &env,
             hierarchy: Hierarchy::new(&env),
-            clients: clients.out,
+            clients: clients(&env),
             enabled,
             defining: csv(
                 "defining-attr-methods",
@@ -756,6 +743,41 @@ impl Checker for InstanceAttrs {
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
+}
+
+/// The sites outside the classes of the file that give their instances an attribute,
+/// by the class's address.
+fn clients<'a>(env: &Env<'a>) -> HashMap<usize, Vec<Site<'a>>> {
+    let body = &env.ctx.parsed.syntax().body;
+    let mut values = Values(HashMap::new());
+    values.visit_body(body);
+    let mut clients = Clients {
+        env,
+        values: values.0,
+        frames: Vec::new(),
+        classes: Vec::new(),
+        cls: Vec::new(),
+        store: Use::Assign,
+        out: HashMap::new(),
+    };
+    clients.visit_body(body);
+    clients.out
+}
+
+/// The attributes that code outside `class` gives its instances (`x = Cls()` then
+/// `x.name = value`), each with its first site, in the order astroid records them.
+pub(super) fn outside_attrs<'a>(env: &Env<'a>) -> HashMap<usize, Vec<(&'a str, TextRange)>> {
+    clients(env)
+        .into_iter()
+        .map(|(class, sites)| {
+            let attrs = sites
+                .iter()
+                .filter(|s| s.is_instance_attr())
+                .map(|s| (s.name, s.range))
+                .collect();
+            (class, attrs)
+        })
+        .collect()
 }
 
 struct Walk<'a, 'e> {

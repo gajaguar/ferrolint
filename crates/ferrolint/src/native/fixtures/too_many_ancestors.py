@@ -160,3 +160,28 @@ class ExcGroup(ExceptionGroup):
 
 class Base(BaseException):
     pass
+
+
+import os
+import select
+import socket
+
+
+class FromIoError(IOError):
+    pass
+
+
+class FromEnvironmentError(EnvironmentError):
+    pass
+
+
+class FromOsError(os.error):
+    pass
+
+
+class FromSocketError(socket.error):
+    pass
+
+
+class FromSelectError(select.error):
+    pass

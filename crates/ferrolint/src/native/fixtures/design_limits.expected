@@ -43,3 +43,4 @@
 258:R0914:Too many local variables (20/3)
 285:R1711:Useless return at end of function or method
 315:R1710:Either all return statements in a function should return an expression, or none of them should.
+341:W0101:Unreachable code

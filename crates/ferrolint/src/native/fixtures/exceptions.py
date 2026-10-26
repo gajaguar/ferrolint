@@ -205,3 +205,16 @@ def g(x):
     raise not x
     raise x.y
     raise x.y("a")
+
+
+try:
+    _ = Missing
+except NameError:
+    Missing = Exception
+
+
+def guarded():
+    try:
+        pass
+    except Missing:
+        pass

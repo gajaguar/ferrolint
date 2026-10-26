@@ -372,3 +372,16 @@ class Ordinary:
 
     def setup(cls, name):
         return name
+
+
+def register(cls):
+    return cls
+
+
+@register
+class Registered:
+    def __init__(self, a):
+        pass
+
+
+Registered()

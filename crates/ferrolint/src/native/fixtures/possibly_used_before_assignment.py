@@ -433,3 +433,11 @@ class Cache:
         if not hasattr(self, "absent"):
             absent = {}
         return absent[key]
+
+
+if sys.platform == "win32":
+    platform_only = 1
+
+
+def platform_user():
+    return platform_only

@@ -171,3 +171,16 @@ else:
 class Sub(Stream):
     def handleError(self, Record): pass
     def ownSub(self): pass
+
+
+class Wire:
+    def __init__(self):
+        self.size = 0
+
+
+def build_wire():
+    wire = Wire()
+    wire.Size = 1
+    wire.dwKind = 2
+    wire.size = 3
+    return wire

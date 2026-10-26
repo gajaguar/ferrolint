@@ -53,3 +53,4 @@
 201:E0702:Raising f while only classes or instances are allowed
 202:E0702:Raising <lambda> while only classes or instances are allowed
 204:E0702:Raising int while only classes or instances are allowed
+219:W0718:Catching too general exception Exception

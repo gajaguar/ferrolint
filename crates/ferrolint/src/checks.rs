@@ -154,10 +154,7 @@ pub fn not_utf8() -> Diagnostic {
 /// The only errors being that one, the file is parsed again with each such
 /// `raise` spelled `pass `: same length, so every offset, line and column is
 /// unchanged. Any other error leaves the first parse, and so E0001, as it was.
-///
-/// shortcut: the tree holds a `Pass` where the source has the bare `raise`, so
-/// a rule that reads that statement (W0101 after it) does not see it; upgrade
-/// when Ruff's parser accepts the `;`.
+/// A rule that reads that `Pass` as a `raise` checks that its source starts with `raise`.
 pub fn parse(source: &str, options: ParseOptions) -> Parsed<ModModule> {
     let parsed = ruff_python_parser::parse_unchecked(source, options.clone())
         .try_into_module()

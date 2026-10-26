@@ -29,6 +29,7 @@ use ruff_python_ast::{
 use super::abstract_methods::raises_not_implemented;
 use super::classes::{Env, Local, bases, const_repr, is_classmethod, is_static, locals, py_repr};
 use super::flow::own_returns;
+use super::hierarchy::{Class, Hierarchy};
 use super::misc::csv;
 use super::project::{ClassRef, Project};
 use super::statements::is_generator;
@@ -217,6 +218,7 @@ impl Checker for Calls {
             defs: Vec::new(),
             annotated: HashSet::new(),
             project: OnceCell::new(),
+            hierarchy: OnceCell::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -243,6 +245,8 @@ struct Walk<'a, 'e> {
     annotated: HashSet<usize>,
     /// The project around the file, read when a call builds a class of another module.
     project: OnceCell<Project>,
+    /// The class hierarchy around the file, read when a method comes from a base of another module.
+    hierarchy: OnceCell<Hierarchy<'a, 'e>>,
 }
 
 fn address(expr: &Expr) -> usize {
@@ -575,7 +579,11 @@ impl<'a> Walk<'a, '_> {
     /// Whether the arity rules can trust `callee`: Pylint reads the
     /// constructor off the whole class, and a method off the instance.
     fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
-        settled(self.env, &self.classes, call, callee)
+        let project = || {
+            self.project
+                .get_or_init(|| Project::new(self.env.ctx.path, self.env.ctx.module))
+        };
+        settled(self.env, &self.classes, call, callee, Some(&project))
     }
 
     fn arguments(&mut self, call: &ExprCall) {
@@ -741,11 +749,92 @@ impl<'a> Walk<'a, '_> {
         if self.env.ctx.is_stub() {
             return;
         }
-        let Some(func) = function_called(self.env, &self.classes, call)
-            .filter(|func| func.decorator_list.is_empty() && !func.is_async)
-        else {
-            return;
+        let found = match function_called(self.env, &self.classes, call) {
+            Some(func) => self.judge(assign, call, func),
+            None => self.inherited(assign, call),
         };
+        self.out.extend(found);
+    }
+
+    /// `x = self.f()` or `x = super().f()` where an ancestor of another
+    /// module defines `f`, the first of the MRO after the class to bind it.
+    ///
+    /// shortcut: only a class whose MRO the project reads in full, with no
+    /// builtin base; upgrade with a call inference.
+    fn inherited(&self, assign: &StmtAssign, call: &ExprCall) -> Option<Diagnostic> {
+        let Expr::Attribute(attribute) = &*call.func else {
+            return None;
+        };
+        let (class, _) = *self.classes.last()?;
+        let method = *self.defs.last()?;
+        let first = named(method.parameters.args.first()?);
+        let direct = super::classes::methods(&class.body)
+            .into_iter()
+            .any(|m| std::ptr::eq(m, method));
+        let name = attribute.attr.as_str();
+        let on_self = match &*attribute.value {
+            Expr::Name(receiver) => {
+                let is_self = receiver.id.as_str() == first
+                    && self
+                        .env
+                        .binding(receiver)
+                        .is_some_and(|b| b.kind == BindingKind::Parameter);
+                if !is_self {
+                    return None;
+                }
+                true
+            }
+            Expr::Call(sup) => {
+                let builtin = matches!(&*sup.func, Expr::Name(n) if n.id.as_str() == "super"
+                    && self.env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin));
+                if !(builtin && sup.arguments.is_empty()) {
+                    return None;
+                }
+                false
+            }
+            _ => return None,
+        };
+        if !direct || is_static(method) || is_classmethod(method) {
+            return None;
+        }
+        if locals(&class.body).iter().any(|(n, _)| n == name) {
+            return None;
+        }
+        let hierarchy = self.hierarchy.get_or_init(|| Hierarchy::new(self.env));
+        let mro = hierarchy.mro(&Class::Local(class))?;
+        if mro.iter().any(|c| hierarchy.has_builtin_base(c)) {
+            return None;
+        }
+        // An attribute stored as `self.f = ...` hides the method.
+        if on_self {
+            for ancestor in &mro {
+                let mut stores = Stores(name, false);
+                stores.visit_body(&ancestor.def()?.body);
+                if stores.1 {
+                    return None;
+                }
+            }
+        }
+        let owner = mro.iter().skip(1).find(|c| {
+            c.def()
+                .is_some_and(|def| locals(&def.body).iter().any(|(n, _)| n == name))
+        })?;
+        if matches!(owner, Class::Remote(remote) if remote.is_stub()) {
+            return None;
+        }
+        self.judge(assign, call, own_method(owner.def()?, name)?)
+    }
+
+    /// The diagnostic for `assign`, a call of `func` whose result is assigned.
+    fn judge(
+        &self,
+        assign: &StmtAssign,
+        call: &ExprCall,
+        func: &StmtFunctionDef,
+    ) -> Option<Diagnostic> {
+        if !func.decorator_list.is_empty() || func.is_async {
+            return None;
+        }
         let returns = own_returns(&func.body);
         // astroid keeps the docstring out of the body
         let docstring =
@@ -757,7 +846,7 @@ impl<'a> Walk<'a, '_> {
             || is_generator(func)
             || raises_not_implemented(func)
         {
-            return;
+            return None;
         }
         let ctx = self.env.ctx;
         if returns.is_empty() {
@@ -777,7 +866,7 @@ impl<'a> Walk<'a, '_> {
                 .map_or_else(String::new, |(_, suggestion)| {
                     format!(", did you mean to use '{suggestion}(...)' instead?")
                 });
-                self.out.push(ctx.report(
+                return Some(ctx.report(
                     NO_RETURN,
                     assign,
                     format!("Assigning result of a function call, but '{name}' returns None{hint}"),
@@ -790,12 +879,13 @@ impl<'a> Walk<'a, '_> {
                     .is_none_or(|v| matches!(v, Expr::NoneLiteral(_)))
             })
         {
-            self.out.push(ctx.report(
+            return Some(ctx.report(
                 NONE_RETURNED,
                 assign,
                 "Assigning result of a function call, where the function returns None",
             ));
         }
+        None
     }
 
     fn dunder_name(&mut self, assign: &StmtAssign) {
@@ -883,11 +973,11 @@ pub(super) fn callee<'a>(
 
 /// The `__init__` that building `class` calls.
 fn constructor(class: &StmtClassDef) -> Option<Callee<'_>> {
-    let plain = class.decorator_list.is_empty()
-        && class
-            .arguments
-            .as_ref()
-            .is_none_or(|a| a.keywords.is_empty());
+    // A class decorator does not change the class Pylint infers, only a metaclass does.
+    let plain = class
+        .arguments
+        .as_ref()
+        .is_none_or(|a| a.keywords.is_empty());
     let init = own_method(class, "__init__")?;
     (plain && own_method(class, "__new__").is_none()).then_some(Callee {
         func: init,
@@ -903,10 +993,11 @@ fn settled<'a>(
     classes: &[(&'a StmtClassDef, bool)],
     call: &ExprCall,
     callee: &Callee<'a>,
+    project: Option<&dyn Fn() -> &'a Project>,
 ) -> bool {
     let name = callee.func.name.as_str();
     match (&*call.func, callee.class) {
-        (_, Some(class)) => constructible(env, class, 0),
+        (_, Some(class)) => constructible(env, class, 0, project),
         // A function of a class body is no name inside its methods.
         (Expr::Name(_), None) => !classes.iter().any(|(class, _)| {
             super::classes::methods(&class.body)
@@ -942,9 +1033,22 @@ fn buildable(project: &Project, class: &ClassRef, depth: u8) -> bool {
         })
 }
 
+/// Whether `base` names a class of another module of the project that `buildable` accepts.
+fn imported_base(env: &Env<'_>, base: &Expr, project: &Project) -> bool {
+    env.qualified(base)
+        .filter(|q| q.contains('.'))
+        .and_then(|q| project.class(&project.absolute(&q)))
+        .is_some_and(|class| class.is_sole() && buildable(project, &class, 0))
+}
+
 /// Whether the constructor of `class` is its `__init__`: no `__new__`
 /// and no base but a builtin class or such a class of the file.
-fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
+fn constructible<'p>(
+    env: &Env<'_>,
+    class: &StmtClassDef,
+    depth: u8,
+    project: Option<&dyn Fn() -> &'p Project>,
+) -> bool {
     depth < 16
         && !locals(&class.body).iter().any(|(n, _)| n == "__new__")
         && super::classes::bases(class).iter().all(|base| {
@@ -952,8 +1056,9 @@ fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
                 || {
                     matches!(base, Expr::Name(n)
                         if env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin))
+                        || project.is_some_and(|project| imported_base(env, base, project()))
                 },
-                |class| constructible(env, class, depth + 1),
+                |class| constructible(env, class, depth + 1, project),
             )
         })
 }
@@ -968,7 +1073,7 @@ pub(super) fn function_called<'a>(
 ) -> Option<&'a StmtFunctionDef> {
     let callee = callee(env, classes, call).filter(|callee| callee.class.is_none())?;
     // The result of a decorated function is not the one of its body (static: as before).
-    (settled(env, classes, call, &callee)
+    (settled(env, classes, call, &callee, None)
         && (callee.func.decorator_list.is_empty() || callee.kind == "staticmethod"))
         .then_some(callee.func)
 }
@@ -1154,6 +1259,27 @@ mod tests {
     }
 
     #[test]
+    fn a_method_of_a_base_in_another_module() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "class Base:\n    def put(self):\n        \"\"\"Put.\"\"\"\n        ...\n\n    def get(self):\n        return 1\n\n    def set(self):\n        return None\n",
+        )
+        .unwrap();
+        let source = "from pkg.base import Base\n\n\nclass Own(Base):\n    def run(self):\n        a = self.put()\n        b = super().put()\n        c = self.get()\n        d = self.set()\n        return a, b, c, d\n\n\nclass Dict(dict, Base):\n    def run(self):\n        return self.put()\n\n\nclass Hidden(Base):\n    def __init__(self):\n        self.put = len\n\n    def run(self):\n        x = self.put()\n        return x\n";
+        let ids = ["E1111", "E1128"];
+        let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
+        assert_eq!(
+            found,
+            "6:E1111:Assigning result of a function call, but 'put' returns None\n7:E1111:Assigning result of a function call, but 'put' returns None\n9:E1128:Assigning result of a function call, where the function returns None",
+            "{found}"
+        );
+    }
+
+    #[test]
     fn call_arity() {
         let source = include_str!("fixtures/call_arity.py");
         let expected = include_str!("fixtures/call_arity.expected").trim_end();
@@ -1174,12 +1300,12 @@ mod tests {
             "class Base:\n    def __init__(self, a, b):\n        pass\n\n\nclass Own(Base):\n    def __init__(self, a):\n        pass\n\n\nclass Newer:\n    def __new__(cls, *args):\n        return object.__new__(cls)\n\n    def __init__(self, a):\n        pass\n",
         )
         .unwrap();
-        let source = "from pkg import base\nfrom pkg.base import Base, Newer, Own\n\nBase(1)\nNewer()\nbase.Own()\nlst = []\nOwn(*lst)\nOwn(1)\n";
+        let source = "from pkg import base\nfrom pkg.base import Base, Newer, Own\n\nBase(1)\nNewer()\nbase.Own()\nlst = []\nOwn(*lst)\nOwn(1)\n\n\nclass Child(Base):\n    def __init__(self, c):\n        pass\n\n\nclass Odd(Newer):\n    def __init__(self, c):\n        pass\n\n\nChild()\nOdd()\n";
         let ids = ["E1120", "E1121"];
         let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
         assert_eq!(
             found,
-            "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call",
+            "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call\n22:E1120:No value for argument 'c' in constructor call",
             "{found}"
         );
     }

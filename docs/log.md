@@ -1,6 +1,40 @@
 # Directory Update Log
 
+## 2026-10-25
+
+* **Plugin star imports, plugins.md**: `modules.star-names` looks an absolute
+  module up on the run's search path (as `import-error` does) and answers
+  an empty list for one that `VIRTUAL_ENV` shows is nowhere, so
+  `undefined-variable` (`E0602`) reports the names read after that star.
+* **Native rules, native-rules.md**: Documented the divergences left in
+  `W0614`, `W0237`, `W0621`, `E0602`, `W0631`, `R0902` and `E0202` on a
+  project whose subtrees are no packages. `C0209` reads `dict(a=1, b=2)` and a
+  name bound only to containers as one, and `E0606` is not reported for a
+  name defined under `if sys.platform == "win32":` (Pylint gives `E0601`).
+* **native-rules.md**: `W0101` and the other flow rules read a bare `raise`
+  before a `;` (`except X:raise;y`) as a `raise`.
+
+* **native-rules.md**: `R0901` counts `IOError`, `EnvironmentError`,
+  `os.error`, `select.error` and `socket.error` as `OSError`.
+
 ## 2026-10-23
+
+* **native-rules.md**: `C0103` judges the attributes that code outside a class
+  gives its instances (`wire = Wire(); wire.dwKind = 1`) as attributes of it.
+
+* **native-rules.md**: `C0103` reads `str(x)` as a constant and `int(x)`,
+  `float(x)` and `bytes(x)` as inferable instances, whatever `x` is.
+
+* **native-rules.md**: the ancestors of a class leave out a name nothing binds
+  and no star import can bring, and read a star alias of an empty class
+  (`Structure = ctypes.Structure`) as adding nothing, for every rule.
+
+* **native-rules.md**: `R0903` leaves out a base no star import can bring or a
+  star module aliases to an empty class, and counts no method for a C class
+  without public ones (`types.ModuleType`, `ast.AST`, `typing.ContextManager`).
+
+* **native-rules.md**: the arity rules follow a decorated class and a class
+  whose base is a class of another module of the project.
 
 * **Plugin overrides, native-rules.md**: Contract 0.4.2 adds
   `modules.overridden-parameters`. `redefined-builtin` (`W0622`) excuses a

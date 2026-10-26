@@ -333,3 +333,9 @@ class Typed(Generic[int]):
             return int(value)
         except ValueError:
             self.fail("bad")
+
+
+def bare_raise(value):
+    try:
+        return int(value)
+    except ValueError:raise;value = 0
