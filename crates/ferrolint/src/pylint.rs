@@ -82,7 +82,9 @@ fn foreign_plugin(entries: &[(String, String)], exists: impl Fn(&str) -> bool) -
         .map(str::trim)
         .filter(|plugin| !plugin.is_empty())
         .any(|plugin| {
-            plugin != "pylint_django" && !plugin.starts_with("pylint.extensions") && exists(plugin)
+            !plugin.starts_with("pylint_django")
+                && !plugin.starts_with("pylint.extensions")
+                && exists(plugin)
         })
 }
 

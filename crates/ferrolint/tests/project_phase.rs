@@ -334,3 +334,65 @@ fn a_message_names_the_module_from_the_run_root() {
         );
     }
 }
+
+/// W5198 reads only the latest migration of each app, as Pylint 4.1.3 does
+/// with `pylint_django.checkers.migrations` loaded (a run over the same tree).
+#[test]
+fn new_field_defaults_are_read_in_the_latest_migration_only() {
+    let migration = |name: &str| {
+        format!(
+            "from django.db import migrations, models\n\n\nclass Migration(migrations.Migration):\n    operations = [\n        migrations.AddField(model_name=\"m\", name=\"{name}\", field=models.IntegerField(default=1)),\n        migrations.AddField(model_name=\"m\", name=\"n\", field=models.IntegerField(null=True)),\n        AddField(model_name=\"m\", name=\"b\", field=models.IntegerField(default=1)),\n        migrations.AddField(model_name=\"m\", name=\"x\", field=field(default=1)),\n    ]\n"
+        )
+    };
+    let project = Project::new();
+    project.write(
+        ".pylintrc",
+        "[MASTER]\nload-plugins=pylint_django.checkers.migrations\n[MESSAGES CONTROL]\ndisable=all\nenable=W5198\n",
+    );
+    for file in [
+        "app1/migrations/0001_a.py",
+        "app1/migrations/0002_b.py",
+        "app2/migrations/0001_c.py",
+        "app3/sub/migrations/0004_e.py",
+        "app3/sub/migrations/0005_d.py",
+    ] {
+        project.write(file, migration(file));
+        let package = Path::new(file).parent().unwrap();
+        for dir in package
+            .ancestors()
+            .filter(|dir| !dir.as_os_str().is_empty())
+        {
+            project.write(&format!("{}/__init__.py", dir.display()), "");
+        }
+    }
+    let run = project.run(&["--no-cache", "-c", ".pylintrc", "."]);
+    let mut found: Vec<&str> = run
+        .finding_lines()
+        .into_iter()
+        .filter(|line| line.contains("W5198"))
+        .map(|line| line.split(": warning ").next().unwrap())
+        .collect();
+    found.sort_unstable();
+    assert_eq!(
+        found,
+        [
+            "app1/migrations/0002_b.py:6:9",
+            "app1/migrations/0002_b.py:9:9",
+            "app2/migrations/0001_c.py:6:9",
+            "app2/migrations/0001_c.py:9:9",
+            "app3/sub/migrations/0005_d.py:6:9",
+            "app3/sub/migrations/0005_d.py:9:9",
+        ],
+        "{run:?}"
+    );
+    // Without the sub-plugin the rule is silent.
+    project.write(
+        ".pylintrc",
+        "[MESSAGES CONTROL]\ndisable=all\nenable=W5198\n",
+    );
+    let run = project.run(&["--no-cache", "-c", ".pylintrc", "."]);
+    assert!(
+        !run.finding_lines().iter().any(|l| l.contains("W5198")),
+        "{run:?}"
+    );
+}

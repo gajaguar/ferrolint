@@ -49,6 +49,7 @@ mod names;
 mod overrides;
 pub use overrides::overridden_parameters;
 mod project;
+pub use django::migrations_plugin;
 pub use project::{Project, environment, take_reads};
 mod duplicates;
 pub mod project_phase;
