@@ -25,7 +25,7 @@ use std::sync::{LazyLock, Mutex};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Operator, Pattern, PySourceType,
-    Stmt, StmtClassDef, StmtImportFrom,
+    Stmt, StmtClassDef, StmtFunctionDef, StmtImportFrom,
 };
 use ruff_python_parser::{ParseOptions, Parsed};
 
@@ -436,7 +436,44 @@ impl Project {
     }
 }
 
+/// A function of a module of the project.
+pub struct FunctionRef {
+    module: Rc<Module>,
+    name: String,
+}
+
+impl FunctionRef {
+    pub fn func(&self) -> Option<&StmtFunctionDef> {
+        self.module
+            .parsed
+            .syntax()
+            .body
+            .iter()
+            .find_map(|stmt| match stmt {
+                Stmt::FunctionDef(f) if f.name.as_str() == self.name => Some(f),
+                _ => None,
+            })
+    }
+}
+
 impl Project {
+    /// The function `qualified` (`pkg.module.func`) names, when its module defines it once, at
+    /// the top level and undecorated, and binds the name nowhere else.
+    // shortcut: the module that defines it, not one that re-exports it; upgrade with `class_at`'s walk.
+    pub fn function(&self, qualified: &str) -> Option<FunctionRef> {
+        let (module, name) = qualified.rsplit_once('.')?;
+        let loaded = self.load(module)?;
+        let body = &loaded.parsed.syntax().body;
+        let once = locals(body).iter().filter(|(n, _)| n == name).count() == 1;
+        let plain = body.iter().any(|stmt| {
+            matches!(stmt, Stmt::FunctionDef(f) if f.name.as_str() == name && f.decorator_list.is_empty())
+        });
+        (once && plain && !loaded.stub && loaded.stars.is_empty()).then(|| FunctionRef {
+            module: loaded,
+            name: name.to_owned(),
+        })
+    }
+
     /// Whether the function `qualified` (`pkg.module.func`) is annotated
     /// `NoReturn` or `Never`, and then whether it is `async`.
     ///

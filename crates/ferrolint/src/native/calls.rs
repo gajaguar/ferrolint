@@ -12,7 +12,8 @@
 //! once to an undecorated function of this file, `self.method` of the
 //! enclosing class, or a class of this file with an `__init__` (`W1114` and
 //! `W1117`, and the arity rules, which also drop a class whose bases are not
-//! all known); a `self` is a `TestCase` when a base is named `...TestCase`
+//! all known), or an undecorated function another module of the project
+//! defines once, imported by a name bound once; a `self` is a `TestCase` when a base is named `...TestCase`
 //! (`W1503`). `E1111` and `E1128` take the same callees but a constructor,
 //! and not the builtin methods (`lst.sort()`). Upgrade with a call inference.
 
@@ -31,7 +32,7 @@ use super::classes::{Env, Local, bases, const_repr, is_classmethod, is_static, l
 use super::flow::own_returns;
 use super::hierarchy::{Class, Hierarchy};
 use super::misc::csv;
-use super::project::{ClassRef, Project};
+use super::project::{ClassRef, FunctionRef, Project};
 use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -351,7 +352,7 @@ impl<'a> Walk<'a, '_> {
         if self.on(MISSING) || self.on(TOO_MANY) {
             self.descriptor(call);
         }
-        if ARITY.iter().any(|id| self.on(id)) {
+        if self.on(OUT_OF_ORDER) || self.on(SUPERSEDED) || ARITY.iter().any(|id| self.on(id)) {
             self.imported(call);
         }
     }
@@ -419,6 +420,20 @@ impl<'a> Walk<'a, '_> {
         let project = self.project.get_or_init(|| {
             Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
         });
+        if let Some(function) = self.imported_function(project, &call.func, &qualified) {
+            if let Some(func) = function.func() {
+                let callee = Callee {
+                    func,
+                    kind: "function",
+                    class: None,
+                };
+                self.compare(call, &callee, true);
+            }
+            return;
+        }
+        if !ARITY.iter().any(|id| self.on(id)) {
+            return;
+        }
         let Some(class) = project.class(&project.absolute(&qualified)) else {
             return;
         };
@@ -433,6 +448,28 @@ impl<'a> Walk<'a, '_> {
             return;
         };
         self.arity(call, &callee, count);
+    }
+
+    /// The function of another module of the project that `qualified` names, when the
+    /// file binds the imported name (`mod` of `mod.f`, or `f`) once, by an import.
+    fn imported_function(
+        &self,
+        project: &Project,
+        func: &Expr,
+        qualified: &str,
+    ) -> Option<FunctionRef> {
+        let mut root = func;
+        while let Expr::Attribute(attribute) = root {
+            root = &attribute.value;
+        }
+        let Expr::Name(name) = root else {
+            return None;
+        };
+        let binding = self.env.binding(name)?;
+        (matches!(binding.kind, BindingKind::Import | BindingKind::FromImport)
+            && self.env.ctx.model.is_sole_binding(binding.id))
+        .then(|| project.function(&project.absolute(qualified)))
+        .flatten()
     }
 
     /// The number of positional arguments of a call, a `*name` of a list or tuple
@@ -591,6 +628,12 @@ impl<'a> Walk<'a, '_> {
         let Some(callee) = self.callee(call) else {
             return;
         };
+        let settled = ARITY.iter().any(|id| self.on(id)) && self.settled(call, &callee);
+        self.compare(call, &callee, settled);
+    }
+
+    /// The arity and argument rules of a call to `callee`; `settled` when the arity rules may speak.
+    fn compare(&mut self, call: &ExprCall, callee: &Callee<'_>, settled: bool) {
         let (func, in_class) = (callee.func, callee.kind != "function");
         let args = &call.arguments;
         let Some(count) = self.positional(args) else {
@@ -606,8 +649,8 @@ impl<'a> Walk<'a, '_> {
         if params.iter().collect::<HashSet<_>>().len() != params.len() {
             return;
         }
-        if ARITY.iter().any(|id| self.on(id)) && self.settled(call, &callee) {
-            self.arity(call, &callee, count);
+        if settled {
+            self.arity(call, callee, count);
         }
         if self.on(OUT_OF_ORDER) {
             if in_class && params.first() == Some(&"self") {
@@ -1307,6 +1350,29 @@ mod tests {
         assert_eq!(
             found,
             "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call\n22:E1120:No value for argument 'c' in constructor call",
+            "{found}"
+        );
+    }
+
+    #[test]
+    fn functions_of_other_modules() {
+        use super::super::classes::render_at;
+
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("funcs.py"),
+            "import functools\n\n\ndef helper(x):\n    return x\n\n\ndef pair(a, b):\n    return a\n\n\n@functools.cache\ndef wrapped(x):\n    return x\n\n\ndef twice(x):\n    return x\n\n\ndef twice(x, y):\n    return x\n\n\nif functools:\n    def cond(x):\n        return x\n",
+        )
+        .unwrap();
+        let source = "import pkg.funcs\nimport pkg.funcs as alias\nfrom pkg import funcs\nfrom pkg.funcs import cond, helper, pair, twice, wrapped\nfrom pkg.funcs import helper as h2\n\nfuncs.helper(1, 2)\nalias.helper()\nhelper(1, 2)\nh2(y=1)\npair(b, a)\nwrapped(1, 2)\ntwice(1)\ncond(1, 2)\nfuncs.helper(1)\n\n\ndef rebound(helper):\n    return helper(1, 2)\n";
+        let ids = ["E1120", "E1121", "E1123", "W1114"];
+        let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
+        assert_eq!(
+            found,
+            "7:E1121:Too many positional arguments for function call\n8:E1120:No value for argument 'x' in function call\n9:E1121:Too many positional arguments for function call\n10:E1120:No value for argument 'x' in function call\n10:E1123:Unexpected keyword argument 'y' in function call\n11:W1114:Positional arguments appear to be out of order",
             "{found}"
         );
     }
