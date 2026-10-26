@@ -506,9 +506,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   them, and so is a `str` or `bytes` method call on a constant (`"a".upper()`,
   `",".join(x)`, `"{}".format(1)`, which Pylint infers to a constant whatever
   the arguments, except `format`, which needs every argument constant and
-  every field of the template supplied). Pylint infers more (`os.name`,
-  `os.sep + "x"`,
-  `isinstance(1, int)`, a constant attribute of an imported module or
+  every field of the template supplied), a fixed list of `sys` and `os`
+  constants (`os.sep`, `sys.maxsize`, `sys.platform`; also through
+  `from sys import maxsize`) and `hasattr(mod, "name")` of an imported module
+  the project finds. Pylint infers more (`os.name`, `os.sep + "x"`,
+  `isinstance(1, int)`, a constant attribute of another imported module or
   class); those names are not judged here. A value that cannot be told is
   skipped, as Pylint skips what it cannot infer. A call of a capitalized
   imported name is taken as an instance, a lower-case imported name as a
@@ -551,14 +553,17 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   twice (a fallback in `try`/`except` or `if`), a class
   returned by a call of an installed package, a standard library class
   missing from the class table (`_Fraction = Fraction`), the value of a
-  standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`
-  formatting, a name
-  read through `getattr` or `hasattr`, a variable whose value is a factory or
+  standard library attribute outside that list (`math.pi`, `socket.AF_INET`),
+  `%` formatting, a name
+  read through `getattr`, a variable whose value is a factory or
   an attribute of an installed package (`Pool = app.Pool`) and a name that a
-  function binds with `global` are not followed, so the names Pylint infers
-  differently stay as differences. An attribute that `obj = Cls(); obj.attr = 1`
-  adds to `Cls` from outside its body is judged as one of the class (after
-  the ones its methods set, and not for a class with `__slots__`).
+  function binds with `global` to a value that cannot be told are not
+  followed, so the names Pylint infers differently stay as differences. A
+  name that a function rebinds with `global` to a value that can be told is
+  judged as a variable, as Pylint does. An attribute that
+  `obj = Cls(); obj.attr = 1` adds to `Cls` from outside its body is judged
+  as one of the class (after the ones its methods set, and not for a class
+  with `__slots__`).
   A comprehension is not inferred by astroid and its name is not judged.
 * Pylint reports some attribute lines only when the file is linted alone, not
   inside a whole run (`fontTools/ttLib/tables/*`, which set an attribute of a

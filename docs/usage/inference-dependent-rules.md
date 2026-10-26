@@ -28,8 +28,8 @@ interface a rule would ask it through is in the
   `E1124` and `E0712`, and `R1710` or `W0101` (a method that never
   returns, called on a value that is not `self`: `ctx.exit()` where `ctx`
   comes from `with self.make_context(...) as ctx`).
-* **The value a name stands for.** `C0103` (a constant that comes from the
-  standard library, such as `os.sep`), `W0632` (an iterable that is a
+* **The value a name stands for.** `C0103` (a constant that comes from a
+  call or an attribute chain, such as `ctypes.c_size_t`), `W0632` (an iterable that is a
   function result or another module's dict), `W0143` and `W0125` (an operand
   of a comparison or a condition), `W0614` (an `__all__` that is
   `list(m.__all__)` or a name: ferrolint reports nothing for the file).

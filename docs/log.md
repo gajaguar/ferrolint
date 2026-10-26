@@ -14,6 +14,9 @@
 
 ## 2026-10-25
 
+* **Native rules, native-rules.md**: `C0103` reads `hasattr` of an imported
+  module, a list of `sys` and `os` constants and a value rebound with
+  `global`, as Pylint does.
 * **Native rules, native-rules.md**: The rules that read another module of
   the project search the run's roots and the file's directory, not every
   directory above the file, so `W0614`, `W0237`, `W0621` and `E0602` through

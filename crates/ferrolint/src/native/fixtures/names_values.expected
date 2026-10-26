@@ -32,3 +32,8 @@
 152:C0103:Variable name "WIDTH" doesn't conform to snake_case naming style
 153:C0103:Variable name "SPAN" doesn't conform to snake_case naming style
 155:C0103:Variable name "SPAN" doesn't conform to snake_case naming style
+157:C0103:Variable name "GLOBAL_A" doesn't conform to snake_case naming style
+160:C0103:Variable name "GLOBAL_A" doesn't conform to snake_case naming style
+168:C0103:Constant name "has_pypy" doesn't conform to UPPER_CASE naming style
+171:C0103:Constant name "host_sep" doesn't conform to UPPER_CASE naming style
+172:C0103:Constant name "host_max" doesn't conform to UPPER_CASE naming style
