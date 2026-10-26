@@ -573,6 +573,13 @@ impl<'a> Scan<'_, 'a, '_, '_> {
                         name.to_owned()
                     });
                 }
+                // a C class whose methods are all private, like `types.ModuleType`
+                Some(name)
+                    if crate::class_methods::methods(name)
+                        .is_some_and(|all| all.iter().all(|m| m.starts_with('_'))) =>
+                {
+                    self.ancestors.push(name.to_owned());
+                }
                 Some(name) if is_exception(name) || name == "type" => self.exempt = true,
                 // astroid cannot import the module, so Pylint counts the class without the
                 // base; a name bound twice may stand for another import there.
@@ -581,6 +588,8 @@ impl<'a> Scan<'_, 'a, '_, '_> {
                         .rsplit_once('.')
                         .is_some_and(|(module, _)| hierarchy.project.is_missing(module))
                         && self.bound_once(class, base) => {}
+                // a name only a missing module's star import could bind is lost the same way
+                _ if matches!(class, Class::Local(_)) && hierarchy.lost(base) => {}
                 // an enum, named tuple or typed dict is exempt already
                 _ => self.unknown = true,
             }

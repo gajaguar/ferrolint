@@ -19,11 +19,16 @@ use crate::class_methods;
 use crate::wit::BindingKind;
 
 /// Bases that add no method to the MRO, though the project cannot read them.
-pub(super) const EMPTY_BASES: [&str; 8] = [
+pub(super) const EMPTY_BASES: [&str; 11] = [
     "object",
     // C classes with no method of their own that a rule reads.
     "ctypes.Structure",
     "ctypes.Union",
+    // `ast.AST` is a C class that astroid cannot build.
+    "ast.AST",
+    // `typing` makes these lazily, so astroid reads the context manager classes they stand for.
+    "typing.ContextManager",
+    "typing.AsyncContextManager",
     "typing.Generic",
     // `typing` imports `Generic` from this C module.
     "_typing.Generic",
@@ -150,6 +155,20 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
         self.project
             .class(&self.project.absolute(&qualified))
             .map(Class::Remote)
+    }
+
+    /// Whether `expr` is a name that nothing in this file binds and that adds no
+    /// method: no star import can bring it, as every module they read is one
+    /// astroid cannot import, or a star module aliases it to an empty class
+    /// (`Structure = ctypes.Structure`).
+    pub fn lost(&self, expr: &Expr) -> bool {
+        let Expr::Name(name) = expr else { return false };
+        self.env.binding(name).is_none()
+            && (self.stars.iter().all(|star| self.project.is_missing(star))
+                || self.stars.iter().any(|star| {
+                    let aliased = self.project.unalias(&format!("{star}.{}", name.id));
+                    !aliased.is_empty() && aliased.iter().all(|n| EMPTY_BASES.contains(&n.as_str()))
+                }))
     }
 
     /// The class a name of this file stands for through `from m import *`.
@@ -573,6 +592,49 @@ mod tests {
                 &["R0903"]
             ),
             "3:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
+    fn an_undefined_base_adds_no_method_to_count() {
+        let main = "class S(Gone):\n    x = 1\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["R0903"]
+            ),
+            "1:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
+    fn a_star_alias_of_an_empty_class_adds_no_method_to_count() {
+        let main = "from .defs import *\n\nclass S(Structure):\n    _fields_ = []\n";
+        assert_eq!(
+            run(
+                &[
+                    ("pkg/__init__.py", ""),
+                    (
+                        "pkg/defs.py",
+                        "import ctypes\n\nStructure = ctypes.Structure\n"
+                    ),
+                    ("pkg/main.py", main)
+                ],
+                &["R0903"]
+            ),
+            "3:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
+    fn a_c_class_without_public_method_adds_none_to_count() {
+        let main = "import ast\nimport types\nimport typing\n\nclass A(ast.AST):\n    x = 1\n\nclass B(types.ModuleType):\n    x = 1\n\nclass C(typing.ContextManager[\"C\"]):\n    x = 1\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["R0903"]
+            ),
+            "5:R0903:Too few public methods (0/2)\n8:R0903:Too few public methods (0/2)\n11:R0903:Too few public methods (0/2)"
         );
     }
 }

@@ -340,7 +340,7 @@ impl Project {
 
     /// What `module.name` stands for when the module binds `name` by `name = X`, also under `if`
     /// and `try`, and `X` is a name it imports or a builtin: `no_limit_int = int` is `int`.
-    // shortcut: only a plain name on the right, not an attribute; upgrade with inference.
+    // shortcut: only a name or an attribute of an import on the right; upgrade with inference.
     pub fn unalias(&self, qualified: &str) -> Vec<String> {
         fn walk(body: &[Stmt], name: &str, loaded: &Module, out: &mut Vec<String>) {
             for stmt in body {
@@ -351,6 +351,8 @@ impl Project {
                             out.extend(
                                 imported.map_or_else(|| vec![value.id.to_string()], Clone::clone),
                             );
+                        } else if let Expr::Attribute(_) = &*a.value {
+                            out.extend(loaded.qualify(&a.value));
                         }
                     }
                     other => blocks(other)

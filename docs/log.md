@@ -14,6 +14,10 @@
 
 ## 2026-10-23
 
+* **native-rules.md**: `R0903` leaves out a base no star import can bring or a
+  star module aliases to an empty class, and counts no method for a C class
+  without public ones (`types.ModuleType`, `ast.AST`, `typing.ContextManager`).
+
 * **native-rules.md**: the arity rules follow a decorated class and a class
   whose base is a class of another module of the project.
 

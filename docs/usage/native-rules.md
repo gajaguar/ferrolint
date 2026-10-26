@@ -1152,7 +1152,14 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   project, `Generic[...]`, a starred base) is never reported, where Pylint
   counts the methods of the base. A base from a module the environment does
   not hold (a missing optional dependency) is left out of the count, as
-  astroid cannot import it, unless the name is bound more than once.
+  astroid cannot import it, unless the name is bound more than once. So is a
+  name nothing binds when every `from m import *` reads such a module, and a
+  name a star module binds to an empty class (`Structure = ctypes.Structure`).
+  A C class without public methods (`types.ModuleType`, `ast.AST`,
+  `typing.ContextManager[...]`) counts none. Left to inference: a base that is
+  a parameter or a call, a base from a module that only the file's own
+  directory or a package root of Pylint's `sys.path` could import, and C
+  classes outside the method table.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
   class, a module, a call of a class of the file and a name bound once to one of
   those, also as an element of a tuple unpacking. A call of a function, a name
