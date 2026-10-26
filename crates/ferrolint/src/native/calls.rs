@@ -575,7 +575,11 @@ impl<'a> Walk<'a, '_> {
     /// Whether the arity rules can trust `callee`: Pylint reads the
     /// constructor off the whole class, and a method off the instance.
     fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
-        settled(self.env, &self.classes, call, callee)
+        let project = || {
+            self.project
+                .get_or_init(|| Project::new(self.env.ctx.path, self.env.ctx.module))
+        };
+        settled(self.env, &self.classes, call, callee, Some(&project))
     }
 
     fn arguments(&mut self, call: &ExprCall) {
@@ -883,11 +887,11 @@ pub(super) fn callee<'a>(
 
 /// The `__init__` that building `class` calls.
 fn constructor(class: &StmtClassDef) -> Option<Callee<'_>> {
-    let plain = class.decorator_list.is_empty()
-        && class
-            .arguments
-            .as_ref()
-            .is_none_or(|a| a.keywords.is_empty());
+    // A class decorator does not change the class Pylint infers, only a metaclass does.
+    let plain = class
+        .arguments
+        .as_ref()
+        .is_none_or(|a| a.keywords.is_empty());
     let init = own_method(class, "__init__")?;
     (plain && own_method(class, "__new__").is_none()).then_some(Callee {
         func: init,
@@ -903,10 +907,11 @@ fn settled<'a>(
     classes: &[(&'a StmtClassDef, bool)],
     call: &ExprCall,
     callee: &Callee<'a>,
+    project: Option<&dyn Fn() -> &'a Project>,
 ) -> bool {
     let name = callee.func.name.as_str();
     match (&*call.func, callee.class) {
-        (_, Some(class)) => constructible(env, class, 0),
+        (_, Some(class)) => constructible(env, class, 0, project),
         // A function of a class body is no name inside its methods.
         (Expr::Name(_), None) => !classes.iter().any(|(class, _)| {
             super::classes::methods(&class.body)
@@ -942,9 +947,22 @@ fn buildable(project: &Project, class: &ClassRef, depth: u8) -> bool {
         })
 }
 
+/// Whether `base` names a class of another module of the project that `buildable` accepts.
+fn imported_base(env: &Env<'_>, base: &Expr, project: &Project) -> bool {
+    env.qualified(base)
+        .filter(|q| q.contains('.'))
+        .and_then(|q| project.class(&project.absolute(&q)))
+        .is_some_and(|class| class.is_sole() && buildable(project, &class, 0))
+}
+
 /// Whether the constructor of `class` is its `__init__`: no `__new__`
 /// and no base but a builtin class or such a class of the file.
-fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
+fn constructible<'p>(
+    env: &Env<'_>,
+    class: &StmtClassDef,
+    depth: u8,
+    project: Option<&dyn Fn() -> &'p Project>,
+) -> bool {
     depth < 16
         && !locals(&class.body).iter().any(|(n, _)| n == "__new__")
         && super::classes::bases(class).iter().all(|base| {
@@ -952,8 +970,9 @@ fn constructible(env: &Env<'_>, class: &StmtClassDef, depth: u8) -> bool {
                 || {
                     matches!(base, Expr::Name(n)
                         if env.binding(n).is_some_and(|b| b.kind == BindingKind::Builtin))
+                        || project.is_some_and(|project| imported_base(env, base, project()))
                 },
-                |class| constructible(env, class, depth + 1),
+                |class| constructible(env, class, depth + 1, project),
             )
         })
 }
@@ -968,7 +987,7 @@ pub(super) fn function_called<'a>(
 ) -> Option<&'a StmtFunctionDef> {
     let callee = callee(env, classes, call).filter(|callee| callee.class.is_none())?;
     // The result of a decorated function is not the one of its body (static: as before).
-    (settled(env, classes, call, &callee)
+    (settled(env, classes, call, &callee, None)
         && (callee.func.decorator_list.is_empty() || callee.kind == "staticmethod"))
         .then_some(callee.func)
 }
@@ -1174,12 +1193,12 @@ mod tests {
             "class Base:\n    def __init__(self, a, b):\n        pass\n\n\nclass Own(Base):\n    def __init__(self, a):\n        pass\n\n\nclass Newer:\n    def __new__(cls, *args):\n        return object.__new__(cls)\n\n    def __init__(self, a):\n        pass\n",
         )
         .unwrap();
-        let source = "from pkg import base\nfrom pkg.base import Base, Newer, Own\n\nBase(1)\nNewer()\nbase.Own()\nlst = []\nOwn(*lst)\nOwn(1)\n";
+        let source = "from pkg import base\nfrom pkg.base import Base, Newer, Own\n\nBase(1)\nNewer()\nbase.Own()\nlst = []\nOwn(*lst)\nOwn(1)\n\n\nclass Child(Base):\n    def __init__(self, c):\n        pass\n\n\nclass Odd(Newer):\n    def __init__(self, c):\n        pass\n\n\nChild()\nOdd()\n";
         let ids = ["E1120", "E1121"];
         let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
         assert_eq!(
             found,
-            "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call",
+            "4:E1120:No value for argument 'b' in constructor call\n6:E1120:No value for argument 'a' in constructor call\n8:E1120:No value for argument 'a' in constructor call\n22:E1120:No value for argument 'c' in constructor call",
             "{found}"
         );
     }

@@ -1092,9 +1092,10 @@ Known divergences from Pylint, where Pylint infers the callee:
   (`g = f`), a method that `self.name = ...` replaces, a function or an
   `__init__` defined twice and `self.__init__` (which Pylint does not judge)
   are not followed.
-* A class is followed only when it has no `__new__`, metaclass or decorator and
-  every base is a builtin class or such a class of the file. Pylint reads the
-  constructor of an imported base too.
+* A class is followed only when it has no `__new__` or metaclass (a class
+  decorator changes nothing, as in Pylint) and every base is a builtin class,
+  such a class of the file or such a class of another module of the project.
+  A base from an installed package is not read.
 * A call with a `**` or a `*` of anything but a name bound once to a list or
   tuple literal (`args = []` then `f(*args)` counts as no argument, whatever is
   appended later, as Pylint reads it) is skipped, where Pylint also unpacks a

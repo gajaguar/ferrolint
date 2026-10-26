@@ -86,3 +86,4 @@
 355:E1120:No value for argument 'cls' in unbound method call
 355:E1120:No value for argument 'name' in unbound method call
 359:E1120:No value for argument 'name' in unbound method call
+387:E1120:No value for argument 'a' in constructor call

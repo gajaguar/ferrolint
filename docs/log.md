@@ -14,6 +14,9 @@
 
 ## 2026-10-23
 
+* **native-rules.md**: the arity rules follow a decorated class and a class
+  whose base is a class of another module of the project.
+
 * **Plugin overrides, native-rules.md**: Contract 0.4.2 adds
   `modules.overridden-parameters`. `redefined-builtin` (`W0622`) excuses a
   parameter that the method it overrides repeats also when the ancestor is
