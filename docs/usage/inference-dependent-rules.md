@@ -25,7 +25,9 @@ interface a rule would ask it through is in the
   through an attribute, a list or a call), `R0902` (attributes assigned
   through an inferred instance), `E1120` and `E1121` (`type(self)(...)`, the
   `cls()` of a metaclass, signatures of installed packages), `E1102`,
-  `E1124` and `E0712`.
+  `E1124` and `E0712`, and `R1710` or `W0101` (a method that never
+  returns, called on a value that is not `self`: `ctx.exit()` where `ctx`
+  comes from `with self.make_context(...) as ctx`).
 * **The value a name stands for.** `C0103` (a constant that comes from the
   standard library, such as `os.sep`), `W0632` (an iterable that is a
   function result or another module's dict), `W0143` and `W0125` (an operand
@@ -34,7 +36,13 @@ interface a rule would ask it through is in the
 * **A class that is not a plain class statement.** `R0903` (a base that a
   call returns), `W0223` (methods of a C class such as `io.IOBase`), `R0901`
   (an ancestor list that doubles through a C class) and `W0237` or `W0221`
-  on a base that comes in through a star import.
+  on a base that comes in through a star import. Two more: `R0903`, when a
+  base is the attribute of a project module bound in a `try`
+  (`staticfiles.finders.Base`, where `finders` is imported in the `try` and
+  set to `None` in the `except`), which Pylint infers and ferrolint takes
+  for a module that is missing; and `W0221`, when a base name is bound again
+  by a later `Name = Other` under an `if` (`HTTPSConnection = Dummy`), as
+  astroid builds the MRO from the last value of the name.
 
 ## What does not wait for it
 

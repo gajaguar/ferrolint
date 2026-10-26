@@ -56,8 +56,9 @@ Known divergences from Pylint, where Pylint infers a type or a value:
 
 * `C0209` knows a dict or list of more than one item, and a starred list,
   only when it is written in the call or held by a name assigned once to
-  one; Pylint infers any value. A call that Pylint refuses for a backslash
-  in the rendered argument is judged from the literals inside the argument.
+  one (`"%(a)s" % dict(a=1, b=2)` is one); Pylint infers any value. A call
+  that Pylint refuses for a backslash in the rendered argument is judged
+  from the literals inside the argument.
 * `W1307` checks only an argument written as a number, a boolean, `None` or
   `...`, and only the first lookup of a field: no other type is known not to
   be subscriptable.
@@ -397,10 +398,12 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   makes it permissive (Pylint passes `Continue` as the class to skip, so a
   `continue` does not). `hasattr(self, "x")` is true here when a method of the
   class assigns `self.x`, as astroid infers it (the negated test then leaves
-  only the `else`, and Pylint reports `E0601`); an attribute that only an
-  ancestor defines, or that nothing defines, leaves the test unknown. A star
-  import of a module that is not found, such as `from _ast import *`, binds
-  nothing here, where Pylint knows its names.
+  only the `else`, and Pylint reports `E0601`), and `hasattr(sys, "x")` is
+  true when the module is a C module the host has a table for and the table
+  holds `x`; an attribute that only an ancestor defines, or that nothing
+  defines, leaves the test unknown. A name that a star import binds
+  (`from _ast import *`) is not reported at module level, whatever the
+  module.
 * `C0104` checks a module-level name only when it gets a literal constant,
   which is all Pylint checks for the default bad names. An overridden method
   and an attribute that an ancestor defines are looked up among the classes
@@ -617,8 +620,12 @@ Known divergences:
 * `E0202` `method-hidden`: a method whose name an instance attribute of
   the class or an ancestor, assigned in a method itself, takes; a property,
   a setter, a `functools.cached_property`, a decorator class with
-  `__get__` and `__set__`, an ancestor's method of that name or a private
-  name an ancestor assigns spares it.
+  `__get__` and `__set__` (a subclass of `property` too), a decorator
+  imported from a module that is nowhere (Pylint cannot infer it), an
+  ancestor's method of that name or a private name an ancestor assigns
+  spares it. The module in the message is named from the run's root, as
+  Pylint names it, so a directory with no `__init__.py` above it is part of
+  the name.
 * `E0203` `access-member-before-definition`: `self.x` read in the one
   function that assigns it, above that assignment, or a method called in
   `__init__` above it that reads it, unless a `try` that catches
@@ -1469,7 +1476,8 @@ Known divergences from Pylint:
   `unsafe-load-any-extension` apply. An import under `if TYPE_CHECKING:`, under
   a `sys.version_info` or `six.PY2/PY3` test, in a `try` that catches
   `ImportError`, in `with suppress(ImportError)` or beside a fallback import is
-  not reported, as in Pylint.
+  not reported, as in Pylint. `__main__` is always found, as it is in
+  `sys.modules` of the interpreter that runs Pylint.
 * `R0401` `cyclic-import`: the cycles of the imports among the linted modules
   (and the packages they import from), each reported once as
   `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
