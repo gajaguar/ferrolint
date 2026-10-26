@@ -54,6 +54,8 @@ pub struct FileData {
     /// The parameter names of the method each method overrides, by node,
     /// for the `modules` query.
     pub overridden: HashMap<u32, Vec<String>>,
+    /// The names the module's `__all__` lists, for the `modules` query.
+    pub all_names: Option<Vec<String>>,
 }
 
 /// Per-store host state.
@@ -190,6 +192,10 @@ impl wit::ferrolint::plugin::modules::Host for State {
 
     fn overridden_parameters(&mut self, method: u32) -> wasmtime::Result<Option<Vec<String>>> {
         Ok(self.check_node(method)?.overridden.get(&method).cloned())
+    }
+
+    fn all_names(&mut self) -> wasmtime::Result<Option<Vec<String>>> {
+        Ok(self.file()?.all_names.clone())
     }
 }
 

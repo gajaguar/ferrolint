@@ -771,8 +771,16 @@ impl Linter<'_> {
             path: context.path,
             roots: context.roots,
         });
+        // `listed_in_all` answers for a file without `__all__` too, but costs a project.
+        let all_names = if context.source.contains("__all__") {
+            native::Project::with_packages(context.path, context.module, context.roots)
+                .listed_in_all(&context.parsed.syntax().body)
+        } else {
+            Some(Vec::new())
+        };
         let data = Arc::new(FileData {
             overridden,
+            all_names,
             stars: star_names(&flat, context),
             flat,
             ast,

@@ -379,6 +379,23 @@ fn unused_import_leaves_a_name_an_earlier_project_star_import_binds() {
 }
 
 #[test]
+fn unused_import_reads_the_all_the_host_reads() {
+    // The host resolves `m.__all__` and `list(...)`; `sorted(...)` is no list for astroid.
+    let tokens = "__all__ = ['os']\n";
+    let used =
+        "import os\nimport sys\nimport tokens\n__all__ = list(tokens.__all__)\nprint(tokens)\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-unused-import", tokens, used),
+        ["2: Unused import sys"]
+    );
+    let sorted = "import os\n__all__ = sorted(['os'])\n";
+    assert_eq!(
+        findings_beside("ferrolint-plugin-unused-import", tokens, sorted),
+        ["1: Unused import os"]
+    );
+}
+
+#[test]
 fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_the_name() {
     // `import _pkg.sub` binds `_pkg`, a dummy name to Pylint in a function.
     let source = "def f():\n    import _pkg.sub\n    import pkg.sub\n";

@@ -7,6 +7,13 @@
   project.
 * **Result cache, result-cache.md**: a file's entry records what the native
   rules read from other modules and replays only while it is unchanged.
+* **Native rules, native-rules.md**: `W0614` reads `list(...)`, `tuple(...)`
+  and a name for `__all__`, and takes no name for used where astroid infers
+  no list or tuple (`sorted(...)`, a set, a list plus a tuple), as Pylint
+  does. **Plugin star imports, plugins.md**: Contract 0.4.2 adds
+  `modules.all-names`; `unused-import` (`W0611`) reads `__all__` through it.
+  Updated `requirements/plugin-contract.md`, `usage/writing-a-plugin.md` and
+  `usage/inference-dependent-rules.md`.
 * **Native rules, native-rules.md**: `E0202` spares a method with a
   decorator that subclasses `property` or comes from a module that is
   nowhere, and names the module as the run's root does. `E0401` finds
