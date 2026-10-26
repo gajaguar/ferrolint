@@ -183,12 +183,12 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
 
     /// Whether astroid certainly fails to infer the base `expr` and so leaves
     /// it out of the ancestors: a name that only imports of a module the
-    /// environment lacks bind, or a subscript with such a name in its value or
+    /// environment lacks bind, or a parameter with no default, or a subscript with such a name in its value or
     /// in a single index (a tuple index infers).
     ///
     /// shortcut: only a missing module is certain; a base computed by a call
     /// or bound otherwise stays unknown, upgrade with a value inference.
-    fn dropped(&self, expr: &Expr) -> bool {
+    pub fn dropped(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Subscript(s) => {
                 self.dropped(&s.value) || (!s.slice.is_tuple_expr() && self.dropped(&s.slice))
@@ -199,13 +199,14 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                 let all = self.env.ctx.model.same_name(binding.id);
                 !all.is_empty()
                     && all.iter().all(|b| {
-                        matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
-                            && b.origin.as_deref().is_some_and(|origin| {
-                                !origin.starts_with('.')
-                                    && self
-                                        .project
-                                        .is_missing(origin.split('.').next().unwrap_or(origin))
-                            })
+                        self.env.is_bare_param(b)
+                            || matches!(b.kind, BindingKind::Import | BindingKind::FromImport)
+                                && b.origin.as_deref().is_some_and(|origin| {
+                                    !origin.starts_with('.')
+                                        && self
+                                            .project
+                                            .is_missing(origin.split('.').next().unwrap_or(origin))
+                                })
                     })
             }),
             _ => false,
@@ -648,6 +649,19 @@ mod tests {
                 &["R0903"]
             ),
             "5:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
+    fn a_parameter_base_adds_no_method_to_count() {
+        // astroid cannot infer a parameter with no default; `self` and a default it can.
+        let main = "import io\n\ndef make(base, other=io.IOBase):\n    class A(base):\n        x = 1\n    class B(other):\n        x = 1\n    return A, B\n\nclass M:\n    def make(self, base):\n        class C(self):\n            x = 1\n        class D(base):\n            x = 1\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["R0903"]
+            ),
+            "4:R0903:Too few public methods (0/2)\n10:R0903:Too few public methods (1/2)\n14:R0903:Too few public methods (0/2)"
         );
     }
 

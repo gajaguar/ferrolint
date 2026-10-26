@@ -588,8 +588,9 @@ impl<'a> Scan<'_, 'a, '_, '_> {
                         .rsplit_once('.')
                         .is_some_and(|(module, _)| hierarchy.project.is_missing(module))
                         && self.bound_once(class, base) => {}
-                // a name only a missing module's star import could bind is lost the same way
-                _ if matches!(class, Class::Local(_)) && hierarchy.lost(base) => {}
+                // a name only a missing module's star import could bind, or a parameter, is lost the same way
+                _ if matches!(class, Class::Local(_))
+                    && (hierarchy.lost(base) || hierarchy.dropped(base)) => {}
                 // an enum, named tuple or typed dict is exempt already
                 _ => self.unknown = true,
             }

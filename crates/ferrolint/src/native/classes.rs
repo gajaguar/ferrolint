@@ -29,12 +29,18 @@ pub struct Env<'a> {
     funcs: HashMap<u32, &'a StmtFunctionDef>,
     /// `Alias = value` by the node id of `Alias`.
     aliases: HashMap<u32, &'a Expr>,
+    /// The parameters astroid cannot infer as anything but unknown: no default, not `*args`,
+    /// `**kwargs` or the first of a method (an instance or the class).
+    bare_params: HashSet<u32>,
 }
 
 struct Collect<'a, 'm> {
     classes: &'m mut HashMap<u32, &'a StmtClassDef>,
     funcs: &'m mut HashMap<u32, &'a StmtFunctionDef>,
     aliases: &'m mut HashMap<u32, &'a Expr>,
+    bare_params: &'m mut HashSet<u32>,
+    /// Whether the statement is written directly in a class body.
+    in_class: bool,
 }
 
 impl<'a> Visitor<'a> for Collect<'a, '_> {
@@ -55,6 +61,24 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
                 {
                     self.funcs.insert(id, func);
                 }
+                let first = usize::from(self.in_class);
+                let ps = &func.parameters;
+                for param in ps
+                    .posonlyargs
+                    .iter()
+                    .chain(&ps.args)
+                    .skip(first)
+                    .chain(&ps.kwonlyargs)
+                {
+                    if param.default.is_none()
+                        && let Some(id) =
+                            ruff_python_ast::HasNodeIndex::node_index(&param.parameter)
+                                .load()
+                                .as_u32()
+                    {
+                        self.bare_params.insert(id);
+                    }
+                }
             }
             Stmt::Assign(assign) => {
                 if let [Expr::Name(target)] = &assign.targets[..]
@@ -67,7 +91,11 @@ impl<'a> Visitor<'a> for Collect<'a, '_> {
             }
             _ => {}
         }
+        let saved = self.in_class;
+        self.in_class =
+            matches!(stmt, Stmt::ClassDef(_)) || (saved && !matches!(stmt, Stmt::FunctionDef(_)));
         visitor::walk_stmt(self, stmt);
+        self.in_class = saved;
     }
 }
 
@@ -75,10 +103,13 @@ impl<'a> Env<'a> {
     pub fn new(ctx: &'a Ctx<'a>) -> Self {
         let (mut classes, mut funcs, mut aliases) =
             (HashMap::new(), HashMap::new(), HashMap::new());
+        let mut bare_params = HashSet::new();
         Collect {
             classes: &mut classes,
             funcs: &mut funcs,
             aliases: &mut aliases,
+            bare_params: &mut bare_params,
+            in_class: false,
         }
         .visit_body(&ctx.parsed.syntax().body);
         Self {
@@ -86,7 +117,16 @@ impl<'a> Env<'a> {
             classes,
             funcs,
             aliases,
+            bare_params,
         }
+    }
+
+    /// Whether the binding is a parameter that astroid infers as unknown.
+    pub fn is_bare_param(&self, binding: &crate::wit::Binding) -> bool {
+        binding.kind == BindingKind::Parameter
+            && binding
+                .node
+                .is_some_and(|id| self.bare_params.contains(&id))
     }
 
     pub fn binding(&self, name: &ExprName) -> Option<crate::wit::Binding> {
