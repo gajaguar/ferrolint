@@ -1381,6 +1381,19 @@ impl<'a> Walk<'a, '_> {
         match callee.as_str() {
             "type" if matches!(args.len(), 1 | 3) => Val::Class,
             "int" | "str" | "bool" | "len" if !args.is_empty() && all(&args) => Val::Const,
+            // astroid builds a `str` constant whatever the argument is, and an
+            // instance for the other builtin types when it cannot fold it.
+            "str" | "int" | "float" | "bytes"
+                if !args.is_empty()
+                    && call.arguments.keywords.is_empty()
+                    && !args.iter().any(|a| a.is_starred_expr()) =>
+            {
+                if callee == "str" {
+                    Val::Const
+                } else {
+                    Val::Other
+                }
+            }
             "typing.NewType"
             | "typing.NamedTuple"
             | "typing.TypedDict"

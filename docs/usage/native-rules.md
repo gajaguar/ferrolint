@@ -507,7 +507,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   function, a call of a function of the file that returns only classes as a
   class, and a call of one without decorator, `async` or `yield` that has a
   single `return` as the value of it (a literal, a display, a nested function
-  or a variable bound once). An `if` expression of two constants of different
+  or a variable bound once). `str(x)` is a constant whatever `x` is, and
+  `int(x)`, `float(x)` or `bytes(x)` of a value that is not constant is an
+  instance: inferable, so a name bound to it twice is a variable, and a lone
+  one is judged by its style (the constant style unless it is snake_case).
+  An `if` expression of two constants of different
   types is not judged, as astroid cannot join them; one whose test astroid
   infers (`True`, `sys.platform`) picks an arm there and is not judged here
   either.

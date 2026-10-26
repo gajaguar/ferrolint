@@ -27,3 +27,8 @@
 138:C0103:Constant name "_none" doesn't conform to UPPER_CASE naming style
 140:C0103:Constant name "snake_same" doesn't conform to UPPER_CASE naming style
 141:C0103:Constant name "sameArms" doesn't conform to UPPER_CASE naming style
+147:C0103:Constant name "low_str" doesn't conform to UPPER_CASE naming style
+150:C0103:Variable name "WIDTH" doesn't conform to snake_case naming style
+152:C0103:Variable name "WIDTH" doesn't conform to snake_case naming style
+153:C0103:Variable name "SPAN" doesn't conform to snake_case naming style
+155:C0103:Variable name "SPAN" doesn't conform to snake_case naming style
