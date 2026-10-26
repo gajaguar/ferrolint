@@ -11,12 +11,32 @@ use std::{env, fs};
 
 mod bundle;
 
+/// An sdist's workspace manifest lists only the crates the binary depends
+/// on, so the plugins would silently not build; list them again.
+fn restore_plugin_members(root: &Path) -> Result<(), Box<dyn Error>> {
+    let manifest = root.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest)?;
+    if text.contains("plugins/*") {
+        return Ok(());
+    }
+    let members = r#"members = ["crates/*"]"#;
+    if !text.contains(members) {
+        return Err("the workspace manifest lists neither the plugins nor `crates/*`".into());
+    }
+    fs::write(
+        &manifest,
+        text.replace(members, r#"members = ["crates/*", "plugins/*"]"#),
+    )?;
+    Ok(())
+}
+
 /// Build the workspace plugins as WASM components into `<out>/plugins`.
 fn build_plugins(out: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let root = Path::new(&env::var("CARGO_MANIFEST_DIR")?).join("../..");
     for dir in ["plugins", "crates/ferrolint-plugin-sdk", "Cargo.lock"] {
         println!("cargo:rerun-if-changed={}", root.join(dir).display());
     }
+    restore_plugin_members(&root)?;
     let target_dir = out.join("plugins");
     let status = Command::new(env::var("CARGO")?)
         .args([

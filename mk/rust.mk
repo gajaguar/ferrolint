@@ -53,10 +53,14 @@ release-build: plugins ## Build the release binary for TARGET (a target pinned i
 
 wheel: release-build ## Build the PyPI wheel for TARGET into target/wheels/, with the plugins bundled
 	rm -rf target/wheels
-	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(MATURIN) build --release --locked --target $(TARGET) -m crates/ferrolint/Cargo.toml --out target/wheels
+	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(MATURIN) build --release --locked --target $(TARGET) --out target/wheels
 	@# The musl binary is static: tag it manylinux too so pip on glibc accepts it.
 	@case $(TARGET) in *-linux-musl) arch=$(firstword $(subst -, ,$(TARGET))); \
 		$(WHEEL) tags --platform-tag manylinux_2_17_$$arch.musllinux_1_2_$$arch --remove target/wheels/*.whl;; esac
+
+sdist: ## Build the PyPI source distribution into target/wheels/
+	rm -rf target/wheels
+	$(MATURIN) sdist --out target/wheels
 
 smoke: ## Smoke-test the binary BIN: version, help, config validation, exit codes and start-up time
 	tools/smoke.sh $(BIN)
@@ -80,4 +84,4 @@ pylint-deprecated: ## Dump Pylint's deprecation tables into src/pylint_deprecate
 	$(PYTHON) tools/pylint-deprecated.py > crates/ferrolint/src/pylint_deprecated.rs
 
 # `plugins` is also a directory, so without this make calls the target up to date.
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
+.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated

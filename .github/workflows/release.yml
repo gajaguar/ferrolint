@@ -38,15 +38,33 @@ jobs:
           uv venv "$RUNNER_TEMP/wheel-venv"
           uv pip install --python "$RUNNER_TEMP/wheel-venv" target/wheels/*.whl
           "$RUNNER_TEMP/wheel-venv/bin/ferrolint" --version
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m ferrolint --version
           make smoke BIN="$RUNNER_TEMP/wheel-venv/bin/ferrolint"
       - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.target }}
           path: target/wheels/*.whl
           if-no-files-found: error
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: make sdist
+      - name: Install the sdist and smoke-test it
+        run: |
+          uv venv "$RUNNER_TEMP/sdist-venv"
+          uv pip install --python "$RUNNER_TEMP/sdist-venv" target/wheels/*.tar.gz
+          make smoke BIN="$RUNNER_TEMP/sdist-venv/bin/ferrolint"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-sdist
+          path: target/wheels/*.tar.gz
+          if-no-files-found: error
   publish:
-    needs: build
-    if: github.event_name == 'release'
+    needs: [build, sdist]
+    # Nothing ships before 1.0.0; remove the tag test then.
+    if: github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'v0.')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

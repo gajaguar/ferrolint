@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Release builds
-description: How a release is built and checked for its three targets, its binaries and PyPI wheels, and how to reproduce one locally.
+description: How a release is built and checked for its three targets, its binaries, PyPI wheels and sdist, and how to reproduce one locally.
 tags: [release, toolchain]
 status: stable
 ---
@@ -37,8 +37,16 @@ binary per target on a runner of that architecture:
 `target/wheels/`, with maturin (`bindings = "bin"`, from
 `crates/ferrolint/pyproject.toml`). Each wheel job installs its wheel in a
 fresh venv, runs `ferrolint --version` and `make smoke` on the installed
-command, and uploads a `wheel-<target>` artifact. There is no sdist and no
-Windows wheel.
+command (and `python -m ferrolint`), and uploads a `wheel-<target>` artifact.
+There is no Windows wheel.
+
+* The root `pyproject.toml` points maturin at `crates/ferrolint/Cargo.toml`;
+  `python/ferrolint/` holds the `python -m ferrolint` launcher, which runs
+  the installed binary.
+* `make sdist` builds the source distribution, and the `sdist` job installs
+  it in a fresh venv and runs `make smoke`. maturin cuts the sdist's
+  workspace down to `crates/*`, so `build.rs` lists `plugins/*` again before
+  it builds the plugins.
 
 * The Linux musl binaries are static, so their wheels are retagged
   `manylinux_2_17_<arch>.musllinux_1_2_<arch>`; pip on glibc then accepts
@@ -46,9 +54,9 @@ Windows wheel.
 
 ## Installing from source
 
-`pip install "git+ssh://git@github.com/<owner>/ferrolint#subdirectory=crates/ferrolint"`
-(or a Poetry git dependency with `subdirectory = "crates/ferrolint"`) builds
-with maturin and the `bundle` cargo feature, which `pyproject.toml` enables.
+`pip install "git+ssh://git@github.com/<owner>/ferrolint"` (or a Poetry git
+dependency) builds with maturin and the `bundle` cargo feature, which
+`pyproject.toml` enables.
 
 * The feature makes `build.rs` build the repository plugins for
   `wasm32-wasip2` into the build's own target directory and bundle them, as
@@ -64,7 +72,9 @@ The `publish` job runs only when a GitHub Release is published. It
 downloads the `wheel-*` artifacts and uploads them with
 `pypa/gh-action-pypi-publish` through PyPI Trusted Publishing, in the
 `pypi` environment. Publishing the Release is therefore the step that
-ships the wheels; a tag push alone does not.
+ships the wheels; a tag push alone does not. Nothing ships before 1.0.0: the
+job skips a `v0.*` tag, so remove that test, and do the one-time setup
+below, when 1.0.0 is released.
 
 One-time setup, before the first publish:
 
