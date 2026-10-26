@@ -81,6 +81,8 @@ enum Fail {
 pub struct Hierarchy<'a, 'e> {
     pub env: &'e Env<'a>,
     pub project: Project,
+    /// The name Pylint gives the linted module.
+    module: String,
     /// The modules the file imports with `from m import *`.
     stars: Vec<String>,
     /// The MRO of each class met, by key; `None` when it cannot be built.
@@ -93,6 +95,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn new(env: &'e Env<'a>) -> Self {
         let project = Project::with_packages(env.ctx.path, env.ctx.module, env.ctx.roots);
         Self {
+            module: Project::named(env.ctx.path, env.ctx.module, env.ctx.roots),
             env,
             stars: project.stars(&env.ctx.parsed.syntax().body),
             project,
@@ -124,7 +127,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     /// The dotted name of the module that defines `class`.
     pub fn module<'c>(&'c self, class: &'c Class<'a>) -> &'c str {
         match class {
-            Class::Local(_) => self.env.ctx.module,
+            Class::Local(_) => &self.module,
             Class::Remote(class) => class.module(),
         }
     }
