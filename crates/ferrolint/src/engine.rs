@@ -285,9 +285,20 @@ struct Setup {
     /// Where an absolute import is looked up, as the project phase does.
     roots: Vec<PathBuf>,
     opts: project_phase::Opts,
+    /// The stamps taken so far: the files share the modules they read.
+    stamps: Mutex<HashMap<PathBuf, String>>,
 }
 
 impl Setup {
+    /// The stamp of `path`, read once per run.
+    fn stamp(&self, path: &Path) -> String {
+        let mut known = self.stamps.lock().unwrap_or_else(PoisonError::into_inner);
+        known
+            .entry(path.to_path_buf())
+            .or_insert_with(|| project_run::stamp_of(path))
+            .clone()
+    }
+
     fn new(
         plugins: Vec<PluginSource>,
         cache: Option<&Cache>,
@@ -314,6 +325,7 @@ impl Setup {
             roots: project_run::roots(cwd, paths, &opts),
             opts,
             options,
+            stamps: Mutex::default(),
         })
     }
 }
@@ -580,7 +592,7 @@ impl Linter<'_> {
                 entry
                     .stamps
                     .iter()
-                    .all(|(path, stamp)| project_run::stamp_of(Path::new(path)) == *stamp)
+                    .all(|(path, stamp)| setup.stamp(Path::new(path)) == *stamp)
             });
         let complete = stored.as_ref().is_some_and(|entry| {
             entry.unparsable
@@ -701,12 +713,7 @@ impl Linter<'_> {
         }
         entry.stamps = native::take_reads()
             .into_iter()
-            .map(|path| {
-                (
-                    path.to_string_lossy().into_owned(),
-                    project_run::stamp_of(&path),
-                )
-            })
+            .map(|path| (path.to_string_lossy().into_owned(), setup.stamp(&path)))
             .collect();
         entry.suppressions = suppress::spelled(&source, &parsed, &index);
         entry.unparsable = parsed.has_syntax_errors();
