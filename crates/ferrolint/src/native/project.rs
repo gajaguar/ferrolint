@@ -618,6 +618,10 @@ impl Project {
         if let Some((file, package)) = self.linted.get(name) {
             return Some(Spec::source(file.clone(), *package));
         }
+        // The running interpreter's `__main__` is in `sys.modules`, so astroid always finds it.
+        if name == "__main__" {
+            return Some(Spec::of(Kind::Made));
+        }
         // astroid answers for `os.path` with the platform's module.
         if name == "os.path" {
             return self.find("posixpath");
