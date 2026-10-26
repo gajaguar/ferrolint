@@ -1,6 +1,8 @@
 //! A port of Pylint's `undefined-variable` (E0602): a name read that no
 //! scope and no builtin defines. A module with a star import the host
 //! cannot tell the names of is left alone, since it may define anything.
+//! A name bound later in the scope that reads it, or in the module, is left
+//! to Pylint's `E0601` (or to nothing).
 
 use std::collections::HashSet;
 
@@ -57,7 +59,10 @@ struct UndefinedVariable {
     star_import: bool,
     /// The names the other star imports bind.
     starred: HashSet<String>,
-    undefined: Vec<(String, Range)>,
+    /// With the scope of the read, and whether it is a `del`.
+    undefined: Vec<(String, Range, u32, bool)>,
+    /// (scope, name) of every binding in the file, wherever it sits.
+    bound: HashSet<(u32, String)>,
 }
 
 impl Checker for UndefinedVariable {
@@ -79,7 +84,22 @@ impl Checker for UndefinedVariable {
                 Some(names) => self.starred.extend(names),
                 None => self.star_import = true,
             },
-            NodeKind::Name if node.context == ExprContext::Load => {
+            NodeKind::FunctionDef | NodeKind::ClassDef | NodeKind::ExceptHandler => {
+                if let Some(name) = node.name {
+                    self.bound.insert((cx.scope(node).id, name.to_owned()));
+                }
+            }
+            NodeKind::Alias => {
+                if let Some(binding) = cx.resolve(node) {
+                    self.bound.insert((cx.scope(node).id, binding.name));
+                }
+            }
+            NodeKind::Name if node.context == ExprContext::Store => {
+                if let Some(name) = node.name {
+                    self.bound.insert((cx.scope(node).id, name.to_owned()));
+                }
+            }
+            NodeKind::Name if matches!(node.context, ExprContext::Load | ExprContext::Del) => {
                 let Some(name) = node.name else {
                     return;
                 };
@@ -89,7 +109,12 @@ impl Checker for UndefinedVariable {
                 {
                     return;
                 }
-                self.undefined.push((name.to_owned(), node.range));
+                self.undefined.push((
+                    name.to_owned(),
+                    node.range,
+                    cx.scope(node).id,
+                    node.context == ExprContext::Del,
+                ));
             }
             _ => {}
         }
@@ -99,8 +124,15 @@ impl Checker for UndefinedVariable {
         if self.star_import {
             return;
         }
-        for (name, range) in self.undefined.drain(..) {
-            if self.starred.contains(&name) {
+        for (name, range, scope, deleted) in self.undefined.drain(..) {
+            // Bound later in the scope, or in the module: Pylint says `E0601` or
+            // nothing, except for a `del`, which no later binding excuses.
+            if self.starred.contains(&name)
+                || (!deleted
+                    && [scope, 0]
+                        .into_iter()
+                        .any(|scope| self.bound.contains(&(scope, name.clone()))))
+            {
                 continue;
             }
             cx.report(Diagnostic::new(

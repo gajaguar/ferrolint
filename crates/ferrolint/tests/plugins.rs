@@ -66,6 +66,26 @@ fn undefined_variable() {
 }
 
 #[test]
+fn undefined_variable_leaves_a_name_bound_later_to_pylint_e0601() {
+    let source = "import sys\nif sys.maxsize:\n    A = 1\nelse:\n    B = unicode\n    print(later)\nunicode = str\nclass C:\n    print(later)\n    print(inner)\n    inner = 1\nprint(never)\nlater = 1\n";
+    assert_eq!(
+        findings("ferrolint-plugin-undefined-variable", source),
+        ["12: Undefined variable 'never'"]
+    );
+}
+
+#[test]
+fn undefined_variable_reads_a_del_as_a_use_of_the_name_before_it() {
+    // A comprehension variable does not leak, a later binding is no help,
+    // and a module name can be deleted in a function.
+    let source = "G = 1\n\nclass C:\n    t = [x for x in (1,)]\n    del x\n\ndef f():\n    del G\n    del z\n    z = 1\n    y = 2\n    del y\n    del y\n";
+    assert_eq!(
+        findings("ferrolint-plugin-undefined-variable", source),
+        ["5: Undefined variable 'x'", "9: Undefined variable 'z'"]
+    );
+}
+
+#[test]
 fn undefined_variable_reads_the_names_a_project_star_import_binds() {
     // Pylint binds the public names of the module and ignores its `__all__`.
     let tokens = "__all__ = ['alpha']\nalpha = 1\nbeta = 2\n_hidden = 3\n";
