@@ -581,7 +581,8 @@ impl Builder<'_> {
             Some(id),
             range,
             None,
-            range.end().to_u32(),
+            // The name is bound after the defaults and annotations ran.
+            def.range().end().to_u32(),
         );
         let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
         self.visit_parameter_values(&def.parameters);
@@ -979,6 +980,14 @@ mod tests {
             fixture("x = 1\nclass C:\n    x = 2\n    y = x\n    def m(self):\n        return x\n");
         assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 3)));
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn a_default_value_does_not_see_the_function_it_defaults() {
+        let f = fixture(
+            "import json\nclass C:\n    def json(self, loads=json.loads):\n        return json\n",
+        );
+        assert_eq!(f.resolve("json", 0), Some((BindingKind::Import, 1)));
     }
 
     #[test]
