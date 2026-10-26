@@ -138,6 +138,14 @@ impl<'a> Visitor<'a> for Sizes {
             match &*assign.value {
                 Expr::Dict(dict) => self.0.insert(id, (true, dict.items.len())),
                 Expr::List(list) => self.0.insert(id, (false, list.elts.len())),
+                // `dict(a=1, b=2)` infers to a dict of its keywords
+                Expr::Call(call)
+                    if matches!(&*call.func, Expr::Name(f) if f.id.as_str() == "dict")
+                        && call.arguments.args.is_empty()
+                        && call.arguments.keywords.iter().all(|k| k.arg.is_some()) =>
+                {
+                    self.0.insert(id, (true, call.arguments.keywords.len()))
+                }
                 _ => None,
             };
         }
@@ -228,9 +236,13 @@ impl Walk<'_, '_> {
                     .ctx
                     .model
                     .resolve(self.ctx.flat, name.node_index().load().as_u32()?)?;
-                (binding.kind == BindingKind::Assignment
-                    && self.ctx.model.is_sole_binding(binding.id))
-                .then_some(())?;
+                // Pylint infers the binding in force at the read; a name bound to anything
+                // but a container elsewhere may be branch-dependent, so it stays unknown.
+                let known = (self.ctx.model.same_name(binding.id).iter()).all(|b| {
+                    b.kind == BindingKind::Assignment
+                        && self.sizes.contains_key(&b.node.unwrap_or(u32::MAX))
+                });
+                known.then_some(())?;
                 self.sizes.get(&binding.node?).copied()
             }
             _ => None,
@@ -563,6 +575,10 @@ twice = {'a': 1}
 '{a}{b}'.format(**params)
 '{a}'.format(**one)
 '{} {}'.format(*many)
+kw = dict(a=1, b=2)
+'DROP %(a)s' % kw
+kw = dict(a=1, c=2)
+'DROP %(a)s' % kw
 
 
 def f():
