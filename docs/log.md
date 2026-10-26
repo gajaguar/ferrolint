@@ -14,6 +14,9 @@
 * **native-rules.md**: `W0101` and the other flow rules read a bare `raise`
   before a `;` (`except X:raise;y`) as a `raise`.
 
+* **native-rules.md**: `R0901` counts `IOError`, `EnvironmentError`,
+  `os.error`, `select.error` and `socket.error` as `OSError`.
+
 ## 2026-10-23
 
 * **native-rules.md**: `C0103` judges the attributes that code outside a class

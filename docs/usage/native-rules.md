@@ -1217,7 +1217,8 @@ The ancestors are those of Batch G (see its divergences for what is read).
   (and what they inherit) not counted. The builtin exceptions, `ABC`,
   `Generic`, `Protocol` and the builtin types count as Pylint counts them, and
   so does the `NoneType` astroid adds to a class that derives from `Enum` or
-  `Flag`.
+  `Flag`. `IOError`, `EnvironmentError`, `os.error`, `select.error` and
+  `socket.error` are `OSError`.
 
 Known divergences:
 

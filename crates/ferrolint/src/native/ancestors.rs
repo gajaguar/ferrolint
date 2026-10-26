@@ -253,6 +253,12 @@ fn normalize(name: &str) -> String {
         format!("_collections_abc.{rest}")
     } else if let Some(rest) = name.strip_prefix("typing_extensions.Protocol") {
         format!("typing.Protocol{rest}")
+    } else if matches!(
+        name,
+        "IOError" | "EnvironmentError" | "os.error" | "select.error" | "socket.error"
+    ) {
+        // aliases of `OSError`, which astroid resolves to that class
+        "builtins.OSError".to_owned()
     } else if name.contains('.') {
         name.to_owned()
     } else {
