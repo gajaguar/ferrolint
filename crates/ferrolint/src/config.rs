@@ -166,7 +166,7 @@ fn read_pylint(path: &Path) -> Result<Option<Config>> {
     // no E0013 and a plugin may add options.
     let project = std::env::var_os("VIRTUAL_ENV").map(|_| {
         let root = path.parent().unwrap_or(Path::new(""));
-        Project::with_packages(&root.join("pylintrc"), "pylintrc")
+        Project::with_packages(&root.join("pylintrc"), "pylintrc", &[])
     });
     let exists = |module: &str| project.as_ref().is_none_or(|p| p.has_module(module));
     let mut issues = pylint::issues(&entries, ini, exists);

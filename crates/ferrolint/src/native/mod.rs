@@ -76,6 +76,8 @@ pub struct Ctx<'a> {
     pub module: &'a str,
     /// The file, to find the other modules of its project.
     pub path: &'a std::path::Path,
+    /// The directories above the run's packages, where imports are searched.
+    pub roots: &'a [std::path::PathBuf],
 }
 
 impl Ctx<'_> {
@@ -257,6 +259,7 @@ pub fn lint_with(source: &str, options: &[(&str, &str)]) -> Vec<(u32, String)> {
         py_version: None,
         module: "mod",
         path: std::path::Path::new("mod.py"),
+        roots: &[],
     };
     let enabled = rules().into_iter().map(|rule| rule.code).collect();
     check(&ctx, &enabled)

@@ -1521,12 +1521,14 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   few percent is Pylint's own run-to-run spread (its sets iterate in the
   order of a hash seeded for each run), not a missing edge.
 * The rules that read another module of the project (`W0614`, `W0237`,
-  `W0621` and `E0602` through a star import, `E0202`) look for it under every
-  directory above the file that is not a package, as `sys.path` would when
-  that directory is the root. Pylint searches only the roots of the arguments:
-  given a parent directory, it cannot import `_pkg.mod` from a subtree that is
-  no package (`E0401`) and reports none of these, where ferrolint resolves the
-  module and does. The roots are not known to a rule that runs on one file.
+  `W0621` and `E0602` through a star import, `E0202`) look for it as astroid
+  does: in the directory above the top package of each argument of the run
+  (a source root when one holds it) and in the directory of the file. They do
+  not look in the other directories above the file, so a module of a subtree
+  that is no package is not found from outside it (`E0401`), and none of
+  these is reported. A relative import is read under the module name Pylint
+  gives the file from the root of its argument. A run on one file has the
+  directory above the top package of that file as its root.
 * `W0631` is not reported when Pylint infers the iterable as a non-empty
   sequence. That holds for `for x in f()` where `f` returns a tuple or list
   literal, for `enumerate(sys.meta_path)` and for a dict of another module

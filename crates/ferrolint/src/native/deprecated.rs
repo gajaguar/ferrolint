@@ -77,7 +77,7 @@ impl Checker for Deprecated {
             out,
             enabled,
             tables: Tables::new(ctx),
-            project: Project::new(ctx.path, ctx.module),
+            project: Project::new(ctx.path, ctx.module, ctx.roots),
             guarded: HashSet::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
@@ -432,6 +432,7 @@ mod tests {
             py_version: version,
             module: "mod",
             path: std::path::Path::new("mod.py"),
+            roots: &[],
         };
         let enabled = Deprecated.rules().into_iter().map(|r| r.code).collect();
         let mut out = Vec::new();

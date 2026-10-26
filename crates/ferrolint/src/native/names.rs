@@ -98,7 +98,7 @@ impl Checker for Naming {
             path: Vec::new(),
             loops: 0,
             main: 0,
-            project: Project::new(ctx.path, ctx.module),
+            project: Project::new(ctx.path, ctx.module, ctx.roots),
             cache: RefCell::default(),
             outside: std::cell::OnceCell::new(),
         };
@@ -2275,6 +2275,7 @@ mod tests {
             py_version: None,
             module,
             path,
+            roots: &crate::native::Project::test_roots(path, module),
         };
         let enabled = IDS.iter().map(|id| (*id).to_owned()).collect();
         let mut out = Vec::new();

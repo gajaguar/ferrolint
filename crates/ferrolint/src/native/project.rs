@@ -33,12 +33,10 @@ use ferrolint_core::LineIndex;
 
 use super::classes::{bases, blocks, locals};
 use super::flow::{no_return, own_returns};
+use super::project_phase::module_name;
 use crate::c_module_names;
 use crate::class_methods;
 use crate::project_run::stamp_of;
-
-/// How far up from the linted file a project root is looked for.
-const LEVELS: usize = 8;
 
 pub struct Project {
     /// The directories modules are searched in, nearest first.
@@ -175,8 +173,13 @@ pub struct ClassRef {
 }
 
 impl Project {
-    pub fn new(path: &Path, module: &str) -> Self {
+    pub fn new(path: &Path, module: &str, run: &[PathBuf]) -> Self {
         let is_package = path.file_stem().is_some_and(|stem| stem == "__init__");
+        // Pylint names the module from the run's root, so `.x` is found there
+        // even when a directory above has no `__init__.py`.
+        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let named = module_name(&real, run, true);
+        let module = named.as_deref().unwrap_or(module);
         let package = if is_package {
             module.to_owned()
         } else {
@@ -184,16 +187,34 @@ impl Project {
                 .rsplit_once('.')
                 .map_or(String::new(), |(p, _)| p.to_owned())
         };
-        // A package directory is no root, as on `sys.path`: its `collections.py`
-        // does not hide the standard library's.
-        let roots = path
-            .ancestors()
-            .skip(1)
-            .take(LEVELS)
+        // Astroid looks in the importing file's directory, then on `sys.path`:
+        // the run's roots. A package directory is no root there, so its
+        // `collections.py` does not hide the standard library's.
+        let mut roots: Vec<PathBuf> = path
+            .parent()
             .filter(|dir| !dir.join("__init__.py").is_file())
             .map(Path::to_path_buf)
+            .into_iter()
             .collect();
+        roots.extend(
+            run.iter()
+                .filter(|root| !roots.contains(root))
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
         Self::with(roots, package, false)
+    }
+
+    /// The test root: the directory above the top package of `module`.
+    #[cfg(test)]
+    pub(crate) fn test_roots(path: &Path, module: &str) -> Vec<PathBuf> {
+        let init = path.file_stem().is_some_and(|stem| stem == "__init__");
+        let depth = module.split('.').count() + usize::from(init);
+        path.ancestors()
+            .nth(depth)
+            .map(Path::to_path_buf)
+            .into_iter()
+            .collect()
     }
 
     fn with(roots: Vec<PathBuf>, package: String, strict: bool) -> Self {
@@ -246,8 +267,8 @@ impl Project {
     /// As [`Project::new`], with the standard library and the installed
     /// packages of the environment that `VIRTUAL_ENV` names searched last,
     /// so a base class from either is read too.
-    pub fn with_packages(path: &Path, module: &str) -> Self {
-        let mut project = Self::new(path, module);
+    pub fn with_packages(path: &Path, module: &str, run: &[PathBuf]) -> Self {
+        let mut project = Self::new(path, module, run);
         if let Some((library, packages)) = environment() {
             project.stdlib = Some(library.clone());
             project.roots.push(library);
@@ -1536,7 +1557,11 @@ mod tests {
         write("lib/a.py", "");
         write("lib/b.py", "");
         for file in ["a", "b"] {
-            let project = Project::new(&root.path().join(format!("lib/{file}.py")), "lib.x");
+            let project = Project::new(
+                &root.path().join(format!("lib/{file}.py")),
+                "lib.x",
+                &[root.path().to_path_buf()],
+            );
             assert_eq!(project.never_returns("lib.stop.die"), Some(false));
             assert_eq!(project.never_returns("lib.stop.ok"), None);
         }
@@ -1548,7 +1573,12 @@ mod tests {
         std::fs::create_dir_all(root.path().join("edit")).unwrap();
         std::fs::write(root.path().join("edit/a.py"), "").unwrap();
         let ask = || {
-            Project::new(&root.path().join("edit/a.py"), "edit.x").never_returns("edit.stop.die")
+            Project::new(
+                &root.path().join("edit/a.py"),
+                "edit.x",
+                &[root.path().to_path_buf()],
+            )
+            .never_returns("edit.stop.die")
         };
         assert_eq!(ask(), None);
         let stop = root.path().join("edit/stop.py");
@@ -1571,7 +1601,11 @@ mod tests {
         write("app/api/__init__.py", "");
         write("app/views.py", "");
         write("api/base.py", "class Base:\n    pass\n");
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         let class = project.class("api.base.Base").unwrap();
         assert_eq!(class.qname(), "api.base.Base");
     }
@@ -1588,7 +1622,11 @@ mod tests {
         write("app/views.py", "");
         write("app/base.py", "class Local:\n    pass\n");
         write("base.py", "class Top:\n    pass\n");
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         assert!(project.class("base.Top").is_some());
         assert!(project.class("base.Local").is_none());
     }
@@ -1608,7 +1646,11 @@ mod tests {
             "app/child.py",
             "from .base import *\n\nclass Child(Base):\n    pass\n",
         );
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         let bases = project.class("app.child.Child").unwrap().bases(&project);
         assert_eq!(bases.len(), 1);
         assert_eq!(bases[0].as_ref().unwrap().qname(), "app.base.Base");
@@ -1628,7 +1670,11 @@ mod tests {
             "app/child.py",
             "class Base:\n    pass\n\nAlias = Base\n\nclass Child(Alias):\n    pass\n",
         );
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         let bases = project.class("app.child.Child").unwrap().bases(&project);
         assert_eq!(bases.len(), 1);
         assert_eq!(bases[0].as_ref().unwrap().qname(), "app.child.Base");
@@ -1638,7 +1684,11 @@ mod tests {
     fn a_module_is_missing_only_where_the_environment_is_known() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("here.py"), "").unwrap();
-        let mut project = Project::new(&root.path().join("mod.py"), "mod");
+        let mut project = Project::new(
+            &root.path().join("mod.py"),
+            "mod",
+            &[root.path().to_path_buf()],
+        );
         assert!(!project.is_missing("absent"));
         project.stdlib = Some(root.path().to_path_buf());
         assert!(project.is_missing("absent"));
@@ -1661,7 +1711,11 @@ mod tests {
             "import os.path\nfrom .n import *\n__all__ = ['a']\na, _b = 1, 2\n\ndef f(): ...\n\nclass K: ...\n\nif a:\n    c: int = 1\n",
         );
         write("app/n.py", "from .m import *\nz = 1\n_p = 2\n");
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         assert_eq!(
             project.public_names("app.m").unwrap(),
             ["os", "a", "f", "K", "c", "z"]
@@ -1682,7 +1736,11 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, "a = 1\n").unwrap();
         }
-        let project = Project::new(&root.path().join("app/views.py"), "app.views");
+        let project = Project::new(
+            &root.path().join("app/views.py"),
+            "app.views",
+            &[root.path().to_path_buf()],
+        );
         assert!(project.has_module("app.m") && project.public_names("app.m").is_none());
         assert!(project.public_names("app.n").is_some());
         // `o.py` is not `m.py`'s sibling by prefix alone
@@ -1695,7 +1753,11 @@ mod tests {
         std::fs::create_dir_all(root.path().join("misc/Inner")).unwrap();
         std::fs::write(root.path().join("misc/Inner/__init__.py"), "").unwrap();
         std::fs::write(root.path().join("misc/iterTools.py"), "").unwrap();
-        let project = Project::new(&root.path().join("misc/user.py"), "misc.user");
+        let project = Project::new(
+            &root.path().join("misc/user.py"),
+            "misc.user",
+            &[root.path().to_path_buf()],
+        );
         assert!(project.has_module("iterTools") && project.has_module("Inner"));
         assert!(!project.has_module("itertools") && !project.has_module("inner"));
     }

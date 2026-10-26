@@ -2,6 +2,10 @@
 
 ## 2026-10-25
 
+* **Native rules, native-rules.md**: The rules that read another module of
+  the project search the run's roots and the file's directory, not every
+  directory above the file, so `W0614`, `W0237`, `W0621` and `E0602` through
+  a star import no longer find a module of a subtree that is no package.
 * **Plugin star imports, plugins.md**: `modules.star-names` looks an absolute
   module up on the run's search path (as `import-error` does) and answers
   an empty list for one that `VIRTUAL_ENV` shows is nowhere, so
