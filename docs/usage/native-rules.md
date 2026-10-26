@@ -1325,7 +1325,10 @@ Known divergences:
   `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
   from the items of every key or value. `value` is a tuple, list, set or dict
   display, a name bound once to one, a call of a function of the file whose
-  only `return` returns one, or the view of such a dict; a slice of the
+  only `return` returns one, or the view of such a dict. `self.x` and `cls.x`
+  in a method follow to the class attribute `x = (1, 2)`, and `self.m()` to
+  the undecorated method `m` of an ancestor, when every class of the MRO is
+  read in the file, none has a builtin base and none stores `.x`. A slice of the
   `*args` of the enclosing function holds no value (`a, b = args[:2]` says
   `right side has 0 values`). The tuple rule words
   the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
@@ -1357,10 +1360,12 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   does not report on the file alone, from the state of astroid's import cache.
 * `W0632` and `W0644` follow no more than the displays above. A name bound twice
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
-  a conditional expression, a slice or a sum, an attribute such as `self.v`,
-  a property, a classmethod, a lambda and a method called as `Class.method()`
-  are not judged, nor is a slice of an attribute that `__init__` sets to `[]`
-  (`s = self.stack[:]; return s`) or a callee that another module defines. A
+  a conditional expression, a slice or a sum, an attribute set in a method
+  (`self.v = ...`) or of a class with a base from another module or a builtin,
+  a property, a classmethod, a lambda, `self` read in a nested function and a
+  method called as `Class.method()` are not judged, nor is a slice of an
+  attribute that `__init__` sets to `[]` (`s = self.stack[:]; return s`) or a
+  callee that another module defines. A
   display with a starred element, such as `(*t, 1)`, and a dict with
   `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.

@@ -14,6 +14,9 @@
 
 ## 2026-10-25
 
+* **Native rules, native-rules.md**: `W0632` and `W0644` follow `self.x` and
+  `cls.x` to a class attribute, and `self.m()` to a method, of an ancestor in
+  the same file.
 * **Native rules, native-rules.md**: `C0103` reads `hasattr` of an imported
   module, a list of `sys` and `os` constants and a value rebound with
   `global`, as Pylint does.
