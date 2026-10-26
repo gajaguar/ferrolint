@@ -987,16 +987,9 @@ fn globals(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// `W0621`: a name of a function that a module-level name or an `except`
-/// name already holds.
-fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
-    let module = &info.scopes[0];
-    let mut first_module: HashMap<&str, Vec<&Def<'_>>> = HashMap::new();
-    for def in &module.defs {
-        first_module.entry(def.name).or_default().push(def);
-    }
-    // The names of a star import, with the line of the first star that binds each.
-    let mut starred: HashMap<String, u32> = HashMap::new();
+/// The names of the star imports, with the line of the first star that binds each.
+pub(super) fn starred(ctx: &Ctx<'_>, info: &Info<'_>) -> HashMap<String, u32> {
+    let mut starred = HashMap::new();
     if !info.stars.is_empty() {
         let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
         for (origin, line) in &info.stars {
@@ -1006,6 +999,18 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
             }
         }
     }
+    starred
+}
+
+/// `W0621`: a name of a function that a module-level name or an `except`
+/// name already holds.
+fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
+    let module = &info.scopes[0];
+    let mut first_module: HashMap<&str, Vec<&Def<'_>>> = HashMap::new();
+    for def in &module.defs {
+        first_module.entry(def.name).or_default().push(def);
+    }
+    let starred = starred(ctx, info);
     for scope in &info.scopes {
         if scope.kind != Kind::Function {
             continue;
