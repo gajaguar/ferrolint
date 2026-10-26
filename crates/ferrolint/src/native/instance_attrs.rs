@@ -202,7 +202,10 @@ impl<'c> Visitor<'c> for Sites<'c, '_> {
     fn visit_stmt(&mut self, stmt: &'c Stmt) {
         match stmt {
             Stmt::FunctionDef(func) => {
-                if !func.parameters.includes(self.param) {
+                // A parameter or a local of the same name is not the method's `self`.
+                if !func.parameters.includes(self.param)
+                    && !locals(&func.body).iter().any(|(n, _)| n == self.param)
+                {
                     self.frames
                         .push((std::ptr::from_ref(func).addr(), Some(func)));
                     self.visit_body(&func.body);
@@ -1003,12 +1006,20 @@ impl<'a> Walk<'a, '_> {
             {
                 return true;
             }
-            if matches!(expr, Expr::Name(n) if n.id.as_str() == "property")
+            // `property` defines `__get__` and `__set__`, so a subclass does too.
+            if self.env.base_is(expr, &|name| name == "property")
                 || self
                     .env
                     .qualified(expr)
                     .is_some_and(|name| name == "functools.cached_property")
             {
+                return true;
+            }
+            // Pylint stops at a decorator it cannot infer: its module is missing.
+            if self.env.qualified(expr).is_some_and(|name| {
+                name.rsplit_once('.')
+                    .is_some_and(|(module, _)| self.hierarchy.project.is_missing(module))
+            }) {
                 return true;
             }
             let Some(found) = self.hierarchy.resolve(&Class::Local(class), expr) else {

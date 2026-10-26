@@ -24,8 +24,8 @@ use std::sync::{LazyLock, Mutex};
 
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Pattern, PySourceType, Stmt,
-    StmtClassDef, StmtImportFrom,
+    Comprehension, ExceptHandler, Expr, ExprContext, ModModule, Operator, Pattern, PySourceType,
+    Stmt, StmtClassDef, StmtImportFrom,
 };
 use ruff_python_parser::{ParseOptions, Parsed};
 
@@ -173,13 +173,19 @@ pub struct ClassRef {
 }
 
 impl Project {
+    /// The name Pylint gives the module at `path`: from the run's root, so a
+    /// directory without `__init__.py` above it is part of the name.
+    pub fn named(path: &Path, module: &str, run: &[PathBuf]) -> String {
+        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        module_name(&real, run, true).unwrap_or_else(|| module.to_owned())
+    }
+
     pub fn new(path: &Path, module: &str, run: &[PathBuf]) -> Self {
         let is_package = path.file_stem().is_some_and(|stem| stem == "__init__");
         // Pylint names the module from the run's root, so `.x` is found there
         // even when a directory above has no `__init__.py`.
-        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        let named = module_name(&real, run, true);
-        let module = named.as_deref().unwrap_or(module);
+        let named = Self::named(path, module, run);
+        let module = named.as_str();
         let package = if is_package {
             module.to_owned()
         } else {
@@ -618,6 +624,10 @@ impl Project {
         if let Some((file, package)) = self.linted.get(name) {
             return Some(Spec::source(file.clone(), *package));
         }
+        // The running interpreter's `__main__` is in `sys.modules`, so astroid always finds it.
+        if name == "__main__" {
+            return Some(Spec::of(Kind::Made));
+        }
         // astroid answers for `os.path` with the platform's module.
         if name == "os.path" {
             return self.find("posixpath");
@@ -860,6 +870,70 @@ impl Project {
         Some(names)
     }
 
+    /// The names the first binding of `__all__` in `body` lists, as Pylint reads them to take
+    /// them for used: a list or tuple of strings, `+` of two of the same kind, `*seq` inside
+    /// one, and `m.__all__` of a module the project reads. `None` when a binding is there that
+    /// this cannot read (a call, a name): the caller stays silent.
+    pub fn listed_in_all(&self, body: &[Stmt]) -> Option<Vec<String>> {
+        if matches!(first_all(body), None | Some(AllBinding::Other)) {
+            return Some(Vec::new());
+        }
+        let mut imports = HashMap::new();
+        collect_imports(body, &self.package, &mut imports, &mut Vec::new());
+        Some(self.all_in(body, &imports, 0)?.1)
+    }
+
+    /// The names `__all__` lists in `body`, and whether it is a tuple.
+    fn all_in(
+        &self,
+        body: &[Stmt],
+        imports: &HashMap<String, Vec<String>>,
+        depth: u8,
+    ) -> Option<(bool, Vec<String>)> {
+        match first_all(body)? {
+            AllBinding::Value(value) => self.sequence(value, imports, depth),
+            AllBinding::Imported => self.exported(imports.get("__all__")?.last()?, depth),
+            AllBinding::Other => None,
+        }
+    }
+
+    /// The `__all__` of the module `qualified` names (`pkg.m.__all__`).
+    fn exported(&self, qualified: &str, depth: u8) -> Option<(bool, Vec<String>)> {
+        let module = qualified.strip_suffix(".__all__")?;
+        let loaded = self.load(module).filter(|_| depth < 8)?;
+        self.all_in(&loaded.parsed.syntax().body, &loaded.imports, depth + 1)
+    }
+
+    fn sequence(
+        &self,
+        expr: &Expr,
+        imports: &HashMap<String, Vec<String>>,
+        depth: u8,
+    ) -> Option<(bool, Vec<String>)> {
+        let (tuple, elts) = match expr {
+            Expr::List(l) => (false, &l.elts),
+            Expr::Tuple(t) => (true, &t.elts),
+            Expr::BinOp(b) if b.op == Operator::Add => {
+                let (tuple, mut names) = self.sequence(&b.left, imports, depth)?;
+                let (other, rest) = self.sequence(&b.right, imports, depth)?;
+                names.extend(rest);
+                return (tuple == other).then_some((tuple, names));
+            }
+            Expr::Attribute(a) if a.attr.as_str() == "__all__" => {
+                return self.exported(&qualify(imports, expr)?, depth);
+            }
+            _ => return None,
+        };
+        let mut names = Vec::new();
+        for elt in elts {
+            match elt {
+                Expr::Starred(s) => names.extend(self.sequence(&s.value, imports, depth)?.1),
+                _ => names.push(elt.as_string_literal_expr()?.value.to_str().to_owned()),
+            }
+        }
+        Some((tuple, names))
+    }
+
     /// Whether the top level of `module` binds `__all__` (also under `if`
     /// and `try`); `false` when the module is not found.
     pub fn defines_all(&self, module: &str) -> bool {
@@ -1067,6 +1141,45 @@ impl<'a> Visitor<'a> for Binder<'_> {
         if let Some(name) = name {
             self.bind(name.as_str());
         }
+    }
+}
+
+/// What binds `__all__` first at the top level of a module, also under `if` and `try`.
+enum AllBinding<'a> {
+    Value(&'a Expr),
+    /// `from m import __all__`.
+    Imported,
+    /// A binding that tells no names (`__all__ += x`).
+    Other,
+}
+
+fn first_all(body: &[Stmt]) -> Option<AllBinding<'_>> {
+    let is_all = |target: &Expr| matches!(target, Expr::Name(n) if n.id.as_str() == "__all__");
+    body.iter().find_map(|stmt| match stmt {
+        Stmt::Assign(a) if a.targets.iter().any(is_all) => Some(AllBinding::Value(&a.value)),
+        Stmt::AnnAssign(a) if is_all(&a.target) => Some(
+            a.value
+                .as_deref()
+                .map_or(AllBinding::Other, AllBinding::Value),
+        ),
+        Stmt::AugAssign(a) if is_all(&a.target) => Some(AllBinding::Other),
+        Stmt::ImportFrom(i)
+            if i.names
+                .iter()
+                .any(|a| a.asname.as_ref().unwrap_or(&a.name).as_str() == "__all__") =>
+        {
+            Some(AllBinding::Imported)
+        }
+        other => blocks(other).into_iter().find_map(first_all),
+    })
+}
+
+/// The dotted name `expr` (a name or its attributes) stands for through `imports`.
+fn qualify(imports: &HashMap<String, Vec<String>>, expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Name(name) => imports.get(name.id.as_str())?.last().cloned(),
+        Expr::Attribute(a) => Some(format!("{}.{}", qualify(imports, &a.value)?, a.attr)),
+        _ => None,
     }
 }
 

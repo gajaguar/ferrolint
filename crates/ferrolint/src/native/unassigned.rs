@@ -22,7 +22,7 @@ use ruff_text_size::Ranged;
 
 use super::Ctx;
 use super::classes::{Env, py_repr};
-use super::scopes::{Def, DefKind, Info, Kind, Step, Use, UseKind, first_self_assign};
+use super::scopes::{Def, DefKind, Info, Kind, Step, Use, UseKind, first_self_assign, starred};
 
 pub(super) const POSSIBLY: &str = "E0606";
 
@@ -35,6 +35,7 @@ pub(super) fn possibly_used(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagno
                     && i.names.iter().any(|a| a.name.as_str() == "annotations"))
         });
     let env = Env::new(ctx);
+    let starred = starred(ctx, info);
     // The first read of each name in each scope it resolves to.
     let mut uses: Vec<&Use<'_>> = info.uses.iter().filter(|u| !u.self_assign).collect();
     uses.sort_by_key(|u| u.range.start());
@@ -64,7 +65,9 @@ pub(super) fn possibly_used(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagno
             {
                 continue;
             }
-            if all_filtered(&env, ctx, info, id, first) {
+            if !(id == 0 && starred.contains_key(def.name))
+                && all_filtered(&env, ctx, info, id, first)
+            {
                 out.push(ctx.report_at(
                     POSSIBLY,
                     first.range,
@@ -407,6 +410,7 @@ fn truthiness(info: &Info<'_>, scope: usize, test: &Expr, depth: u8) -> Option<b
         }
         // astroid's `infer_hasattr`: `True` when the class assigns the attribute.
         // shortcut: not found, or an ancestor's attribute, stays unknown; upgrade with the MRO.
+        // A module attribute is true only when a C module has it; a missing one stays unknown.
         Expr::Call(call)
             if matches!(&*call.func, Expr::Name(f) if f.id.as_str() == "hasattr")
                 && info.lookup(scope, "hasattr").is_none() =>
@@ -414,7 +418,18 @@ fn truthiness(info: &Info<'_>, scope: usize, test: &Expr, depth: u8) -> Option<b
             let [Expr::Name(receiver), Expr::StringLiteral(attr)] = &call.arguments.args[..] else {
                 return None;
             };
-            first_self_assign(info, scope, receiver.id.as_str(), attr.value.to_str()).map(|_| true)
+            let (name, attr) = (receiver.id.as_str(), attr.value.to_str());
+            // A C module imported once (`import sys`) has the names the interpreter gives it.
+            let imported = info.lookup(scope, name).is_some_and(|found| {
+                let mut defs = info.scopes[found].defs.iter().filter(|d| d.name == name);
+                matches!((defs.next(), defs.next()), (Some(d), None) if d.kind == DefKind::Import && d.shown == name)
+            });
+            if imported
+                && crate::c_module_names::names(name).is_some_and(|names| names.contains(&attr))
+            {
+                return Some(true);
+            }
+            first_self_assign(info, scope, name, attr).map(|_| true)
         }
         // astroid infers `sys.platform` from the running interpreter.
         // shortcut: only `==` and `!=` against a string; upgrade with inference.

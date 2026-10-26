@@ -6,23 +6,27 @@
 //! display, a name bound once to one, a call of a function of the file with
 //! one `return` of one, or `.keys()`, `.values()` and `.items()` of a dict
 //! display so reached, or a slice of the `*args` of the enclosing function,
-//! which holds no value; any other value is not judged. Upgrade with inference.
+//! which holds no value; any other value is not judged. `self.x` and `cls.x` of
+//! a method are followed to the class attribute, or to the method, of the
+//! nearest class of the file's MRO that binds the name, when nothing stores
+//! `.x` in the MRO. Upgrade with inference.
 
 use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    Expr, ExprCall, ExprDict, Number, Stmt, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef,
+    Expr, ExprCall, ExprDict, ExprName, Number, Stmt, StmtAssign, StmtClassDef, StmtFor,
+    StmtFunctionDef,
 };
 use ruff_text_size::Ranged;
 
 use super::abstract_methods::class_is_abstract;
 use super::astring::as_string;
-use super::calls::function_called;
-use super::classes::Env;
+use super::calls::{Stores, function_called, own_method};
+use super::classes::{Env, is_static, locals};
 use super::flow::own_returns;
-use super::hierarchy::Hierarchy;
+use super::hierarchy::{Class, Hierarchy};
 use super::inferred::assigned_values;
 use super::statements::is_generator;
 use super::{Checker, Ctx, rule};
@@ -164,8 +168,66 @@ impl<'a> Walk<'a, '_> {
         self.env.ctx.index.line(expr.start().to_u32())
     }
 
-    /// The display `expr` stands for, when Pylint infers a single one.
-    fn display(&self, expr: &'a Expr, depth: u8) -> Option<&'a Expr> {
+    /// The class whose instance or class `name` is, when it is the first
+    /// parameter of the innermost function, a method of the innermost class.
+    fn receiver(&self, name: &ExprName) -> Option<&'a StmtClassDef> {
+        let (class, _) = *self.classes.last()?;
+        let func = *self.functions.last()?;
+        let parameters = &func.parameters;
+        let first = parameters
+            .posonlyargs
+            .iter()
+            .chain(&parameters.args)
+            .next()?;
+        (first.parameter.name.as_str() == name.id.as_str()
+            && !is_static(func)
+            && class
+                .body
+                .iter()
+                .any(|s| matches!(s, Stmt::FunctionDef(f) if std::ptr::eq(f, func)))
+            && self.env.binding(name).is_some_and(|b| {
+                b.kind == BindingKind::Parameter && self.env.ctx.model.is_sole_binding(b.id)
+            }))
+        .then_some(class)
+    }
+
+    /// The nearest class of the MRO of `class` that binds `name`, when the
+    /// project reads every class of it and none stores `.name`.
+    fn binder(&self, class: &'a StmtClassDef, name: &str) -> Option<&'a StmtClassDef> {
+        let mut found = None;
+        for ancestor in self.hierarchy.mro(&Class::Local(class))? {
+            let Class::Local(ancestor) = ancestor else {
+                return None;
+            };
+            let mut stores = Stores(name, false);
+            stores.visit_body(&ancestor.body);
+            if stores.1 || self.hierarchy.has_builtin_base(&Class::Local(ancestor)) {
+                return None;
+            }
+            if found.is_none() && locals(&ancestor.body).iter().any(|(n, _)| n == name) {
+                found = Some(ancestor);
+            }
+        }
+        found
+    }
+
+    /// `owner` and `name` of `self.name` or `cls.name`, the way `binder` reads them.
+    fn member<'b>(&self, expr: &'b Expr) -> Option<(&'a StmtClassDef, &'a StmtClassDef, &'b str)> {
+        let Expr::Attribute(attribute) = expr else {
+            return None;
+        };
+        let Expr::Name(name) = &*attribute.value else {
+            return None;
+        };
+        let class = self.receiver(name)?;
+        let member = attribute.attr.as_str();
+        Some((class, self.binder(class, member)?, member))
+    }
+
+    /// The display `expr` stands for, when Pylint infers a single one. `deep`
+    /// lets it follow a call or an attribute of `self`; the return of a
+    /// method of an ancestor is read without, as its `self` is not this one.
+    fn display(&self, expr: &'a Expr, depth: u8, deep: bool) -> Option<&'a Expr> {
         if depth == 0 {
             return None;
         }
@@ -178,20 +240,49 @@ impl<'a> Walk<'a, '_> {
                 {
                     return None;
                 }
-                self.display(self.assigned.get(&binding.node?)?, depth - 1)
+                self.display(self.assigned.get(&binding.node?)?, depth - 1, deep)
             }
-            Expr::Call(call) => {
-                let func = function_called(self.env, &self.classes, call)?;
+            Expr::Attribute(_) if deep => {
+                let (_, owner, name) = self.member(expr)?;
+                let value = owner.body.iter().find_map(|stmt| match stmt {
+                    Stmt::Assign(a)
+                        if matches!(&a.targets[..], [Expr::Name(n)] if n.id.as_str() == name) =>
+                    {
+                        Some(&*a.value)
+                    }
+                    _ => None,
+                })?;
+                let bound = locals(&owner.body)
+                    .iter()
+                    .filter(|(n, _)| n == name)
+                    .count();
+                (bound == 1).then(|| self.display(value, depth - 1, false))?
+            }
+            Expr::Call(call) if deep => {
+                let (func, deep) = match function_called(self.env, &self.classes, call) {
+                    Some(func) => (func, true),
+                    None => (self.inherited(&call.func)?, false),
+                };
                 if func.is_async || is_generator(func) {
                     return None;
                 }
                 match own_returns(&func.body)[..] {
-                    [ret] => self.display(ret.value.as_deref()?, depth - 1),
+                    [ret] => self.display(ret.value.as_deref()?, depth - 1, deep),
                     _ => None,
                 }
             }
             _ => None,
         }
+    }
+
+    /// The method `self.name` or `cls.name` calls, when an ancestor of the
+    /// class binds it once and it has no decorator.
+    fn inherited(&self, func: &Expr) -> Option<&'a StmtFunctionDef> {
+        let (class, owner, name) = self.member(func)?;
+        if std::ptr::eq(class, owner) {
+            return None;
+        }
+        own_method(owner, name).filter(|f| f.decorator_list.is_empty())
     }
 
     /// Whether `expr` slices the `*args` of the innermost function: Pylint
@@ -224,7 +315,7 @@ impl<'a> Walk<'a, '_> {
         }) = expr
             && let Expr::Attribute(attribute) = &**func
             && arguments.is_empty()
-            && let Some(Expr::Dict(dict)) = self.display(&attribute.value, DEPTH)
+            && let Some(Expr::Dict(dict)) = self.display(&attribute.value, DEPTH, true)
             && plain(dict)
         {
             let view = match attribute.attr.as_str() {
@@ -239,7 +330,7 @@ impl<'a> Walk<'a, '_> {
     }
 
     fn sequence(&self, expr: &'a Expr) -> Option<Shape<'a>> {
-        let display = self.display(expr, DEPTH)?;
+        let display = self.display(expr, DEPTH, true)?;
         match display {
             Expr::Dict(dict) if plain(dict) => Some(Shape::Dict(View::Whole, dict)),
             Expr::Tuple(_) | Expr::List(_) | Expr::Set(_) => {

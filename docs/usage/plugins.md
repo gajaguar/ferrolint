@@ -45,6 +45,9 @@ answers to its Pylint msg-id and symbol as well as its code.
   `undefined-variable` silent for the whole file. The answer depends on
   another file, so it is as stale as the
   [result cache](../requirements/result-cache.md) is.
+* `undefined-variable` leaves a name that its scope or the module binds
+  later (`print(x)` above `x = 1`) to Pylint's `E0601`, which ferrolint does
+  not emit, and reads `del x` as a use of `x` before the function binds it.
 * `bare-except` skips an `except:` whose body has a `raise` among its own
   statements, as Pylint's `_is_raising` does; a `raise` under an `if` still
   counts as bare.

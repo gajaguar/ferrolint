@@ -140,3 +140,5 @@ xdummy
 zstopen
 glyf
 ssize
+getdlopenflags
+setdlopenflags

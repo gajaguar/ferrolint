@@ -56,8 +56,9 @@ Known divergences from Pylint, where Pylint infers a type or a value:
 
 * `C0209` knows a dict or list of more than one item, and a starred list,
   only when it is written in the call or held by a name assigned once to
-  one; Pylint infers any value. A call that Pylint refuses for a backslash
-  in the rendered argument is judged from the literals inside the argument.
+  one (`"%(a)s" % dict(a=1, b=2)` is one); Pylint infers any value. A call
+  that Pylint refuses for a backslash in the rendered argument is judged
+  from the literals inside the argument.
 * `W1307` checks only an argument written as a number, a boolean, `None` or
   `...`, and only the first lookup of a field: no other type is known not to
   be subscriptable.
@@ -304,8 +305,11 @@ Imports:
   that binds a name lists it: a later star leaves out a name an earlier
   star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
-  and a star in a function or class, and counts the names in the file's own
-  literal `__all__` as read; a name that a function, class or comprehension
+  and a star in a function or class, and counts the names of the file's own
+  first `__all__` as read: a list or tuple of strings, `+` of two of one
+  kind, `*seq` inside one, and `m.__all__` of a module it reads (a `from m
+  import __all__` too); when that binding is anything else (a call) it
+  reports nothing; a name that a function, class or comprehension
   binds itself (a variable, a parameter) and reads there is not a use of the
   wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
@@ -394,10 +398,12 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   makes it permissive (Pylint passes `Continue` as the class to skip, so a
   `continue` does not). `hasattr(self, "x")` is true here when a method of the
   class assigns `self.x`, as astroid infers it (the negated test then leaves
-  only the `else`, and Pylint reports `E0601`); an attribute that only an
-  ancestor defines, or that nothing defines, leaves the test unknown. A star
-  import of a module that is not found, such as `from _ast import *`, binds
-  nothing here, where Pylint knows its names.
+  only the `else`, and Pylint reports `E0601`), and `hasattr(sys, "x")` is
+  true when the module is a C module the host has a table for and the table
+  holds `x`; an attribute that only an ancestor defines, or that nothing
+  defines, leaves the test unknown. A name that a star import binds
+  (`from _ast import *`) is not reported at module level, whatever the
+  module.
 * `C0104` checks a module-level name only when it gets a literal constant,
   which is all Pylint checks for the default bad names. An overridden method
   and an attribute that an ancestor defines are looked up among the classes
@@ -500,9 +506,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   them, and so is a `str` or `bytes` method call on a constant (`"a".upper()`,
   `",".join(x)`, `"{}".format(1)`, which Pylint infers to a constant whatever
   the arguments, except `format`, which needs every argument constant and
-  every field of the template supplied). Pylint infers more (`os.name`,
-  `os.sep + "x"`,
-  `isinstance(1, int)`, a constant attribute of an imported module or
+  every field of the template supplied), a fixed list of `sys` and `os`
+  constants (`os.sep`, `sys.maxsize`, `sys.platform`; also through
+  `from sys import maxsize`) and `hasattr(mod, "name")` of an imported module
+  the project finds. Pylint infers more (`os.name`, `os.sep + "x"`,
+  `isinstance(1, int)`, a constant attribute of another imported module or
   class); those names are not judged here. A value that cannot be told is
   skipped, as Pylint skips what it cannot infer. A call of a capitalized
   imported name is taken as an instance, a lower-case imported name as a
@@ -545,14 +553,17 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   twice (a fallback in `try`/`except` or `if`), a class
   returned by a call of an installed package, a standard library class
   missing from the class table (`_Fraction = Fraction`), the value of a
-  standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`
-  formatting, a name
-  read through `getattr` or `hasattr`, a variable whose value is a factory or
+  standard library attribute outside that list (`math.pi`, `socket.AF_INET`),
+  `%` formatting, a name
+  read through `getattr`, a variable whose value is a factory or
   an attribute of an installed package (`Pool = app.Pool`) and a name that a
-  function binds with `global` are not followed, so the names Pylint infers
-  differently stay as differences. An attribute that `obj = Cls(); obj.attr = 1`
-  adds to `Cls` from outside its body is judged as one of the class (after
-  the ones its methods set, and not for a class with `__slots__`).
+  function binds with `global` to a value that cannot be told are not
+  followed, so the names Pylint infers differently stay as differences. A
+  name that a function rebinds with `global` to a value that can be told is
+  judged as a variable, as Pylint does. An attribute that
+  `obj = Cls(); obj.attr = 1` adds to `Cls` from outside its body is judged
+  as one of the class (after the ones its methods set, and not for a class
+  with `__slots__`).
   A comprehension is not inferred by astroid and its name is not judged.
 * Pylint reports some attribute lines only when the file is linted alone, not
   inside a whole run (`fontTools/ttLib/tables/*`, which set an attribute of a
@@ -614,8 +625,12 @@ Known divergences:
 * `E0202` `method-hidden`: a method whose name an instance attribute of
   the class or an ancestor, assigned in a method itself, takes; a property,
   a setter, a `functools.cached_property`, a decorator class with
-  `__get__` and `__set__`, an ancestor's method of that name or a private
-  name an ancestor assigns spares it.
+  `__get__` and `__set__` (a subclass of `property` too), a decorator
+  imported from a module that is nowhere (Pylint cannot infer it), an
+  ancestor's method of that name or a private name an ancestor assigns
+  spares it. The module in the message is named from the run's root, as
+  Pylint names it, so a directory with no `__init__.py` above it is part of
+  the name.
 * `E0203` `access-member-before-definition`: `self.x` read in the one
   function that assigns it, above that assignment, or a method called in
   `__init__` above it that reads it, unless a `try` that catches
@@ -1165,11 +1180,14 @@ Known divergences from Pylint, where Pylint infers a value or a base:
   not hold (a missing optional dependency) is left out of the count, as
   astroid cannot import it, unless the name is bound more than once. So is a
   name nothing binds when every `from m import *` reads such a module, and a
-  name a star module binds to an empty class (`Structure = ctypes.Structure`).
-  A C class without public methods (`types.ModuleType`, `ast.AST`,
-  `typing.ContextManager[...]`) counts none. Left to inference: a base that is
-  a parameter or a call, a base from a module that only the file's own
-  directory or a package root of Pylint's `sys.path` could import, and C
+  name a star module binds to an empty class, and a name bound once to one
+  (`Structure = ctypes.Structure`). So is a base that is, or is an attribute
+  of, a parameter with no default (not the first of a method, not `*args`):
+  astroid cannot infer it. A C class without public methods
+  (`types.ModuleType`, `ast.AST`, `typing.ContextManager[...]`) counts none.
+  Left to inference: a base that is a parameter with a default or a call, a
+  base from a module that only the file's own directory or a package root of
+  Pylint's `sys.path` could import, and C
   classes outside the method table.
 * `E0239`, `E0243` and `W0143` answer for a literal, a function, a lambda, a
   class, a module, a call of a class of the file and a name bound once to one of
@@ -1307,7 +1325,10 @@ Known divergences:
   `for a, b in value.items()` (or `.keys()`, `.values()`) whose names differ
   from the items of every key or value. `value` is a tuple, list, set or dict
   display, a name bound once to one, a call of a function of the file whose
-  only `return` returns one, or the view of such a dict; a slice of the
+  only `return` returns one, or the view of such a dict. `self.x` and `cls.x`
+  in a method follow to the class attribute `x = (1, 2)`, and `self.m()` to
+  the undecorated method `m` of an ancestor, when every class of the MRO is
+  read in the file, none has a builtin base and none stores `.x`. A slice of the
   `*args` of the enclosing function holds no value (`a, b = args[:2]` says
   `right side has 0 values`). The tuple rule words
   the display as `'(1, 2, 3)'` when it sits on the line of the assignment and
@@ -1339,10 +1360,12 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   does not report on the file alone, from the state of astroid's import cache.
 * `W0632` and `W0644` follow no more than the displays above. A name bound twice
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
-  a conditional expression, a slice or a sum, an attribute such as `self.v`,
-  a property, a classmethod, a lambda and a method called as `Class.method()`
-  are not judged, nor is a slice of an attribute that `__init__` sets to `[]`
-  (`s = self.stack[:]; return s`) or a callee that another module defines. A
+  a conditional expression, a slice or a sum, an attribute set in a method
+  (`self.v = ...`) or of a class with a base from another module or a builtin,
+  a property, a classmethod, a lambda, `self` read in a nested function and a
+  method called as `Class.method()` are not judged, nor is a slice of an
+  attribute that `__init__` sets to `[]` (`s = self.stack[:]; return s`) or a
+  callee that another module defines. A
   display with a starred element, such as `(*t, 1)`, and a dict with
   `**other` are left out, where Pylint expands them, and an
   f-string inside the display is written with double quotes in the message.
@@ -1463,7 +1486,8 @@ Known divergences from Pylint:
   `unsafe-load-any-extension` apply. An import under `if TYPE_CHECKING:`, under
   a `sys.version_info` or `six.PY2/PY3` test, in a `try` that catches
   `ImportError`, in `with suppress(ImportError)` or beside a fallback import is
-  not reported, as in Pylint.
+  not reported, as in Pylint. `__main__` is always found, as it is in
+  `sys.modules` of the interpreter that runs Pylint.
 * `R0401` `cyclic-import`: the cycles of the imports among the linted modules
   (and the packages they import from), each reported once as
   `Cyclic import (a -> b)`. An import under `if TYPE_CHECKING:` or one with
@@ -1537,8 +1561,6 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
 * `R0902` counts an attribute that another class assigns through an inferred
   instance (`self.worker_fixup.worker = w`, a property returning the class);
   ferrolint counts the `self.x` of the class itself.
-* `W0614` takes `__all__ = mod.__all__` of the file as the list of the names
-  it exports; ferrolint reads only a literal list or tuple.
 * A file system that ignores case (macOS, Windows) opens `TTFont.py` as
   `ttFont.py`, and astroid tests `isfile`: a submodule or compiled module is
   found by any spelling there, as in Pylint, so `from pkg import TTFont` is an

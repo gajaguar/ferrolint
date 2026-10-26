@@ -273,3 +273,14 @@ class Failure(ValueError):
 class SubFailure(Failure):
     def note(self):
         self.__traceback__ = None
+
+
+class classproperty(property):
+    pass
+
+
+class Lazy:
+    @classproperty
+    def size(cls):
+        cls.size = 1
+        return 1

@@ -185,7 +185,7 @@ impl UnusedImport {
         let dummy_name = if scope.kind == ScopeKind::Module {
             asname
         } else {
-            Some(asname.unwrap_or(dotted))
+            Some(asname.unwrap_or(&binding.name))
         };
         let skip = dummy_name.is_some_and(is_dummy) || type_checking_only(statement, cx);
         // Pylint words a relative import with no module ("from . import x")
