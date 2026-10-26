@@ -2,6 +2,10 @@
 
 ## 2026-10-26
 
+* **Release builds, release-builds.md**: `pyproject.toml` moved to the
+  repository root with the PyPI metadata, the `python -m ferrolint`
+  launcher and a smoke-tested sdist; the publish job skips `v0.*` tags
+  until 1.0.0.
 * **Native rules, native-rules.md**: `E1120`, `E1121`, `E1123`, `E1125` and
   `W1114` follow a call to an undecorated function of another module of the
   project.
