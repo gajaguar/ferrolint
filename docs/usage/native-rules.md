@@ -480,8 +480,9 @@ Exceptions (`W0718` and the checks Ruff lacks):
 * `W0718` `broad-exception-caught` and `W0719` `broad-exception-raised`;
   both read `overgeneral-exceptions` (default `builtins.BaseException`,
   `builtins.Exception`) by the qualified name of the class, also behind an
-  alias (`Alias = Exception`, `from builtins import Exception as E`). A
-  handler with a `raise` among its own statements is exempt.
+  alias (`Alias = Exception`, `from builtins import Exception as E`), also
+  one set in a top-level `if` or `try` (`except NameError: M = Exception`).
+  A handler with a `raise` among its own statements is exempt.
 * `E0702` `raising-bad-type`, `E0705` `bad-exception-cause`, `E0710`
   `raising-non-exception`, `E0712` `catching-non-exception` and `W0716`
   `wrong-exception-operation`.

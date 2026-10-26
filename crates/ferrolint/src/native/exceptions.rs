@@ -95,14 +95,7 @@ impl Checker for Exceptions {
         }
         let env = Env::new(ctx);
         let mut aliases = HashMap::new();
-        for stmt in &ctx.parsed.syntax().body {
-            if let Stmt::Assign(assign) = stmt
-                && let [Expr::Name(target)] = &assign.targets[..]
-                && matches!(&*assign.value, Expr::Name(_) | Expr::Attribute(_))
-            {
-                aliases.insert(target.id.as_str(), &*assign.value);
-            }
-        }
+        collect_aliases(&ctx.parsed.syntax().body, &mut aliases);
         let mut walk = Walk {
             env: &env,
             enabled,
@@ -119,6 +112,38 @@ impl Checker for Exceptions {
     }
 }
 
+/// The `Alias = Exception` statements of a module body, also inside the `if`
+/// and `try` blocks that guard a platform or version difference.
+fn collect_aliases<'a>(body: &'a [Stmt], aliases: &mut HashMap<&'a str, &'a Expr>) {
+    for stmt in body {
+        match stmt {
+            Stmt::Assign(assign) => {
+                if let [Expr::Name(target)] = &assign.targets[..]
+                    && matches!(&*assign.value, Expr::Name(_) | Expr::Attribute(_))
+                {
+                    aliases.insert(target.id.as_str(), &*assign.value);
+                }
+            }
+            Stmt::If(branch) => {
+                collect_aliases(&branch.body, aliases);
+                for clause in &branch.elif_else_clauses {
+                    collect_aliases(&clause.body, aliases);
+                }
+            }
+            Stmt::Try(attempt) => {
+                collect_aliases(&attempt.body, aliases);
+                for handler in &attempt.handlers {
+                    let ruff_python_ast::ExceptHandler::ExceptHandler(h) = handler;
+                    collect_aliases(&h.body, aliases);
+                }
+                collect_aliases(&attempt.orelse, aliases);
+                collect_aliases(&attempt.finalbody, aliases);
+            }
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Inherit {
     Yes,
@@ -130,7 +155,7 @@ struct Walk<'a, 'c> {
     env: &'c Env<'a>,
     enabled: &'c BTreeSet<String>,
     out: &'c mut Vec<Diagnostic>,
-    /// `Alias = Exception` at the top level.
+    /// `Alias = Exception` at the top level or in a top-level `if`/`try`.
     aliases: HashMap<&'a str, &'a Expr>,
     overgeneral: Vec<String>,
     project: Project,
