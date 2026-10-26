@@ -425,7 +425,8 @@ Known divergences from Pylint, where Pylint infers a value or a call:
 
 ## Batch E: the pylint_django messages
 
-These ten rules, and `R5102` http-response-with-content-type-json, port the
+These ten rules, `R5102` http-response-with-content-type-json and the two of the
+migrations sub-plugin below, port the
 checkers of the `pylint_django` plugin that the syntax decides. They report
 only when the option `load-plugins` names `pylint_django` (a comma list), so
 a project that does not use the plugin is not affected. A `.pylintrc`
@@ -444,10 +445,27 @@ load-plugins = "pylint_django"
   redundant-content-type-for-json-response.
 * `W5150` format-html-interpolation and `W5151` mark-safe-interpolation.
 
+Two more rules belong to the sub-plugin `pylint_django.checkers.migrations`,
+which is off unless `load-plugins` names it (it is a separate entry from
+`pylint_django`, and each one loads only its own rules). They read only a
+file whose path contains `migrations` and does not end in `__init__.py`:
+
+* `W5197` missing-backwards-migration-callable: a call whose callee ends in
+  `RunPython`, with fewer than two positional arguments and no
+  `reverse_code=`. Pylint reads only the calls whose frame (the nearest
+  `def`, `class` or `lambda`) is a direct child of the module, so a call in
+  `class Migration` is seen, one in a method of it or at module level is not.
+* `W5198` new-db-field-with-default: an `x.AddField(..., field=F(...,
+  default=...))` call, in the latest migration of each app only: among the
+  linted migrations that share the path before the first `migrations`, the
+  greatest path. It is a project-phase rule, since it compares files, and
+  its message names the module (`app.migrations.0002_x AddField with
+  default value`). `F` is not checked to be a field type, and a bare
+  `AddField(...)` is not read, as in Pylint.
+
 Skipped: `W5101` model-missing-unicode never fires on Python 3, the plugin
 returns before it; `E5110`, `F5110` and `F5101` need Django to import and
-configure; `W5199` and the foreign-key and migration transforms are
-internal to astroid or off by default.
+configure; `W5199` and the foreign-key transforms are internal to astroid.
 
 Known divergences from Pylint:
 
@@ -806,7 +824,7 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* A `load-plugins` entry other than `pylint_django` and `pylint.extensions.*`
+* A `load-plugins` entry other than `pylint_django*` and `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint
   cannot import it, so it adds none.

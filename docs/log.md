@@ -2,6 +2,10 @@
 
 ## 2026-10-26
 
+* **Native rules, native-rules.md**: Batch E gains `W5197` and `W5198` of the
+  `pylint_django.checkers.migrations` sub-plugin; `W5198` runs in the project
+  phase.
+
 * **Release builds, release-builds.md**: `pyproject.toml` moved to the
   repository root with the PyPI metadata, the `python -m ferrolint`
   launcher and a smoke-tested sdist; the publish job skips `v0.*` tags

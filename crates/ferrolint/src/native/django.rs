@@ -5,7 +5,9 @@
 //! `W5103` model-no-explicit-unicode, `W5104` modelform-uses-exclude,
 //! `W5150` format-html-interpolation and `W5151` mark-safe-interpolation.
 //! They report only when `load-plugins` names `pylint_django`; `R5102`
-//! lives with the statement rules and shares the gate.
+//! lives with the statement rules and shares the gate. `W5197`
+//! missing-backwards-migration-callable belongs to the sub-plugin
+//! `pylint_django.checkers.migrations` and has its own gate.
 
 use std::collections::BTreeSet;
 
@@ -27,13 +29,20 @@ const NO_EXPLICIT: &str = "W5103";
 const EXCLUDE: &str = "W5104";
 const FORMAT_HTML: &str = "W5150";
 const MARK_SAFE: &str = "W5151";
+const BACKWARDS: &str = "W5197";
+
+const MIGRATIONS_PLUGIN: &str = "pylint_django.checkers.migrations";
 
 const INTERPOLATION: &str = "Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped";
 
 /// Whether the configuration loads the `pylint_django` plugin.
 pub fn plugin(ctx: &Ctx<'_>) -> bool {
+    loaded(ctx, "pylint_django")
+}
+
+fn loaded(ctx: &Ctx<'_>, plugin: &str) -> bool {
     ctx.option("load-plugins")
-        .is_some_and(|list| list.split(',').any(|name| name.trim() == "pylint_django"))
+        .is_some_and(|list| list.split(',').any(|name| name.trim() == plugin))
 }
 
 pub struct Django;
@@ -91,6 +100,11 @@ impl Checker for Django {
                 "mark-safe-interpolation",
                 "`mark_safe()` of an interpolated string.",
             ),
+            rule(
+                BACKWARDS,
+                "missing-backwards-migration-callable",
+                "A migration `RunPython` without a reverse callable.",
+            ),
         ]
     }
 
@@ -107,6 +121,9 @@ impl Checker for Django {
             FORMAT_HTML,
             MARK_SAFE,
         ];
+        if loaded(ctx, MIGRATIONS_PLUGIN) && enabled.contains(BACKWARDS) {
+            backwards(ctx, out);
+        }
         if !plugin(ctx) || !ours.iter().any(|id| enabled.contains(*id)) {
             return;
         }
@@ -120,6 +137,105 @@ impl Checker for Django {
         walk.docstring(&ctx.parsed.syntax().body);
         walk.visit_body(&ctx.parsed.syntax().body);
     }
+}
+
+/// Pylint's `is_migrations_module`. shortcut: the whole path is searched for
+/// `migrations`, as Pylint does with the path it was given, which may be
+/// absolute here and relative there; upgrade if a project root is named so.
+pub fn migrations_path(path: &std::path::Path) -> bool {
+    let path = path.to_string_lossy();
+    path.contains("migrations") && !path.ends_with("__init__.py")
+}
+
+/// Whether `load-plugins` names the migrations sub-plugin.
+pub fn migrations_plugin(options: &[(String, String)]) -> bool {
+    options
+        .iter()
+        .find(|(name, _)| name == "load-plugins")
+        .is_some_and(|(_, list)| list.split(',').any(|name| name.trim() == MIGRATIONS_PLUGIN))
+}
+
+/// The calls of a migration that the sub-plugin reads. Pylint takes a call
+/// only when its frame (the nearest `def`, `class` or `lambda`) is a direct
+/// child of the module.
+pub fn frame_calls(body: &[Stmt]) -> Vec<&ExprCall> {
+    let mut walk = FrameCalls {
+        calls: Vec::new(),
+        armed: false,
+    };
+    for stmt in body {
+        walk.armed = matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_));
+        visitor::walk_stmt(&mut walk, stmt);
+    }
+    walk.calls
+}
+
+struct FrameCalls<'a> {
+    calls: Vec<&'a ExprCall>,
+    /// Whether the node sits in a frame that is a child of the module.
+    armed: bool,
+}
+
+impl<'a> Visitor<'a> for FrameCalls<'a> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        let nested = matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_));
+        let armed = self.armed;
+        self.armed = armed && !nested;
+        visitor::walk_stmt(self, stmt);
+        self.armed = armed;
+    }
+
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        match expr {
+            Expr::Lambda(_) => {
+                let armed = std::mem::replace(&mut self.armed, false);
+                visitor::walk_expr(self, expr);
+                self.armed = armed;
+                return;
+            }
+            Expr::Call(call) if self.armed => self.calls.push(call),
+            _ => {}
+        }
+        visitor::walk_expr(self, expr);
+    }
+}
+
+fn has_keyword(call: &ExprCall, name: &str) -> bool {
+    call.arguments
+        .keywords
+        .iter()
+        .any(|k| k.arg.as_ref().is_some_and(|a| a.as_str() == name))
+}
+
+/// `W5197`: a `RunPython` call with fewer than two positional arguments and
+/// no `reverse_code`.
+fn backwards(ctx: &Ctx<'_>, out: &mut Vec<Diagnostic>) {
+    if !migrations_path(ctx.path) {
+        return;
+    }
+    for call in frame_calls(&ctx.parsed.syntax().body) {
+        let func = super::astring::as_string(ctx.source, &call.func);
+        if func.ends_with("RunPython")
+            && call.arguments.args.len() < 2
+            && !has_keyword(call, "reverse_code")
+        {
+            out.push(ctx.report(
+                BACKWARDS,
+                call,
+                "Always include backwards migration callable",
+            ));
+        }
+    }
+}
+
+/// Whether `call` is `x.AddField(..., field=F(..., default=...))`, the shape
+/// `W5198` reports. `F` is not checked to be a field type, as in Pylint.
+pub fn adds_field_with_default(call: &ExprCall) -> bool {
+    matches!(&*call.func, Expr::Attribute(a) if a.attr.as_str() == "AddField")
+        && call.arguments.keywords.iter().any(|k| {
+            k.arg.as_ref().is_some_and(|a| a.as_str() == "field")
+                && matches!(&k.value, Expr::Call(field) if has_keyword(field, "default"))
+        })
 }
 
 struct Walk<'a, 'c> {
@@ -452,11 +568,11 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::native::classes::render;
+    use crate::native::classes::{render, render_at};
 
     const IDS: &[&str] = &[
         "E5101", "E5141", "E5142", "R5101", "R5102", "R5103", "W5102", "W5103", "W5104", "W5150",
-        "W5151",
+        "W5151", "W5197",
     ];
 
     #[test]
@@ -465,6 +581,23 @@ mod tests {
         let expected = include_str!("fixtures/django_plugin.expected").trim_end();
         let options = [("load-plugins", "pylint_django")];
         assert_eq!(render(source, &options, IDS), expected);
+    }
+
+    #[test]
+    fn missing_backwards_migration_callable() {
+        let source = include_str!("fixtures/django_migrations.py");
+        let expected = include_str!("fixtures/django_migrations.expected").trim_end();
+        let options = [("load-plugins", "pylint_django.checkers.migrations")];
+        let at = |path: &str, options: &[(&str, &str)]| {
+            render_at(source, std::path::Path::new(path), "m", options, IDS)
+        };
+        assert_eq!(at("app/migrations/0002_x.py", &options), expected);
+        assert_eq!(at("app/migrations/__init__.py", &options), "");
+        assert_eq!(at("app/models.py", &options), "");
+        assert_eq!(at("app/migrations/0002_x.py", &[]), "");
+        // The sub-plugin is not `pylint_django`, and the other way round.
+        let main = [("load-plugins", "pylint_django")];
+        assert_eq!(at("app/migrations/0002_x.py", &main), "");
     }
 
     #[test]

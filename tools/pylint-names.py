@@ -37,7 +37,7 @@ extensions = [
 plugins = {}
 seen_messages = {id(m) for m in linter.msgs_store.messages}
 seen_checkers = set(linter._checkers)
-for module in extensions + ["pylint_django"]:
+for module in extensions + ["pylint_django", "pylint_django.checkers.migrations"]:
     linter.load_plugin_modules([module])
     for message in linter.msgs_store.messages:
         if id(message) in seen_messages:
