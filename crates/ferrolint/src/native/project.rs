@@ -28,6 +28,7 @@ use ruff_python_ast::{
     Stmt, StmtClassDef, StmtFunctionDef, StmtImportFrom,
 };
 use ruff_python_parser::{ParseOptions, Parsed};
+use ruff_text_size::Ranged;
 
 use ferrolint_core::LineIndex;
 
@@ -914,66 +915,176 @@ impl Project {
 
     /// The names the first binding of `__all__` in `body` lists, as Pylint reads them to take
     /// them for used: a list or tuple of strings, `+` of two of the same kind, `*seq` inside
-    /// one, and `m.__all__` of a module the project reads. `None` when a binding is there that
-    /// this cannot read (a call, a name): the caller stays silent.
+    /// one, `list(...)` and `tuple(...)` of one, a name bound once to one, and `m.__all__` of a
+    /// module the project reads. A value astroid does not take for a list or a tuple
+    /// (`sorted(...)`, a set, a comprehension, `list + tuple`) lists none. `None` when a value
+    /// is there that this cannot tell (a call, a name bound twice): the caller stays silent.
     pub fn listed_in_all(&self, body: &[Stmt]) -> Option<Vec<String>> {
         if matches!(first_all(body), None | Some(AllBinding::Other)) {
             return Some(Vec::new());
         }
         let mut imports = HashMap::new();
         collect_imports(body, &self.package, &mut imports, &mut Vec::new());
-        Some(self.all_in(body, &imports, 0)?.1)
+        Some(match self.all_in(&self.package, body, &imports, 0)? {
+            Seq::Names(_, names) => names,
+            Seq::Dead | Seq::Odd => Vec::new(),
+        })
     }
 
-    /// The names `__all__` lists in `body`, and whether it is a tuple.
+    /// What `__all__` is in `body`.
     fn all_in(
         &self,
+        package: &str,
         body: &[Stmt],
         imports: &HashMap<String, Vec<String>>,
         depth: u8,
-    ) -> Option<(bool, Vec<String>)> {
-        match first_all(body)? {
-            AllBinding::Value(value) => self.sequence(value, imports, depth),
-            AllBinding::Imported => self.exported(imports.get("__all__")?.last()?, depth),
-            AllBinding::Other => None,
+    ) -> Option<Seq> {
+        match first_all(body) {
+            Some(AllBinding::Value(value)) => self.sequence(package, value, body, imports, depth),
+            Some(AllBinding::Imported) => self.exported(imports.get("__all__")?.last()?, depth),
+            // A module without `__all__` has no such attribute: astroid infers nothing.
+            None => Some(Seq::Dead),
+            Some(AllBinding::Other) => None,
         }
     }
 
     /// The `__all__` of the module `qualified` names (`pkg.m.__all__`).
-    fn exported(&self, qualified: &str, depth: u8) -> Option<(bool, Vec<String>)> {
+    fn exported(&self, qualified: &str, depth: u8) -> Option<Seq> {
         let module = qualified.strip_suffix(".__all__")?;
         let loaded = self.load(module).filter(|_| depth < 8)?;
-        self.all_in(&loaded.parsed.syntax().body, &loaded.imports, depth + 1)
+        self.all_in(
+            &loaded.package,
+            &loaded.parsed.syntax().body,
+            &loaded.imports,
+            depth + 1,
+        )
     }
 
     fn sequence(
         &self,
+        package: &str,
         expr: &Expr,
+        body: &[Stmt],
         imports: &HashMap<String, Vec<String>>,
         depth: u8,
-    ) -> Option<(bool, Vec<String>)> {
+    ) -> Option<Seq> {
+        let again = |expr: &Expr| self.sequence(package, expr, body, imports, depth + 1);
         let (tuple, elts) = match expr {
+            _ if depth >= 8 => return None,
             Expr::List(l) => (false, &l.elts),
             Expr::Tuple(t) => (true, &t.elts),
             Expr::BinOp(b) if b.op == Operator::Add => {
-                let (tuple, mut names) = self.sequence(&b.left, imports, depth)?;
-                let (other, rest) = self.sequence(&b.right, imports, depth)?;
-                names.extend(rest);
-                return (tuple == other).then_some((tuple, names));
+                return Some(match (again(&b.left)?, again(&b.right)?) {
+                    (Seq::Names(t, mut names), Seq::Names(u, rest)) if t == u => {
+                        names.extend(rest);
+                        Seq::Names(t, names)
+                    }
+                    _ => Seq::Dead,
+                });
             }
             Expr::Attribute(a) if a.attr.as_str() == "__all__" => {
                 return self.exported(&qualify(imports, expr)?, depth);
             }
+            Expr::Name(n) => {
+                // Not assigned yet where it is read: astroid infers nothing.
+                return match self.value_at(package, body, n.id.as_str(), expr)? {
+                    Ok(value) => again(value),
+                    Err(()) => Some(Seq::Dead),
+                };
+            }
+            Expr::Call(c) if c.arguments.keywords.is_empty() => {
+                let Expr::Name(f) = &*c.func else { return None };
+                let name = f.id.as_str();
+                // A builtin the module rebinds is something else.
+                if !self.top_level(package, body, name)?.is_empty() {
+                    return None;
+                }
+                return match (name, &*c.arguments.args) {
+                    ("list" | "tuple", [arg]) => match again(arg)? {
+                        Seq::Names(_, names) => Some(Seq::Names(name == "tuple", names)),
+                        Seq::Dead => Some(Seq::Dead),
+                        Seq::Odd => None,
+                    },
+                    ("sorted", _) => Some(Seq::Dead),
+                    ("set" | "frozenset", _) => Some(Seq::Odd),
+                    _ => None,
+                };
+            }
+            Expr::Set(_)
+            | Expr::Dict(_)
+            | Expr::ListComp(_)
+            | Expr::SetComp(_)
+            | Expr::DictComp(_)
+            | Expr::Generator(_)
+            | Expr::StringLiteral(_)
+            | Expr::NoneLiteral(_)
+            | Expr::NumberLiteral(_)
+            | Expr::BooleanLiteral(_) => return Some(Seq::Odd),
             _ => return None,
         };
         let mut names = Vec::new();
         for elt in elts {
             match elt {
-                Expr::Starred(s) => names.extend(self.sequence(&s.value, imports, depth)?.1),
+                Expr::Starred(s) => match again(&s.value)? {
+                    Seq::Names(_, rest) => names.extend(rest),
+                    Seq::Dead => {}
+                    Seq::Odd => return None,
+                },
+                Expr::Name(n) => match self.value_at(package, body, n.id.as_str(), elt)? {
+                    Ok(Expr::StringLiteral(s)) => names.push(s.value.to_str().to_owned()),
+                    _ => return None,
+                },
                 _ => names.push(elt.as_string_literal_expr()?.value.to_str().to_owned()),
             }
         }
-        Some((tuple, names))
+        Some(Seq::Names(tuple, names))
+    }
+
+    /// The values of the plain `name = value` statements at the top level of `body`; `None`
+    /// when anything else (an import, a `def`, a star import that brings it) binds `name` too.
+    fn top_level<'a>(&self, package: &str, body: &'a [Stmt], name: &str) -> Option<Vec<&'a Expr>> {
+        let (mut values, mut late, mut others) = (Vec::new(), Vec::new(), Vec::new());
+        let mut binder = Binder {
+            package,
+            all: true,
+            globals: None,
+            late: &mut late,
+            out: &mut others,
+        };
+        for stmt in body {
+            match stmt {
+                Stmt::Assign(a) if matches!(&a.targets[..], [Expr::Name(n)] if n.id.as_str() == name) =>
+                {
+                    values.push(&*a.value);
+                }
+                _ => binder.visit_stmt(stmt),
+            }
+        }
+        let late_binds = late.iter().any(|item| match item {
+            Late::Name(n) => n == name,
+            Late::Star(origin) => self
+                .public_names(origin)
+                .is_none_or(|names| names.iter().any(|n| n == name || n == "*")),
+        });
+        (!late_binds && !others.iter().any(|n| n == name)).then_some(values)
+    }
+
+    /// The value `name` has where `at` reads it: that of the last plain assignment before `at`,
+    /// or no value (`Err`) when it is assigned only later. `None` when it is not told.
+    fn value_at<'a>(
+        &self,
+        package: &str,
+        body: &'a [Stmt],
+        name: &str,
+        at: &Expr,
+    ) -> Option<Result<&'a Expr, ()>> {
+        let values = self.top_level(package, body, name)?;
+        (!values.is_empty()).then(|| {
+            values
+                .into_iter()
+                .rfind(|value| value.range().end() <= at.range().start())
+                .ok_or(())
+        })
     }
 
     /// Whether the top level of `module` binds `__all__` (also under `if`
@@ -1184,6 +1295,17 @@ impl<'a> Visitor<'a> for Binder<'_> {
             self.bind(name.as_str());
         }
     }
+}
+
+/// What astroid makes of a value of `__all__`.
+enum Seq {
+    /// A list (`false`) or a tuple (`true`) of these names.
+    Names(bool, Vec<String>),
+    /// Astroid infers nothing: Pylint takes no name for used.
+    Dead,
+    /// A set, a string, a comprehension: not a list or a tuple, so no name either, but
+    /// `list(...)` and `*` read what it holds.
+    Odd,
 }
 
 /// What binds `__all__` first at the top level of a module, also under `if` and `try`.
