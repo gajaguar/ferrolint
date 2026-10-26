@@ -1,5 +1,17 @@
 # Directory Update Log
 
+## 2026-10-26
+
+* **Native rules, native-rules.md**: `E0202` spares a method with a
+  decorator that subclasses `property` or comes from a module that is
+  nowhere, and names the module as the run's root does. `E0401` finds
+  `__main__`. `C0209` reads `"..." % dict(a=1)`. `E0606` skips a name a star
+  import binds and `hasattr(sys, "x")` for a C module attribute.
+* **Plugin star imports, plugins.md**: `undefined-variable` leaves a name
+  bound later to Pylint's `E0601` and reads `del x` as a use.
+* **Rules that wait for type inference, inference-dependent-rules.md**:
+  Added `R1710`, `W0614`, and the `R0903` and `W0221` cases of a rebound base.
+
 ## 2026-10-25
 
 * **Native rules, native-rules.md**: The rules that read another module of
