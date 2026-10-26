@@ -441,3 +441,21 @@ if sys.platform == "win32":
 
 def platform_user():
     return platform_only
+
+
+from _ast import *
+
+if FLAG:
+    Set = 1
+
+
+def star_user():
+    return Set
+
+
+def module_attribute():
+    if hasattr(sys, "getdlopenflags"):
+        flags = sys.getdlopenflags()
+    if hasattr(sys, "setdlopenflags"):
+        return flags
+    return None

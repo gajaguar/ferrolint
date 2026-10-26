@@ -1111,7 +1111,7 @@ pub(super) struct Callee<'a> {
 }
 
 /// Whether a class body assigns an attribute called `.0`.
-struct Stores<'n>(&'n str, bool);
+pub(super) struct Stores<'n>(pub(super) &'n str, pub(super) bool);
 
 impl Visitor<'_> for Stores<'_> {
     fn visit_expr(&mut self, expr: &Expr) {
@@ -1126,7 +1126,7 @@ impl Visitor<'_> for Stores<'_> {
 }
 
 /// The method `name` the class binds once in its body, read by its signature.
-fn own_method<'a>(class: &'a StmtClassDef, name: &str) -> Option<&'a StmtFunctionDef> {
+pub(super) fn own_method<'a>(class: &'a StmtClassDef, name: &str) -> Option<&'a StmtFunctionDef> {
     let bound: Vec<Local> = locals(&class.body)
         .into_iter()
         .filter(|(n, _)| n == name)

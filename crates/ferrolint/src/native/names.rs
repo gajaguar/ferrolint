@@ -30,8 +30,8 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use regex::Regex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    CmpOp, Comprehension, ExceptHandler, Expr, ExprContext, ExprTuple, Number, Operator, Pattern,
-    Stmt, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry, TypeParam, UnaryOp,
+    Arguments, CmpOp, Comprehension, ExceptHandler, Expr, ExprContext, ExprTuple, Number, Operator,
+    Pattern, Stmt, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry, TypeParam, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange};
 
@@ -556,11 +556,21 @@ fn foreign<'a>(ctx: &Ctx<'_>, body: &'a [Stmt], out: &mut Binds<'a>) {
     struct Scan<'a> {
         globals: HashSet<&'a str>,
         stores: Vec<(&'a str, TextRange)>,
+        /// The value of each plain `name = value`, by the start of the name.
+        values: HashMap<u32, &'a Expr>,
     }
     impl<'a> Visitor<'a> for Scan<'a> {
         fn visit_stmt(&mut self, stmt: &'a Stmt) {
             match stmt {
                 Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
+                Stmt::Assign(a) => {
+                    for target in &a.targets {
+                        if let Expr::Name(name) = target {
+                            self.values.insert(name.range.start().to_u32(), &a.value);
+                        }
+                    }
+                    visitor::walk_stmt(self, stmt);
+                }
                 Stmt::Global(g) => self
                     .globals
                     .extend(g.names.iter().map(ruff_python_ast::Identifier::as_str)),
@@ -591,7 +601,7 @@ fn foreign<'a>(ctx: &Ctx<'_>, body: &'a [Stmt], out: &mut Binds<'a>) {
                             line: line_of(self.ctx, range),
                             path: Vec::new(),
                             kind: Bk::Foreign,
-                            value: None,
+                            value: scan.values.get(&range.start().to_u32()).copied(),
                         });
                     }
                 }
@@ -1093,7 +1103,16 @@ impl<'a> Walk<'a, '_> {
                 }
             }
             Expr::BoolOp(b) if all(&b.values.iter().collect::<Vec<_>>()) => Val::Const,
-            Expr::Compare(c) if all(&c.operands.iter().collect::<Vec<_>>()) => Val::Const,
+            // astroid infers no `is` comparison.
+            Expr::Compare(c)
+                if !c
+                    .ops
+                    .iter()
+                    .any(|op| matches!(op, CmpOp::Is | CmpOp::IsNot))
+                    && all(&c.operands.iter().collect::<Vec<_>>()) =>
+            {
+                Val::Const
+            }
             // astroid joins the two arms only when they have one Python type.
             // shortcut: a test that astroid infers (`True`, `sys.platform`) picks one arm there;
             // upgrade with a value model.
@@ -1122,6 +1141,8 @@ impl<'a> Walk<'a, '_> {
                 let qualified = self.qualified(value);
                 if typing_class(qualified.as_deref()) || self.is_class(qualified.as_deref()) {
                     Val::Class
+                } else if qualified.is_some_and(|q| HOST_CONSTS.contains(&q.as_str())) {
+                    Val::Const
                 } else {
                     Val::Unknown
                 }
@@ -1193,6 +1214,8 @@ impl<'a> Walk<'a, '_> {
                     .unwrap_or_default();
                 if typing_class(origin) || self.is_class(origin) {
                     Val::Class
+                } else if origin.is_some_and(|o| HOST_CONSTS.contains(&o)) {
+                    Val::Const
                 } else if last.starts_with(|c: char| c.is_ascii_lowercase()) {
                     // A lower-case import is most often a function.
                     Val::Func
@@ -1412,6 +1435,7 @@ impl<'a> Walk<'a, '_> {
             | "typing.TypeAliasType"
             | "typing_extensions.TypeAliasType" => Val::Unknown,
             "dict" | "list" | "set" | "frozenset" | "tuple" | "object" => Val::Other,
+            "hasattr" if self.has_module_attr(&call.arguments) => Val::Const,
             q if self.project.returns_class(&self.project.absolute(q)) => Val::Class,
             q => {
                 let last = q.rsplit('.').next().unwrap_or_default();
@@ -1422,6 +1446,22 @@ impl<'a> Walk<'a, '_> {
                 }
             }
         }
+    }
+
+    /// Whether `args` is `(module, "name")` for a module imported once and found: astroid
+    /// answers `hasattr` of it with `True` or `False`.
+    fn has_module_attr(&self, args: &Arguments) -> bool {
+        let [Expr::Name(name), Expr::StringLiteral(_)] = &args.args[..] else {
+            return false;
+        };
+        args.keywords.is_empty()
+            && self.env.binding(name).is_some_and(|b| {
+                b.kind == BindingKind::Import
+                    && self.ctx().model.is_sole_binding(b.id)
+                    && b.origin
+                        .as_deref()
+                        .is_some_and(|module| self.project.spec(module).is_some())
+            })
     }
 
     // -- storing a name ----------------------------------------------------
@@ -1532,8 +1572,8 @@ impl<'a> Walk<'a, '_> {
             .any(|b| b.kind == Bk::Name && b.value.is_some_and(|v| self.container_instance(v)));
         // Pylint's inference of every binding of the name: an uninferable binding.
         let unknown = binds.iter().any(|b| match b.kind {
-            Bk::Name => b.value.is_none_or(|v| self.val(v, 0) == Val::Unknown),
-            Bk::FromImport | Bk::Foreign => true,
+            Bk::Name | Bk::Foreign => b.value.is_none_or(|v| self.val(v, 0) == Val::Unknown),
+            Bk::FromImport => true,
             // astroid cannot infer `+=` of a display that holds a `*starred`.
             Bk::Aug => {
                 instance
@@ -2037,6 +2077,35 @@ fn is_class_var(annotation: &Expr) -> bool {
     };
     last_name(annotation) == Some("ClassVar")
 }
+
+/// The attributes of `sys` and `os` that astroid infers to a constant, whatever the platform
+/// (`os.name` is left out: a comparison of it is not inferred).
+const HOST_CONSTS: [&str; 24] = [
+    "sys.maxsize",
+    "sys.maxunicode",
+    "sys.byteorder",
+    "sys.hexversion",
+    "sys.platform",
+    "sys.version",
+    "sys.prefix",
+    "sys.exec_prefix",
+    "sys.base_prefix",
+    "sys.executable",
+    "sys.api_version",
+    "sys.copyright",
+    "sys.pycache_prefix",
+    "sys.dont_write_bytecode",
+    "sys.float_repr_style",
+    "os.sep",
+    "os.linesep",
+    "os.pathsep",
+    "os.curdir",
+    "os.pardir",
+    "os.extsep",
+    "os.altsep",
+    "os.devnull",
+    "os.defpath",
+];
 
 const STR_METHODS: [&str; 19] = [
     "capitalize",

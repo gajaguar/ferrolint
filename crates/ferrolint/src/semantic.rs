@@ -30,6 +30,9 @@ pub struct Model {
     node_binding: HashMap<u32, u32>,
     /// Name loads inside deferred annotations: they see a scope's last binding.
     deferred: HashSet<u32>,
+    /// Name loads in a default value: they run before the def binds its name,
+    /// so they see the scope as it stood at the def's start (the offset).
+    before_def: HashMap<u32, u32>,
 }
 
 struct ScopeData {
@@ -89,12 +92,14 @@ impl Model {
                 node_scope: vec![UNSET; nodes.len()],
                 node_binding: HashMap::new(),
                 deferred: HashSet::new(),
+                before_def: HashMap::new(),
             },
             current: 0,
             store_kind: BindingKind::Assignment,
             statement_end: 0,
             deferred_annotations: deferred,
             in_annotation: false,
+            default_of: None,
         };
         builder.push_scope(ScopeKind::Module, None, 0);
         builder.model.node_scope[0] = 0;
@@ -127,7 +132,11 @@ impl Model {
     }
 
     pub fn resolve(&self, flat: &Flat, node: u32) -> Option<Binding> {
-        if let Some(&binding) = self.node_binding.get(&node) {
+        let deleted = self
+            .node_binding
+            .get(&node)
+            .is_some_and(|&binding| self.bindings[binding as usize].kind == BindingKind::Deletion);
+        if !deleted && let Some(&binding) = self.node_binding.get(&node) {
             return Some(self.binding(binding));
         }
         let target = flat.nodes.get(node as usize)?;
@@ -136,9 +145,13 @@ impl Model {
         let offset = if self.deferred.contains(&node) {
             UNSET
         } else {
-            target.range.start.offset
+            self.before_def
+                .get(&node)
+                .copied()
+                .unwrap_or(target.range.start.offset)
         };
-        self.resolve_name(name, scope, offset)
+        // A `del x` reads `x` as it stands: a binding later in the function does not count.
+        self.resolve_name(name, scope, offset, !deleted)
             .map(|resolved| self.output(resolved))
     }
 
@@ -188,7 +201,10 @@ impl Model {
         let offset = if self.deferred.contains(&node) {
             UNSET
         } else {
-            target.range.start.offset
+            self.before_def
+                .get(&node)
+                .copied()
+                .unwrap_or(target.range.start.offset)
         };
         let mut seen = HashSet::new();
         let mut visible = Vec::new();
@@ -199,7 +215,7 @@ impl Model {
                 for name in data.names.keys() {
                     if seen.insert(name.as_str())
                         && let Some(Resolved::Binding(binding)) =
-                            self.resolve_name(name, scope, offset)
+                            self.resolve_name(name, scope, offset, true)
                     {
                         visible.push(self.binding(binding));
                     }
@@ -212,7 +228,13 @@ impl Model {
     }
 
     /// Python's lookup for `name` used at `offset` inside `scope`.
-    fn resolve_name(&self, name: &str, scope: u32, mut offset: u32) -> Option<Resolved> {
+    fn resolve_name(
+        &self,
+        name: &str,
+        scope: u32,
+        mut offset: u32,
+        local_first: bool,
+    ) -> Option<Resolved> {
         let mut current = scope;
         let mut deferred = false;
         loop {
@@ -228,7 +250,13 @@ impl Model {
             let skip = data.nonlocals.contains(name)
                 || (current != scope && data.kind == ScopeKind::Class);
             if !skip
-                && let Some(binding) = self.pick(current, name, offset, deferred, current == scope)
+                && let Some(binding) = self.pick(
+                    current,
+                    name,
+                    offset,
+                    deferred,
+                    local_first && current == scope,
+                )
             {
                 return Some(binding);
             }
@@ -359,6 +387,8 @@ struct Builder<'s> {
     statement_end: u32,
     deferred_annotations: bool,
     in_annotation: bool,
+    /// The start of the def whose default values are being visited.
+    default_of: Option<u32>,
 }
 
 impl Builder<'_> {
@@ -367,6 +397,9 @@ impl Builder<'_> {
             && let Some(id) = id_of(name)
         {
             self.model.deferred.insert(id);
+        }
+        if let (Some(start), Some(id)) = (self.default_of, id_of(name)) {
+            self.model.before_def.insert(id, start);
         }
     }
 
@@ -498,10 +531,12 @@ impl Builder<'_> {
     }
 
     /// Visit the parts of a parameter list the enclosing scope evaluates.
-    fn visit_parameter_values(&mut self, parameters: &ast::Parameters) {
+    fn visit_parameter_values(&mut self, parameters: &ast::Parameters, def_start: Option<u32>) {
         for parameter in parameters {
             if let Some(default) = parameter.default() {
+                let outer = std::mem::replace(&mut self.default_of, def_start);
                 self.visit_expr(default);
+                self.default_of = outer;
             }
             if let Some(annotation) = parameter.annotation() {
                 self.visit_annotation(annotation);
@@ -584,7 +619,7 @@ impl Builder<'_> {
             range.end().to_u32(),
         );
         let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
-        self.visit_parameter_values(&def.parameters);
+        self.visit_parameter_values(&def.parameters, Some(def.range().start().to_u32()));
         if let Some(returns) = &def.returns {
             self.visit_annotation(returns);
         }
@@ -810,7 +845,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::Lambda(lambda) => {
                 let id = id_of(lambda).unwrap_or(0);
                 if let Some(parameters) = &lambda.parameters {
-                    self.visit_parameter_values(parameters);
+                    self.visit_parameter_values(parameters, None);
                 }
                 self.push_scope(ScopeKind::Lambda, None, id);
                 if let Some(parameters) = &lambda.parameters {
@@ -979,6 +1014,20 @@ mod tests {
             fixture("x = 1\nclass C:\n    x = 2\n    y = x\n    def m(self):\n        return x\n");
         assert_eq!(f.resolve("x", 0), Some((BindingKind::Assignment, 3)));
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 1)));
+    }
+
+    #[test]
+    fn a_default_value_does_not_see_the_function_it_defaults() {
+        let f = fixture(
+            "import json\nclass C:\n    def json(self, loads=json.loads):\n        return json\n",
+        );
+        assert_eq!(f.resolve("json", 0), Some((BindingKind::Import, 1)));
+    }
+
+    #[test]
+    fn an_annotation_sees_the_function_it_annotates() {
+        let f = fixture("import date\nclass C:\n    def date(self) -> date:\n        pass\n");
+        assert_eq!(f.resolve("date", 0), Some((BindingKind::FunctionDef, 3)));
     }
 
     #[test]

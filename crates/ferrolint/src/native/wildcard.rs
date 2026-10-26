@@ -51,6 +51,9 @@ impl Checker for Wildcard {
             return;
         }
         let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
+        // A `__all__` that cannot be read may take any name for used: no W0614 then.
+        let listed = project.listed_in_all(&ctx.parsed.syntax().body);
+        walk.read.extend(listed.iter().flatten().cloned());
         let allow_all = ctx.option("allow-wildcard-with-all").is_some_and(|v| {
             matches!(v.trim().to_lowercase().as_str(), "y" | "yes" | "true" | "1")
         });
@@ -66,7 +69,7 @@ impl Checker for Wildcard {
                 out.push(ctx.report(WILDCARD, *stmt, format!("Wildcard import {written}")));
             }
             // Pylint tracks unused names of the module's own scope only.
-            if !unused || !*top {
+            if !unused || !*top || listed.is_none() {
                 continue;
             }
             let Some(names) = project.public_names(&module) else {
@@ -145,20 +148,6 @@ impl<'a> Visitor<'a> for Walk<'a> {
                         .push((stmt.start(), alias.name.to_string(), bound.to_owned()));
                 }
             }
-            Stmt::Assign(assign)
-                if assign
-                    .targets
-                    .iter()
-                    .any(|t| matches!(t, Expr::Name(n) if n.id.as_str() == "__all__")) =>
-            {
-                // shortcut: only a literal list or tuple of strings counts; upgrade with inference.
-                let items = match &*assign.value {
-                    Expr::List(l) => &l.elts,
-                    Expr::Tuple(t) => &t.elts,
-                    _ => return,
-                };
-                self.read.extend(items.iter().filter_map(string));
-            }
             _ => {}
         }
         let scope = matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_));
@@ -177,11 +166,6 @@ impl<'a> Visitor<'a> for Walk<'a> {
         }
         visitor::walk_expr(self, expr);
     }
-}
-
-fn string(expr: &Expr) -> Option<String> {
-    expr.as_string_literal_expr()
-        .map(|s| s.value.to_str().to_owned())
 }
 
 #[cfg(test)]
@@ -256,6 +240,34 @@ mod tests {
             run(&files, "pkg/global_.py", "pkg.global_"),
             "1:W0614:Unused import(s) cost from wildcard import of pkg.m"
         );
+    }
+
+    #[test]
+    fn an_all_built_from_other_modules_takes_its_names_for_used() {
+        let files = [
+            ("pkg/__init__.py", ""),
+            ("pkg/m.py", "x = 1\ny = 2\nz = 3\nw = 4\n"),
+            ("pkg/a.py", "__all__ = ['x', 'y']\n"),
+        ];
+        let user = |tail: &str| {
+            let mut files = files.to_vec();
+            let text = format!("from pkg.m import *\nfrom pkg import a\n{tail}\n");
+            files.push(("pkg/u.py", &text));
+            run(&files, "pkg/u.py", "pkg.u")
+        };
+        let w =
+            |names: &str| format!("1:W0614:Unused import(s) {names} from wildcard import of pkg.m");
+        assert_eq!(user("__all__ = a.__all__"), w("z and w"));
+        assert_eq!(user("__all__ = a.__all__ + ['z']"), w("w"));
+        assert_eq!(user("__all__ = ['z', *a.__all__]"), w("w"));
+        // the first binding only
+        assert_eq!(
+            user("__all__ = ['z']\n__all__ += a.__all__"),
+            w("x, y and w")
+        );
+        // not readable (a call, a list plus a tuple): silent
+        assert_eq!(user("__all__ = a.__all__ + ('z',)"), "");
+        assert_eq!(user("__all__ = list(a.__all__)"), "");
     }
 
     #[test]

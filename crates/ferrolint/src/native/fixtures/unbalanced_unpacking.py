@@ -281,3 +281,52 @@ def shadowed(*args):
     args = (1, 2, 3)
     i, j = args[:2]
     return i, j
+
+
+class Root:
+    pair = (1, 2)
+    triple = (1, 2, 3)
+    stored = (1, 2)
+    twice = (1, 2)
+    twice = (1, 2, 3)
+
+    def method(self):
+        found = []
+        return found
+
+    def other(self):
+        return (1, 2, 3)
+
+    def overridden(self):
+        return (1, 2, 3)
+
+
+class Child(Root):
+    def __init__(self):
+        self.stored = (1, 2, 3)
+
+    def overridden(self):
+        return (1, 2)
+
+    def run(self, plain, *args):
+        a, b, c = self.pair
+        a, b, c = self.triple
+        a, b, c = self.method()
+        a, b = self.method()
+        a, b = self.other()
+        a, b, c = self.overridden()
+        a, b, c = self.stored
+        a, b, c = self.twice
+        a, b, c = plain.pair
+        a, b, c = self.missing
+        return a, b, c
+
+    @classmethod
+    def build(cls):
+        a, b, c = cls.pair
+        return a, b, c
+
+    @staticmethod
+    def static(self):
+        a, b, c = self.pair
+        return a, b, c
