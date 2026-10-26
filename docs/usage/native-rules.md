@@ -1324,9 +1324,11 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   class counts the builtin and local bases it can read as its ancestors.
 * `E1111` and `E1128` take the callee that `W1114` resolves (see Batch B and
   Batch R), a constructor aside: a name bound once to a function of the file
-  or `self.method` of the enclosing class. A method called as `Class.method(x)`,
-  a method that only a base class defines, a name that the function binds
-  again further down and a builtin method such as `lst.sort()` are not
+  or `self.method` of the enclosing class, also one that a base class of the
+  project, of the standard library or of an installed package defines (the
+  bases must all be known, and a `.pyi` base is left out). A method called as
+  `Class.method(x)`, a name that the function binds again further down, a
+  builtin method such as `lst.sort()` and `functools.partial(...)` are not
   followed, where Pylint infers the callee.
 * `W0632` and `W0644` follow no more than the displays above. A name bound twice
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,

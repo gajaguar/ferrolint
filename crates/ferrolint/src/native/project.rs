@@ -163,6 +163,8 @@ pub struct Module {
     /// The modules that `from m import *` reads, in order.
     stars: Vec<String>,
     lines: LineIndex,
+    /// Whether the file is a `.pyi` stub.
+    stub: bool,
 }
 
 /// A class of a module of the project.
@@ -1108,6 +1110,11 @@ impl ClassRef {
         format!("{}.{}", self.module.name, self.name)
     }
 
+    /// Whether the class is written in a `.pyi` stub.
+    pub fn is_stub(&self) -> bool {
+        self.module.stub
+    }
+
     pub fn class(&self) -> Option<&StmtClassDef> {
         find_class(&self.module.parsed.syntax().body, &self.name)
     }
@@ -1342,6 +1349,7 @@ fn parse_module(file: &Path, name: &str, is_package: bool) -> Option<Module> {
         package,
         imports,
         stars,
+        stub: file.extension().is_some_and(|ext| ext == "pyi"),
     })
 }
 

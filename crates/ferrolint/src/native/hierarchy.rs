@@ -64,8 +64,10 @@ impl Class<'_> {
 enum Entry<'a> {
     Class(Class<'a>),
     Object,
-    /// A builtin, `Generic` or another base that adds no method.
+    /// `Generic` or another base that adds no method.
     Empty,
+    /// A builtin class other than `object`, whose methods are not modelled.
+    Builtin,
     Unknown,
 }
 
@@ -240,7 +242,10 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                         return Entry::Object;
                     }
                     // A builtin has no module part and declares nothing abstract.
-                    if !qualified.contains('.') || EMPTY_BASES.contains(&qualified.as_str()) {
+                    if !qualified.contains('.') {
+                        return Entry::Builtin;
+                    }
+                    if EMPTY_BASES.contains(&qualified.as_str()) {
                         return Entry::Empty;
                     }
                     let qualified = self.project.absolute(&qualified);
@@ -265,7 +270,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                     Err(name) if EMPTY_BASES.contains(&name.as_str()) => Entry::Empty,
                     // A builtin base is not modelled, and is not unknown either.
                     Err(name) if !name.contains('.') && class_methods::methods(&name).is_some() => {
-                        Entry::Empty
+                        Entry::Builtin
                     }
                     Err(_) => Entry::Unknown,
                 })
@@ -280,9 +285,17 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
             .filter_map(|entry| match entry {
                 Entry::Class(base) => Some(Some(base)),
                 Entry::Unknown => Some(None),
-                Entry::Object | Entry::Empty => None,
+                Entry::Object | Entry::Empty | Entry::Builtin => None,
             })
             .collect()
+    }
+
+    /// Whether `class` derives directly from a builtin class other than
+    /// `object`, whose methods the MRO does not hold.
+    pub fn has_builtin_base(&self, class: &Class<'a>) -> bool {
+        self.entries(class)
+            .iter()
+            .any(|entry| matches!(entry, Entry::Builtin))
     }
 
     /// The direct bases of `class` that the project can read; astroid skips
@@ -366,7 +379,7 @@ impl<'a> Hierarchy<'a, '_> {
                     bases.push(base);
                 }
                 Entry::Object => seen_object = true,
-                Entry::Empty | Entry::Unknown => {}
+                Entry::Empty | Entry::Builtin | Entry::Unknown => {}
             }
         }
         let mut seqs = bases
