@@ -358,6 +358,20 @@ fn unused_import_leaves_a_name_an_earlier_project_star_import_binds() {
     );
 }
 
+#[test]
+fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_the_name() {
+    // `import _pkg.sub` binds `_pkg`, a dummy name to Pylint in a function.
+    let source = "def f():\n    import _pkg.sub\n    import pkg.sub\n";
+    let found = findings("ferrolint-plugin-unused-import", source);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|line| line.contains("Unused"))
+            .collect::<Vec<_>>(),
+        ["3: Unused import pkg.sub"]
+    );
+}
+
 /// The unused-import component with every `@0.4.2` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
