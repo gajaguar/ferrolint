@@ -24,8 +24,9 @@ interface a rule would ask it through is in the
 * **The type of a call result or attribute.** `W0201` (instances reached
   through an attribute, a list or a call), `R0902` (attributes assigned
   through an inferred instance), `E1120` and `E1121` (`type(self)(...)`, the
-  `cls()` of a metaclass, signatures of installed packages), `E1102`,
-  `E1124` and `E0712`, and `R1710` or `W0101` (a method that never
+  `cls()` of a metaclass, signatures of installed packages, a function of
+  another module that a decorator or a later assignment replaces),
+  `E1102`, `E1124` and `E0712`, and `R1710` or `W0101` (a method that never
   returns, called on a value that is not `self`: `ctx.exit()` where `ctx`
   comes from `with self.make_context(...) as ctx`).
 * **The value a name stands for.** `C0103` (a constant that comes from a
