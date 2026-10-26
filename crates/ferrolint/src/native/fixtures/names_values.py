@@ -153,3 +153,20 @@ if unknown_thing():
 SPAN = 0
 if unknown_thing():
     SPAN = str(unknown_thing())
+if unknown_thing():
+    GLOBAL_A = None
+    GLOBAL_B = None
+else:
+    GLOBAL_A = None
+    GLOBAL_B = None
+
+
+def rebind_globals():
+    global GLOBAL_A, GLOBAL_B
+    GLOBAL_A = 1
+    GLOBAL_B = unknown_thing()
+has_pypy = hasattr(sys, "pypy_version_info")
+has_other = hasattr(unknown_thing(), "x")
+is_none = 1 is None
+host_sep = os.sep
+host_max = sys.maxsize > 2**32
