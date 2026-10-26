@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 use ferrolint_core::Diagnostic;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    ExceptHandlerExceptHandler, Expr, ExprCall, MatchCase, Number, Stmt, StmtIf, UnaryOp,
+    CmpOp, ExceptHandlerExceptHandler, Expr, ExprCall, MatchCase, Number, Stmt, StmtIf, UnaryOp,
 };
 use ruff_text_size::Ranged;
 
@@ -415,6 +415,29 @@ fn truthiness(info: &Info<'_>, scope: usize, test: &Expr, depth: u8) -> Option<b
                 return None;
             };
             first_self_assign(info, scope, receiver.id.as_str(), attr.value.to_str()).map(|_| true)
+        }
+        // astroid infers `sys.platform` from the running interpreter.
+        // shortcut: only `==` and `!=` against a string; upgrade with inference.
+        Expr::Compare(c)
+            if c.ops.len() == 1 && c.operands.len() == 2 && info.lookup(scope, "sys").is_some() =>
+        {
+            let (Expr::Attribute(a), [Expr::StringLiteral(s)]) = (&c.operands[0], &c.operands[1..])
+            else {
+                return None;
+            };
+            let on_sys = matches!(&*a.value, Expr::Name(n) if n.id.as_str() == "sys");
+            let host = match std::env::consts::OS {
+                "macos" => "darwin",
+                "windows" => "win32",
+                other => other,
+            };
+            let same = host == s.value.to_str();
+            match c.ops[0] {
+                _ if !on_sys || a.attr.as_str() != "platform" => None,
+                CmpOp::Eq => Some(same),
+                CmpOp::NotEq => Some(!same),
+                _ => None,
+            }
         }
         Expr::Name(n) if n.id.as_str() == "TYPE_CHECKING" => Some(false),
         Expr::Attribute(a) if a.attr.as_str() == "TYPE_CHECKING" => Some(false),
