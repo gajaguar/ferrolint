@@ -1331,6 +1331,12 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   `Class.method(x)`, a name that the function binds again further down, a
   builtin method such as `lst.sort()` and `functools.partial(...)` are not
   followed, where Pylint infers the callee.
+* `W0718` follows no alias that is set in a function, a class or a loop, and
+  `E0701` knows no exception of an installed package: both need the
+  inferred class, as do `W0125`, `W0143`, `E0712`, `E1102` and `E1124` for the
+  value they judge. `R0902` counts the attributes of `self` only.
+* `W0223` can differ on a whole run: Pylint reports a class there that it
+  does not report on the file alone, from the state of astroid's import cache.
 * `W0632` and `W0644` follow no more than the displays above. A name bound twice
   (Pylint takes the nearest assignment), `dict(...)`, `list(...)`, `tuple(...)`,
   a conditional expression, a slice or a sum, an attribute such as `self.v`,
