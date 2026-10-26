@@ -125,6 +125,14 @@ fn unicode_escapes(ctx: &Ctx<'_>, out: &mut Vec<Diagnostic>) {
     }
 }
 
+/// `dict(a=1, b=2)` infers to a dict of its keywords.
+fn dict_call(call: &ExprCall) -> Option<(bool, usize)> {
+    (matches!(&*call.func, Expr::Name(f) if f.id.as_str() == "dict")
+        && call.arguments.args.is_empty()
+        && call.arguments.keywords.iter().all(|k| k.arg.is_some()))
+    .then_some((true, call.arguments.keywords.len()))
+}
+
 /// The kind and length of each `name = {...}` or `name = [...]`, by the
 /// node id of the name.
 struct Sizes(HashMap<u32, (bool, usize)>);
@@ -138,14 +146,7 @@ impl<'a> Visitor<'a> for Sizes {
             match &*assign.value {
                 Expr::Dict(dict) => self.0.insert(id, (true, dict.items.len())),
                 Expr::List(list) => self.0.insert(id, (false, list.elts.len())),
-                // `dict(a=1, b=2)` infers to a dict of its keywords
-                Expr::Call(call)
-                    if matches!(&*call.func, Expr::Name(f) if f.id.as_str() == "dict")
-                        && call.arguments.args.is_empty()
-                        && call.arguments.keywords.iter().all(|k| k.arg.is_some()) =>
-                {
-                    self.0.insert(id, (true, call.arguments.keywords.len()))
-                }
+                Expr::Call(call) => dict_call(call).and_then(|size| self.0.insert(id, size)),
                 _ => None,
             };
         }
@@ -231,6 +232,7 @@ impl Walk<'_, '_> {
         match expr {
             Expr::Dict(dict) => Some((true, dict.items.len())),
             Expr::List(list) => Some((false, list.elts.len())),
+            Expr::Call(call) => dict_call(call),
             Expr::Name(name) => {
                 let binding = self
                     .ctx
@@ -583,8 +585,12 @@ kw = dict(a=1, c=2)
 
 def f():
     return 'x %(a)s' % params
+
+
+'DROP %(a)s' % dict(a=1, b=2)
+'DROP %(a)s' % dict(a=1)
 ";
-        assert_eq!(found(source, "C0209"), [7, 9, 11]);
+        assert_eq!(found(source, "C0209"), [7, 9, 11, 24]);
     }
 
     #[test]
