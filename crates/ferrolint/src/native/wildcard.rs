@@ -50,7 +50,7 @@ impl Checker for Wildcard {
         if walk.stars.is_empty() {
             return;
         }
-        let project = Project::with_packages(ctx.path, ctx.module);
+        let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
         let allow_all = ctx.option("allow-wildcard-with-all").is_some_and(|v| {
             matches!(v.trim().to_lowercase().as_str(), "y" | "yes" | "true" | "1")
         });

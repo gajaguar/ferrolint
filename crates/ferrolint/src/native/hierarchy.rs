@@ -91,7 +91,7 @@ pub struct Hierarchy<'a, 'e> {
 
 impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn new(env: &'e Env<'a>) -> Self {
-        let project = Project::with_packages(env.ctx.path, env.ctx.module);
+        let project = Project::with_packages(env.ctx.path, env.ctx.module, env.ctx.roots);
         Self {
             env,
             stars: project.stars(&env.ctx.parsed.syntax().body),

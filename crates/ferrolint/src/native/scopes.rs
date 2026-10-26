@@ -998,7 +998,7 @@ fn redefined(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
     // The names of a star import, with the line of the first star that binds each.
     let mut starred: HashMap<String, u32> = HashMap::new();
     if !info.stars.is_empty() {
-        let project = Project::with_packages(ctx.path, ctx.module);
+        let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
         for (origin, line) in &info.stars {
             let names = project.public_names(&project.absolute(origin));
             for name in names.into_iter().flatten() {

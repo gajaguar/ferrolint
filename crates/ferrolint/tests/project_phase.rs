@@ -298,3 +298,17 @@ fn a_stub_gets_the_per_file_rules() {
     let found = project.run(&["--no-cache"]).stdout;
     assert!(found.contains("pkg/stub.pyi:1:7: info C0103"), "{found}");
 }
+
+#[test]
+fn a_directory_above_the_top_package_is_no_import_root() {
+    let project = Project::new();
+    project.write("ferrolint.toml", "select = [\"W0614\"]\n");
+    project.write("deep/pkg/__init__.py", "");
+    project.write("deep/pkg/mod.py", "from other import *\n");
+    project.write("deep/other.py", "NAME = 1\n");
+    // Pylint searches the run's roots and the file's directory, not the
+    // directories above `deep/pkg`, so `other` is not found.
+    let run = project.run(&[]);
+    assert_eq!(run.finding_lines().len(), 0, "{run:?}");
+    assert_eq!(project.run(&["deep"]).finding_lines().len(), 1);
+}

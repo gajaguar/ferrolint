@@ -106,7 +106,7 @@ impl Checker for Exceptions {
                 "overgeneral-exceptions",
                 "builtins.BaseException,builtins.Exception",
             ),
-            project: Project::new(ctx.path, ctx.module),
+            project: Project::new(ctx.path, ctx.module, ctx.roots),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }

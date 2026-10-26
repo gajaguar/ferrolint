@@ -688,6 +688,7 @@ impl Linter<'_> {
                 py_version: setup.py_version,
                 module: file.module,
                 path: file.path,
+                roots: &setup.roots,
             };
             entry.host.extend(native::check(&ctx, enabled));
         }
@@ -752,6 +753,7 @@ impl Linter<'_> {
             py_version: context.py_version,
             module: context.module,
             path: context.path,
+            roots: context.roots,
         });
         let data = Arc::new(FileData {
             overridden,
@@ -866,7 +868,9 @@ fn star_names(flat: &ast::Flat, context: &PluginContext<'_>) -> HashMap<u32, Vec
         // An absolute import is looked up on the run's search path, as
         // astroid does; a relative one beside the file.
         let project = if origin.starts_with('.') {
-            near.get_or_insert_with(|| native::Project::new(context.path, context.module))
+            near.get_or_insert_with(|| {
+                native::Project::new(context.path, context.module, context.roots)
+            })
         } else {
             run.get_or_insert_with(|| {
                 native::Project::for_run(

@@ -416,9 +416,9 @@ impl<'a> Walk<'a, '_> {
         let Some(qualified) = self.env.qualified(&call.func).filter(|q| q.contains('.')) else {
             return;
         };
-        let project = self
-            .project
-            .get_or_init(|| Project::new(self.env.ctx.path, self.env.ctx.module));
+        let project = self.project.get_or_init(|| {
+            Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
+        });
         let Some(class) = project.class(&project.absolute(&qualified)) else {
             return;
         };
@@ -580,8 +580,9 @@ impl<'a> Walk<'a, '_> {
     /// constructor off the whole class, and a method off the instance.
     fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
         let project = || {
-            self.project
-                .get_or_init(|| Project::new(self.env.ctx.path, self.env.ctx.module))
+            self.project.get_or_init(|| {
+                Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
+            })
         };
         settled(self.env, &self.classes, call, callee, Some(&project))
     }
