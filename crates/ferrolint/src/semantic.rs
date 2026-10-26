@@ -30,6 +30,9 @@ pub struct Model {
     node_binding: HashMap<u32, u32>,
     /// Name loads inside deferred annotations: they see a scope's last binding.
     deferred: HashSet<u32>,
+    /// Name loads in a default value: they run before the def binds its name,
+    /// so they see the scope as it stood at the def's start (the offset).
+    before_def: HashMap<u32, u32>,
 }
 
 struct ScopeData {
@@ -89,12 +92,14 @@ impl Model {
                 node_scope: vec![UNSET; nodes.len()],
                 node_binding: HashMap::new(),
                 deferred: HashSet::new(),
+                before_def: HashMap::new(),
             },
             current: 0,
             store_kind: BindingKind::Assignment,
             statement_end: 0,
             deferred_annotations: deferred,
             in_annotation: false,
+            default_of: None,
         };
         builder.push_scope(ScopeKind::Module, None, 0);
         builder.model.node_scope[0] = 0;
@@ -136,7 +141,10 @@ impl Model {
         let offset = if self.deferred.contains(&node) {
             UNSET
         } else {
-            target.range.start.offset
+            self.before_def
+                .get(&node)
+                .copied()
+                .unwrap_or(target.range.start.offset)
         };
         self.resolve_name(name, scope, offset)
             .map(|resolved| self.output(resolved))
@@ -188,7 +196,10 @@ impl Model {
         let offset = if self.deferred.contains(&node) {
             UNSET
         } else {
-            target.range.start.offset
+            self.before_def
+                .get(&node)
+                .copied()
+                .unwrap_or(target.range.start.offset)
         };
         let mut seen = HashSet::new();
         let mut visible = Vec::new();
@@ -376,6 +387,8 @@ impl Builder<'_> {
         let outer = std::mem::replace(&mut self.in_annotation, self.deferred_annotations);
         self.visit_expr(annotation);
         self.in_annotation = outer;
+    /// The start of the def whose default values are being visited.
+    default_of: Option<u32>,
     }
 
     fn push_scope(&mut self, kind: ScopeKind, name: Option<String>, node: u32) -> u32 {
@@ -385,6 +398,9 @@ impl Builder<'_> {
             kind,
             name,
             node,
+        if let (Some(start), Some(id)) = (self.default_of, id_of(name)) {
+            self.model.before_def.insert(id, start);
+        }
             parent,
             end: 0,
             names: BTreeMap::new(),
@@ -498,7 +514,7 @@ impl Builder<'_> {
     }
 
     /// Visit the parts of a parameter list the enclosing scope evaluates.
-    fn visit_parameter_values(&mut self, parameters: &ast::Parameters) {
+    fn visit_parameter_values(&mut self, parameters: &ast::Parameters, def_start: Option<u32>) {
         for parameter in parameters {
             if let Some(default) = parameter.default() {
                 self.visit_expr(default);
@@ -518,7 +534,9 @@ impl Builder<'_> {
             return false;
         };
         self.push_scope(ScopeKind::TypeParams, None, node);
+                let outer = std::mem::replace(&mut self.default_of, def_start);
         for param in &type_params.type_params {
+                self.default_of = outer;
             self.mark(param);
             let name = param.name();
             let range = name.range();
@@ -581,11 +599,10 @@ impl Builder<'_> {
             Some(id),
             range,
             None,
-            // The name is bound after the defaults and annotations ran.
-            def.range().end().to_u32(),
+            range.end().to_u32(),
         );
         let typed = self.visit_type_params_in_scope(def.type_params.as_deref(), id);
-        self.visit_parameter_values(&def.parameters);
+        self.visit_parameter_values(&def.parameters, Some(def.range().start().to_u32()));
         if let Some(returns) = &def.returns {
             self.visit_annotation(returns);
         }
@@ -811,7 +828,7 @@ impl<'a> Visitor<'a> for Builder<'_> {
             Expr::Lambda(lambda) => {
                 let id = id_of(lambda).unwrap_or(0);
                 if let Some(parameters) = &lambda.parameters {
-                    self.visit_parameter_values(parameters);
+                    self.visit_parameter_values(parameters, None);
                 }
                 self.push_scope(ScopeKind::Lambda, None, id);
                 if let Some(parameters) = &lambda.parameters {
@@ -1005,6 +1022,12 @@ mod tests {
         assert_eq!(f.resolve("x", 1), Some((BindingKind::Assignment, 2)));
         let print = f.model.resolve(&f.flat, f.loads("print")[0]).unwrap();
         assert_eq!(print.kind, BindingKind::Builtin);
+    }
+
+    #[test]
+    fn an_annotation_sees_the_function_it_annotates() {
+        let f = fixture("import date\nclass C:\n    def date(self) -> date:\n        pass\n");
+        assert_eq!(f.resolve("date", 0), Some((BindingKind::FunctionDef, 3)));
     }
 
     #[test]
