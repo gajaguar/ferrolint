@@ -530,7 +530,10 @@ impl Builder<'_> {
                 None,
                 range.end().to_u32(),
             );
+            // A bound and a default are evaluated lazily (PEP 695, 696).
+            let outer = std::mem::replace(&mut self.in_annotation, true);
             visitor::walk_type_param(self, param);
+            self.in_annotation = outer;
         }
         true
     }
@@ -1063,6 +1066,15 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_type_parameter_bound_sees_later_definitions() {
+        let f = fixture("def f[T: Later](x: T) -> T: ...\nclass Later: ...\n");
+        assert_eq!(
+            f.resolve("Later", 0).map(|b| b.0),
+            Some(BindingKind::ClassDef)
+        );
     }
 
     #[test]
