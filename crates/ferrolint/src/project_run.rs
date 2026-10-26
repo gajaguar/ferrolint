@@ -349,7 +349,11 @@ pub(crate) fn stamp_of(path: &Path) -> String {
                 .flatten()
                 .flatten()
                 .map(|entry| {
-                    let dir = entry.path().is_dir();
+                    // A symlink needs the stat; any other entry says what it is.
+                    let dir = entry.file_type().map_or_else(
+                        |_| entry.path().is_dir(),
+                        |kind| kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()),
+                    );
                     format!(
                         "{}{}",
                         entry.file_name().to_string_lossy(),
