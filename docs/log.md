@@ -14,6 +14,8 @@
 
 ## 2026-10-25
 
+* **Rules that wait for type inference, inference-dependent-rules.md**: Added
+  the open lines per rule, with counts and one example each.
 * **Native rules, native-rules.md**: `W0632` and `W0644` follow `self.x` and
   `cls.x` to a class attribute, and `self.m()` to a method, of an ancestor in
   the same file.
