@@ -893,7 +893,11 @@ pub(super) fn render_at(
 ) -> String {
     use ferrolint_core::LineIndex;
 
-    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let parsed = crate::checks::parse(
+        source,
+        ruff_python_parser::ParseOptions::from(ruff_python_ast::PySourceType::Python),
+    );
+    assert_eq!(parsed.errors(), []);
     let index = LineIndex::new(source);
     let flat = crate::ast::flatten(source, &index, parsed.syntax());
     let model = crate::semantic::Model::build(parsed.syntax(), &flat.nodes, source, &index, None);

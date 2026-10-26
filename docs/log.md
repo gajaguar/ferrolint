@@ -11,6 +11,8 @@
   project whose subtrees are no packages. `C0209` reads `dict(a=1, b=2)` and a
   name bound only to containers as one, and `E0606` is not reported for a
   name defined under `if sys.platform == "win32":` (Pylint gives `E0601`).
+* **native-rules.md**: `W0101` and the other flow rules read a bare `raise`
+  before a `;` (`except X:raise;y`) as a `raise`.
 
 ## 2026-10-23
 

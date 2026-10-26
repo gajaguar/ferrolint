@@ -153,7 +153,8 @@ Functions and `try`:
 
 * `W0101` `unreachable`: code after `return`, `raise`, `break`, `continue`
   or a call that never returns (see below); a bare `yield` that only marks a
-  generator is not counted.
+  generator is not counted. A bare `raise` before a `;` (`except X:raise;y`)
+  ends a block too.
 * `R1710` `inconsistent-return-statements` and `R1711` `useless-return`;
   like Pylint they leave `async def` alone.
 * `R0911` `too-many-return-statements` (`max-returns`, default 6), `R0913`

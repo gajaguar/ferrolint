@@ -19,7 +19,7 @@ use ferrolint_core::{Diagnostic, RuleInfo};
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
     self as ast, ElifElseClause, ExceptHandler, Expr, ExprCall, HasNodeIndex, Number, Parameters,
-    Pattern, Stmt, StmtClassDef, StmtFunctionDef, StmtRaise, StmtTry,
+    Pattern, Stmt, StmtClassDef, StmtFunctionDef, StmtPass, StmtRaise, StmtTry,
 };
 use ruff_text_size::Ranged;
 
@@ -308,6 +308,7 @@ impl<'a> Walk<'a, '_> {
         for (i, stmt) in body.iter().enumerate() {
             let stops = match stmt {
                 Stmt::Return(_) | Stmt::Raise(_) | Stmt::Break(_) | Stmt::Continue(_) => true,
+                Stmt::Pass(p) => bare_raise(ctx.source, p),
                 // shortcut: only the calls of a simple statement, not the header of an
                 // `if` or `for`; upgrade with a walk of every call of the body
                 Stmt::Expr(e) => ender.terminates(&e.value),
@@ -698,6 +699,11 @@ fn useless_return(body: &[Stmt]) -> bool {
     matches!(last, Stmt::Return(r) if r.value.as_deref().is_none_or(|v| matches!(v, Expr::NoneLiteral(_))))
 }
 
+/// Whether a `Pass` is the bare `raise` that `checks::parse` respelled `pass `.
+fn bare_raise(source: &str, pass: &StmtPass) -> bool {
+    source[pass.start().to_usize()..].starts_with("raise")
+}
+
 /// The exception that a `raise` raises, as far as it is known.
 enum Raised {
     Class(String),
@@ -734,6 +740,7 @@ impl<'e, 'a> Ender<'e, 'a> {
         match stmt {
             Stmt::Return(_) => true,
             Stmt::Raise(raise) => self.raise(raise, wrap),
+            Stmt::Pass(p) => bare_raise(self.env.ctx.source, p),
             Stmt::If(s) => self.conditional(&s.body, &s.elif_else_clauses, after, wrap),
             Stmt::While(s) => {
                 (const_truth(&s.test) == Some(true) && !exits_early(&s.body, &s.orelse))
