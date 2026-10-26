@@ -14,6 +14,9 @@
 
 ## 2026-10-23
 
+* **native-rules.md**: `C0103` judges the attributes that code outside a class
+  gives its instances (`wire = Wire(); wire.dwKind = 1`) as attributes of it.
+
 * **native-rules.md**: the ancestors of a class leave out a name nothing binds
   and no star import can bring, and read a star alias of an empty class
   (`Structure = ctypes.Structure`) as adding nothing, for every rule.

@@ -542,9 +542,11 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   standard library attribute (`sys.platform`, `math.pi`, `os.sep`), `%`
   formatting, a name
   read through `getattr` or `hasattr`, a variable whose value is a factory or
-  an attribute of an installed package (`Pool = app.Pool`), and the attribute
-  that `obj = Cls(); obj.attr = 1` adds to `Cls` from outside its body are
-  not followed, so the names Pylint infers differently stay as differences.
+  an attribute of an installed package (`Pool = app.Pool`) and a name that a
+  function binds with `global` are not followed, so the names Pylint infers
+  differently stay as differences. An attribute that `obj = Cls(); obj.attr = 1`
+  adds to `Cls` from outside its body is judged as one of the class (after
+  the ones its methods set, and not for a class with `__slots__`).
   A comprehension is not inferred by astroid and its name is not judged.
 * Pylint reports some attribute lines only when the file is linted alone, not
   inside a whole run (`fontTools/ttLib/tables/*`, which set an attribute of a
