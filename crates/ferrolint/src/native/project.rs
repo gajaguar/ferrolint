@@ -16,7 +16,7 @@
 //! with the file, so it is stale until the file changes or the cache is
 //! cleared. Upgrade with the contract's module index.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -1602,6 +1602,7 @@ thread_local! {
     /// result can be replayed only while those paths are unchanged.
     static READS: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
     static PARSED: RefCell<Kept> = RefCell::new(HashMap::new());
+    static WEIGHT: Cell<u64> = const { Cell::new(0) };
 }
 
 /// The files and directories the projects of this thread read since the last call.
@@ -1613,8 +1614,10 @@ pub fn take_reads() -> Vec<PathBuf> {
     })
 }
 
-/// Most modules a thread keeps; past it the thread starts over.
-const KEPT: usize = 512;
+/// Most bytes of module source a thread keeps parsed; past it the thread
+/// starts over. A parsed tree weighs a multiple of its source, so the bound
+/// is on the source, not on the count of modules.
+const KEPT: u64 = 4 << 20;
 
 fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> {
     let stamp = stamp_of(file);
@@ -1631,9 +1634,12 @@ fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> 
     let module = parse_module(file, name, is_package).map(Rc::new);
     PARSED.with(|kept| {
         let mut kept = kept.borrow_mut();
-        if kept.len() >= KEPT {
+        let size = std::fs::metadata(file).map_or(0, |meta| meta.len());
+        if WEIGHT.get() + size > KEPT {
             kept.clear();
+            WEIGHT.set(0);
         }
+        WEIGHT.set(WEIGHT.get() + size);
         kept.insert(key, (stamp, module.clone()));
     });
     module
