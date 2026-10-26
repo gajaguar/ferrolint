@@ -1492,6 +1492,23 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
   from 123 to 136 cycles where this finds 129, so a count that differs by a
   few percent is Pylint's own run-to-run spread (its sets iterate in the
   order of a hash seeded for each run), not a missing edge.
+* The rules that read another module of the project (`W0614`, `W0237`,
+  `W0621` and `E0602` through a star import, `E0202`) look for it under every
+  directory above the file that is not a package, as `sys.path` would when
+  that directory is the root. Pylint searches only the roots of the arguments:
+  given a parent directory, it cannot import `_pkg.mod` from a subtree that is
+  no package (`E0401`) and reports none of these, where ferrolint resolves the
+  module and does. The roots are not known to a rule that runs on one file.
+* `W0631` is not reported when Pylint infers the iterable as a non-empty
+  sequence. That holds for `for x in f()` where `f` returns a tuple or list
+  literal, for `enumerate(sys.meta_path)` and for a dict of another module
+  (`pkg.Cls.TABLE`): ferrolint follows only literals, names bound to them and
+  `self` attributes.
+* `R0902` counts an attribute that another class assigns through an inferred
+  instance (`self.worker_fixup.worker = w`, a property returning the class);
+  ferrolint counts the `self.x` of the class itself.
+* `W0614` takes `__all__ = mod.__all__` of the file as the list of the names
+  it exports; ferrolint reads only a literal list or tuple.
 * A file system that ignores case (macOS, Windows) opens `TTFont.py` as
   `ttFont.py`, and astroid tests `isfile`: a submodule or compiled module is
   found by any spelling there, as in Pylint, so `from pkg import TTFont` is an

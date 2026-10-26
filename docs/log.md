@@ -6,6 +6,11 @@
   module up on the run's search path (as `import-error` does) and answers
   an empty list for one that `VIRTUAL_ENV` shows is nowhere, so
   `undefined-variable` (`E0602`) reports the names read after that star.
+* **Native rules, native-rules.md**: Documented the divergences left in
+  `W0614`, `W0237`, `W0621`, `E0602`, `W0631`, `R0902` and `E0202` on a
+  project whose subtrees are no packages. `C0209` reads `dict(a=1, b=2)` and a
+  name bound only to containers as one, and `E0606` is not reported for a
+  name defined under `if sys.platform == "win32":` (Pylint gives `E0601`).
 
 ## 2026-10-23
 
