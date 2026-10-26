@@ -44,6 +44,48 @@ interface a rule would ask it through is in the
   by a later `Name = Other` under an `if` (`HTTPSConnection = Dummy`), as
   astroid builds the MRO from the last value of the name.
 
+## What is open, by group
+
+Counts are the lines only Pylint reports on a corpus of installed packages
+(the large set; the smaller set is in brackets when it has any). Each has one
+example.
+
+The type of a call result or attribute:
+
+* `W0201` 32 [5]: `self._storage.cvar = _CVar()`, an instance reached
+  through an attribute.
+* `R0902` 6: `self.x = ...` through an instance a call returns.
+* `E1120` 5 and `E1121` 4: `obj = cls()` where `cls` is a metaclass, and
+  `type(self)(value)`.
+* `E1102` 14 [3]: `self.callback()` where an attribute holds a value that is
+  not callable, or `new_instance = cls()` in a class method.
+* `E1124` 13: `f(worker, sig="X")` where `f` is bound to a
+  `functools.partial` that already fills `sig`.
+* `E0712` 6: `except autoretry_for:` where a name holds a tuple of classes
+  a call returned.
+* `E0203` 5: `self.__dict__.copy()` before the class sets `__dict__`, which
+  needs the base class members.
+
+The value a name stands for:
+
+* `C0103` 68 [13]: `_CACERT_CTX = as_file(...)`, a constant that is the
+  result of a call, or an alias such as `ctypes.c_size_t`.
+* `W0632` 2: `a, b = unpack(x)`, a function of an extension module.
+* `W0125` 11 [1] and `W0143` 11: `if self.auth:` and `url.port == 80`,
+  where an attribute holds a value Pylint infers as a constant or a
+  function.
+* `C1803` 5: `result == {}`, which needs the type of `result`.
+* `E0702` 2 [3]: `raise heartbeat_error[0]` where the list holds `None`.
+* `W0631` 2: a loop variable used after a loop that may not run, in a file
+  Pylint infers further than the flow here.
+
+A class that is not a plain class statement:
+
+* `W0223` 4 [11]: `class A(BaseHTTPResponse)`, where the base comes from an
+  installed package whose abstract methods are inferred.
+* `E0701` 3: `except StatusAuthnFailed:` after a class of an installed
+  package that is its ancestor.
+
 ## What does not wait for it
 
 * `R0401` differs in the cycle it names, not in whether there is one. Pylint
