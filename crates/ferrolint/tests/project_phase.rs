@@ -312,3 +312,25 @@ fn a_directory_above_the_top_package_is_no_import_root() {
     assert_eq!(run.finding_lines().len(), 0, "{run:?}");
     assert_eq!(project.run(&["deep"]).finding_lines().len(), 1);
 }
+
+#[test]
+fn a_message_names_the_module_from_the_run_root() {
+    let project = Project::new();
+    project
+        .write("ferrolint.toml", "select = [\"E0202\"]\n")
+        .write(
+            "deep/sub/m.py",
+            "class A:\n    def run(self):\n        pass\n\n    def __init__(self):\n        self.run = 1\n",
+        );
+    // The directories above the file have no `__init__.py`, so Pylint's name
+    // for the module starts at the run's root.
+    for (root, module) in [(".", "deep.sub.m"), ("deep", "sub.m")] {
+        let run = project.run(&[root]);
+        assert!(
+            run.finding_lines()
+                .iter()
+                .any(|line| line.contains(&format!("defined in {module} line 6"))),
+            "{run:?}"
+        );
+    }
+}
