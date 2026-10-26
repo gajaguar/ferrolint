@@ -1,5 +1,12 @@
 # Directory Update Log
 
+## 2026-10-25
+
+* **Plugin star imports, plugins.md**: `modules.star-names` looks an absolute
+  module up on the run's search path (as `import-error` does) and answers
+  an empty list for one that `VIRTUAL_ENV` shows is nowhere, so
+  `undefined-variable` (`E0602`) reports the names read after that star.
+
 ## 2026-10-23
 
 * **Plugin overrides, native-rules.md**: Contract 0.4.2 adds

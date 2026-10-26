@@ -23,7 +23,7 @@ use crate::config::{self, Config};
 use crate::discover::{self, Excludes};
 use crate::error::{Error, Result};
 use crate::host::{FileData, Host, LoadedPlugin, Outcome, PluginSource};
-use crate::native;
+use crate::native::{self, project_phase};
 use crate::project_run;
 use crate::selection::Selection;
 use crate::semantic::Model;
@@ -124,7 +124,14 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         scope.spawn(|| {
             // A panic must still fill the cell, or every waiting worker hangs.
             let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                Setup::new(plugins, cache.as_ref(), workers, &config)
+                Setup::new(
+                    plugins,
+                    cache.as_ref(),
+                    workers,
+                    &config,
+                    cwd,
+                    &options.paths,
+                )
             }))
             .unwrap_or_else(|_| Err(Error::plugin("loading the plugins panicked")));
             let _ = setup.set(loaded);
@@ -275,6 +282,9 @@ struct Setup {
     py_version: Option<(u32, u32)>,
     /// The configuration's other options, sorted by key, as the plugins get them.
     options: Vec<(String, String)>,
+    /// Where an absolute import is looked up, as the project phase does.
+    roots: Vec<PathBuf>,
+    opts: project_phase::Opts,
 }
 
 impl Setup {
@@ -283,6 +293,8 @@ impl Setup {
         cache: Option<&Cache>,
         workers: usize,
         config: &Config,
+        cwd: &Path,
+        paths: &[PathBuf],
     ) -> Result<Self> {
         let host = Host::load(plugins, cache, workers)?;
         let plugin_rules: Vec<_> = host
@@ -292,12 +304,16 @@ impl Setup {
             .collect();
         let registry = registry_for(plugin_rules, config)?;
         let selection = Selection::new(&registry, config)?;
+        let options: Vec<(String, String)> = config.options.clone().into_iter().collect();
+        let opts = project_phase::Opts::new(&options);
         Ok(Self {
             host,
             registry,
             selection,
             py_version: config.py_version,
-            options: config.options.clone().into_iter().collect(),
+            roots: project_run::roots(cwd, paths, &opts),
+            opts,
+            options,
         })
     }
 }
@@ -538,6 +554,13 @@ impl Linter<'_> {
                 .map(|&position| &setup.host.plugins[position].options)
                 .collect();
             let own = format!("{own:?}");
+            // A star import binds what the search path finds.
+            let search = format!(
+                "{:?}{:?}{:?}",
+                setup.roots,
+                std::env::var("VIRTUAL_ENV"),
+                std::env::var("PYTHONPATH")
+            );
             cache.key(&[
                 &hex(&Sha256::digest(bytes)),
                 display,
@@ -546,6 +569,7 @@ impl Linter<'_> {
                 &version,
                 &options,
                 &own,
+                &search,
             ])
         });
         let stored = self
@@ -685,6 +709,8 @@ impl Linter<'_> {
                 parsed: &parsed,
                 py_version: setup.py_version,
                 options: &setup.options,
+                roots: &setup.roots,
+                opts: &setup.opts,
             };
             for (position, outcome) in self.run_plugins(host, &context, &missing)? {
                 let plugin = &host.plugins[position];
@@ -729,7 +755,7 @@ impl Linter<'_> {
         });
         let data = Arc::new(FileData {
             overridden,
-            stars: star_names(&flat, context.path, context.module),
+            stars: star_names(&flat, context),
             flat,
             ast,
             model,
@@ -821,25 +847,45 @@ struct PluginContext<'a> {
     parsed: &'a Parsed<ModModule>,
     py_version: Option<(u32, u32)>,
     options: &'a [(String, String)],
+    roots: &'a [PathBuf],
+    opts: &'a project_phase::Opts,
 }
 
 /// What each `from m import *` of the file binds, by alias node, for the
 /// plugins' `modules` query. A module the project cannot tell is left out.
-fn star_names(flat: &ast::Flat, path: &Path, module: &str) -> HashMap<u32, Vec<String>> {
-    let mut project = None;
+fn star_names(flat: &ast::Flat, context: &PluginContext<'_>) -> HashMap<u32, Vec<String>> {
+    let mut near = None;
+    let mut run = None;
     let mut stars = HashMap::new();
     for (id, node) in (0..).zip(&flat.nodes) {
         if node.kind != wit::NodeKind::Alias || flat.string(node.name) != Some("*") {
             continue;
         }
         let import = &flat.nodes[node.parent.unwrap_or_default() as usize];
-        let project = project.get_or_insert_with(|| native::Project::new(path, module));
-        let origin = project.absolute(flat.string(import.detail).unwrap_or_default());
+        let origin = flat.string(import.detail).unwrap_or_default();
+        // An absolute import is looked up on the run's search path, as
+        // astroid does; a relative one beside the file.
+        let project = if origin.starts_with('.') {
+            near.get_or_insert_with(|| native::Project::new(context.path, context.module))
+        } else {
+            run.get_or_insert_with(|| {
+                native::Project::for_run(
+                    context.roots.to_vec(),
+                    HashMap::new(),
+                    context.opts.extensions.clone(),
+                    native::environment(),
+                )
+            })
+        };
+        let origin = project.absolute(origin);
         // `*` among the names stands for a source that does not parse.
         if let Some(names) = project.public_names(&origin)
             && !names.iter().any(|name| name == "*")
         {
             stars.insert(id, names);
+        } else if project.is_missing(&origin) {
+            // As astroid, which cannot import it, the star binds nothing.
+            stars.insert(id, Vec::new());
         }
     }
     stars

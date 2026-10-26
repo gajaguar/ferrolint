@@ -99,7 +99,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let units = units(params, files, &opts, &enabled);
     // The listing order is not a file's content, so the key must name the anchor.
     let anchor = (duplicates || cyclic)
-        .then(|| checked_last(arguments(params), &units))
+        .then(|| checked_last(arguments(params.cwd, params.arguments), &units))
         .flatten();
     let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
     let key = params.cache.map(|cache| {
@@ -116,7 +116,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         parts.push(format!("{cyclic}{duplicates}"));
         parts.push(anchor.map(|u| u.display.clone()).unwrap_or_default());
         // The roots decide how an absolute import resolves, whatever the names.
-        parts.push(format!("{:?}", roots(params, &opts)));
+        parts.push(format!("{:?}", roots(params.cwd, params.arguments, &opts)));
         for name in ["VIRTUAL_ENV", "PYTHONPATH"] {
             parts.push(std::env::var(name).unwrap_or_default());
         }
@@ -157,7 +157,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         let environment = crate::native::environment();
         let known = environment.is_some();
         let project = Project::for_run(
-            roots(params, &opts),
+            roots(params.cwd, params.arguments, &opts),
             linted,
             opts.extensions.clone(),
             environment,
@@ -253,10 +253,10 @@ fn finding(registry: &Registry, path: String, diagnostic: ferrolint_core::Diagno
 
 /// The search path roots Pylint adds for the arguments: the directory above
 /// each one's top package, or the source root that holds it.
-fn roots(params: &Params<'_>, opts: &Opts) -> Vec<PathBuf> {
-    let sources = source_roots(params, opts);
+pub fn roots(cwd: &Path, paths: &[PathBuf], opts: &Opts) -> Vec<PathBuf> {
+    let sources = source_roots(cwd, opts);
     let mut roots: Vec<PathBuf> = Vec::new();
-    for argument in arguments(params) {
+    for argument in arguments(cwd, paths) {
         let root = project_phase::package_root(&argument, &sources);
         if !roots.contains(&root) {
             roots.push(root);
@@ -265,25 +265,21 @@ fn roots(params: &Params<'_>, opts: &Opts) -> Vec<PathBuf> {
     roots
 }
 
-fn source_roots(params: &Params<'_>, opts: &Opts) -> Vec<PathBuf> {
+fn source_roots(cwd: &Path, opts: &Opts) -> Vec<PathBuf> {
     opts.source_roots
         .iter()
         .map(|root| {
-            let path = params.cwd.join(root);
+            let path = cwd.join(root);
             fs::canonicalize(&path).unwrap_or(path)
         })
         .collect()
 }
 
-fn arguments(params: &Params<'_>) -> Vec<PathBuf> {
-    if params.arguments.is_empty() {
-        return vec![params.cwd.to_path_buf()];
+fn arguments(cwd: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
+    if paths.is_empty() {
+        return vec![cwd.to_path_buf()];
     }
-    params
-        .arguments
-        .iter()
-        .map(|argument| params.cwd.join(argument))
-        .collect()
+    paths.iter().map(|argument| cwd.join(argument)).collect()
 }
 
 /// The files with the module name Pylint gives each: relative to the root
@@ -295,10 +291,10 @@ fn units(
     opts: &Opts,
     enabled: &[BTreeSet<String>],
 ) -> Vec<Unit> {
-    let roots = roots(params, opts);
-    let sources = source_roots(params, opts);
+    let roots = roots(params.cwd, params.arguments, opts);
+    let sources = source_roots(params.cwd, opts);
     let cwd = fs::canonicalize(params.cwd).unwrap_or_else(|_| params.cwd.to_path_buf());
-    let arguments: Vec<(PathBuf, PathBuf, bool)> = arguments(params)
+    let arguments: Vec<(PathBuf, PathBuf, bool)> = arguments(params.cwd, params.arguments)
         .into_iter()
         .map(|argument| {
             let real = fs::canonicalize(&argument).unwrap_or(argument);

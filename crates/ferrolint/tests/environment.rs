@@ -70,3 +70,23 @@ fn a_base_from_a_missing_module_is_dropped_where_the_environment_is_known() {
         ["m.py:15:9:", "m.py:20:9:"]
     );
 }
+
+#[test]
+fn a_star_import_of_a_missing_module_binds_nothing_where_the_environment_is_known() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-plugin-undefined-variable", "plugin.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("m.py", "from missing import *\nprint(name)\n");
+    let reports = |venv: Option<&std::path::Path>| {
+        project
+            .run_in(&["--no-cache"], venv)
+            .finding_lines()
+            .iter()
+            .any(|line| line.contains("E0602"))
+    };
+    // Without an environment the module may exist and bind `name`.
+    assert!(!reports(None));
+    let venv = venv();
+    assert!(reports(Some(&venv.join("env"))));
+}
