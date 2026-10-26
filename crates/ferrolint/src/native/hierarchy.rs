@@ -216,7 +216,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
             Class::Local(def) => bases(def)
                 .iter()
                 .map(|base| {
-                    if self.dropped(base) {
+                    if self.dropped(base) || self.lost(base) {
                         return Entry::Empty;
                     }
                     // `Base[T]` derives from `Base`.
@@ -635,6 +635,18 @@ mod tests {
                 &["R0903"]
             ),
             "5:R0903:Too few public methods (0/2)\n8:R0903:Too few public methods (0/2)\n11:R0903:Too few public methods (0/2)"
+        );
+    }
+
+    #[test]
+    fn an_undefined_base_hides_no_attribute() {
+        let main = "class S(Gone):\n    def __init__(self):\n        self.a = 1\n\n    def run(self):\n        self.b = 2\n";
+        assert_eq!(
+            run(
+                &[("pkg/__init__.py", ""), ("pkg/main.py", main)],
+                &["W0201"]
+            ),
+            "6:W0201:Attribute 'b' defined outside __init__"
         );
     }
 }

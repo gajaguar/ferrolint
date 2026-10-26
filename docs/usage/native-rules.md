@@ -686,6 +686,9 @@ Known divergences:
   something else also binds (`except ImportError: X = object`) stays unknown.
   A name bound once to `make()`, a plain function of the file whose every
   `return` names one class, is that class (a mixin factory).
+  A name that nothing binds and no star import can bring (every star reads a
+  missing module) is left out the same way, and one a star module binds to an
+  empty class (`Structure = ctypes.Structure`) adds nothing.
 * `W0201` is missed where Pylint infers a base here unknown and the class has
   an unknown MRO: a base that is a call into another module
   (`getTableClass("glyf")` yields `DefaultTable` as well as what astroid cannot

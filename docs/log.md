@@ -14,6 +14,10 @@
 
 ## 2026-10-23
 
+* **native-rules.md**: the ancestors of a class leave out a name nothing binds
+  and no star import can bring, and read a star alias of an empty class
+  (`Structure = ctypes.Structure`) as adding nothing, for every rule.
+
 * **native-rules.md**: `R0903` leaves out a base no star import can bring or a
   star module aliases to an empty class, and counts no method for a C class
   without public ones (`types.ModuleType`, `ast.AST`, `typing.ContextManager`).
