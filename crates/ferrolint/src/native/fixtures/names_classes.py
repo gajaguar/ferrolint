@@ -184,3 +184,13 @@ def build_wire():
     wire.dwKind = 2
     wire.size = 3
     return wire
+
+
+class Generic1(typing.Generic[typing.TypeVar("_Generic1")]):
+    def feed(self, data, SEP=None):
+        return data
+
+
+class Narrow1(Generic1[int]):
+    def feed(self, data, SEP=None):
+        return data

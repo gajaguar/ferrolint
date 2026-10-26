@@ -519,7 +519,7 @@ impl Project {
 
     /// Whether every `return` of the function `qualified` names
     /// (`pkg.module.func`) gives a class of the project that the function
-    /// imports or the module imports.
+    /// imports or the module imports, or the function defines itself.
     ///
     /// shortcut: the function must be defined in the module the name is
     /// given in, not re-exported; upgrade with the contract's module index.
@@ -548,7 +548,8 @@ impl Project {
         !returns.is_empty()
             && returns.iter().all(|r| {
                 matches!(r.value.as_deref(), Some(Expr::Name(n))
-                    if imports.get(n.id.as_str()).and_then(|q| q.last()).is_some_and(|q| self.class(q).is_some()))
+                    if imports.get(n.id.as_str()).and_then(|q| q.last()).is_some_and(|q| self.class(q).is_some())
+                        || func.body.iter().any(|s| matches!(s, Stmt::ClassDef(c) if c.name.as_str() == n.id.as_str())))
             })
     }
 }
