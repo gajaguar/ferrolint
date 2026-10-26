@@ -196,3 +196,14 @@ class Holder:
         for item in other.full:
             pass
         return item
+
+
+import sys
+
+
+def over_live_containers():
+    for path in sys.path:
+        pass
+    for importer in enumerate(sys.meta_path):
+        pass
+    return path, importer
