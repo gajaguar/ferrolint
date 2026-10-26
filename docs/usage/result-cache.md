@@ -19,7 +19,10 @@ A run keeps its results in `.ferrolint-cache/` in the working directory;
   linter build (its version and executable). Inside, each plugin's
   diagnostics are stored under the SHA-256 of the plugin binary, and
   outputs of plugins no longer configured are dropped when the entry is
-  rewritten.
+  rewritten. It also records a stamp of each directory listed and file read
+  from another module while the native rules resolved an import (`E1120` of a
+  function of another module, say); the entry replays only while every stamp
+  still holds.
 * A file whose entry holds every plugin it needs replays without being
   parsed. Otherwise the run parses it, runs only the plugins the entry
   lacks and rewrites the entry. Changing one plugin reruns that plugin

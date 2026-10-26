@@ -1024,6 +1024,31 @@ fn ac_25_key_part_change_invalidates() {
 }
 
 #[test]
+fn ac_25_an_edited_imported_module_never_replays_stale_findings() {
+    let project = Project::new();
+    project
+        .write(
+            "base.py",
+            "class Base:\n    def __init__(self, a):\n        pass\n",
+        )
+        .write("use.py", "from base import Base\n\nBase(1, 2)\n");
+    let cold = |project: &Project| project.run(&["--no-cache"]).stdout;
+    let first = project.run(&["--stats"]);
+    assert!(first.stdout.contains("E1121"), "{first:?}");
+    let warm = project.run(&["--stats"]);
+    assert_eq!(stats(&warm)["cached"], 2, "{warm:?}");
+
+    // `use.py` is unchanged, but what it calls is not.
+    project.write(
+        "base.py",
+        "class Base:\n    def __init__(self, a, b):\n        pass\n",
+    );
+    let run = project.run(&["--stats"]);
+    assert!(!run.stdout.contains("E1121"), "{run:?}");
+    assert_eq!(run.stdout, cold(&project));
+}
+
+#[test]
 fn ac_25_adding_or_removing_a_plugin_never_replays_stale_findings() {
     let project = output_project();
     project.write("e.py", "try:\n    pass\nexcept:\n    pass\n");

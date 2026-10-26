@@ -15,7 +15,7 @@ use crate::engine::hex;
 use crate::suppress::Span;
 
 /// Bumped when an entry's layout or meaning changes.
-const LAYOUT: &str = "v2";
+const LAYOUT: &str = "v3";
 
 /// What a file's entry stores: everything a replay needs without parsing.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -29,6 +29,9 @@ pub struct Entry {
     pub plugins: BTreeMap<String, Vec<Diagnostic>>,
     /// The file does not parse, so no plugin runs on it.
     pub unparsable: bool,
+    /// Each path (a directory or a file) the native rules read to resolve an import, and what
+    /// it looked like; the entry replays only while every stamp holds.
+    pub stamps: Vec<(String, String)>,
 }
 
 /// What the project phase stored for a run: its diagnostics by file, and the
