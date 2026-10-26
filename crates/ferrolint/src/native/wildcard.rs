@@ -265,9 +265,24 @@ mod tests {
             user("__all__ = ['z']\n__all__ += a.__all__"),
             w("x, y and w")
         );
-        // not readable (a call, a list plus a tuple): silent
-        assert_eq!(user("__all__ = a.__all__ + ('z',)"), "");
-        assert_eq!(user("__all__ = list(a.__all__)"), "");
+        // `list` and `tuple` of one, a name bound before, the last of its bindings
+        assert_eq!(user("__all__ = list(a.__all__)"), w("z and w"));
+        assert_eq!(user("__all__ = tuple(a.__all__)"), w("z and w"));
+        assert_eq!(user("N = ['x']\nN = ['y']\n__all__ = N"), w("x, z and w"));
+        assert_eq!(user("__all__ = N\nN = ['y']"), w("x, y, z and w"));
+        assert_eq!(user("N = 'x'\n__all__ = [N]"), w("y, z and w"));
+        // not a list or a tuple in astroid: no name is used
+        let all = w("x, y, z and w");
+        assert_eq!(user("__all__ = sorted(a.__all__)"), all);
+        assert_eq!(user("__all__ = a.__all__ + ('z',)"), all);
+        assert_eq!(user("__all__ = {'x'}"), all);
+        assert_eq!(user("__all__ = [n for n in a.__all__]"), all);
+        assert_eq!(user("__all__ = None"), all);
+        // a call or a name it cannot read, a name bound twice in a branch: silent
+        assert_eq!(user("__all__ = f(a.__all__)"), "");
+        assert_eq!(user("__all__ = list({'x'})"), "");
+        assert_eq!(user("N = ['x']\nif f:\n    N = []\n__all__ = N"), "");
+        assert_eq!(user("def list(x): ...\n__all__ = list(a.__all__)"), "");
     }
 
     #[test]

@@ -307,9 +307,14 @@ Imports:
   ignores the `__all__` of the imported module, skips an `__init__.py`
   and a star in a function or class, and counts the names of the file's own
   first `__all__` as read: a list or tuple of strings, `+` of two of one
-  kind, `*seq` inside one, and `m.__all__` of a module it reads (a `from m
-  import __all__` too); when that binding is anything else (a call) it
-  reports nothing; a name that a function, class or comprehension
+  kind, `*seq` inside one, `list(...)` and `tuple(...)` of one, a name
+  assigned before (its last assignment, not rebound in a branch or by an
+  import), and `m.__all__` of a module it reads (a `from m import __all__`
+  too). A value astroid infers to no list or tuple lists no name, so every
+  name is reported: `sorted(...)`, a set, a comprehension, `None`, a list
+  plus a tuple, a name assigned only later. When the value is a call or a
+  name it cannot read, a slice or a product, it reports nothing; a name that
+  a function, class or comprehension
   binds itself (a variable, a parameter) and reads there is not a use of the
   wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
