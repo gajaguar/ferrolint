@@ -173,13 +173,19 @@ pub struct ClassRef {
 }
 
 impl Project {
+    /// The name Pylint gives the module at `path`: from the run's root, so a
+    /// directory without `__init__.py` above it is part of the name.
+    pub fn named(path: &Path, module: &str, run: &[PathBuf]) -> String {
+        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        module_name(&real, run, true).unwrap_or_else(|| module.to_owned())
+    }
+
     pub fn new(path: &Path, module: &str, run: &[PathBuf]) -> Self {
         let is_package = path.file_stem().is_some_and(|stem| stem == "__init__");
         // Pylint names the module from the run's root, so `.x` is found there
         // even when a directory above has no `__init__.py`.
-        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        let named = module_name(&real, run, true);
-        let module = named.as_deref().unwrap_or(module);
+        let named = Self::named(path, module, run);
+        let module = named.as_str();
         let package = if is_package {
             module.to_owned()
         } else {
@@ -618,16 +624,16 @@ impl Project {
         if let Some((file, package)) = self.linted.get(name) {
             return Some(Spec::source(file.clone(), *package));
         }
+        // The running interpreter's `__main__` is in `sys.modules`, so astroid always finds it.
+        if name == "__main__" {
+            return Some(Spec::of(Kind::Made));
+        }
         // astroid answers for `os.path` with the platform's module.
         if name == "os.path" {
             return self.find("posixpath");
         }
         let Some((parent, last)) = name.rsplit_once('.') else {
             return self.search(&self.roots, name, name);
-        // The running interpreter's `__main__` is in `sys.modules`, so astroid always finds it.
-        if name == "__main__" {
-            return Some(Spec::of(Kind::Made));
-        }
         };
         let parent = self.spec(parent);
         let found = parent
