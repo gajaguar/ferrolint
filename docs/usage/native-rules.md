@@ -304,8 +304,11 @@ Imports:
   that binds a name lists it: a later star leaves out a name an earlier
   star or `from m import name` already bound. Like Pylint it
   ignores the `__all__` of the imported module, skips an `__init__.py`
-  and a star in a function or class, and counts the names in the file's own
-  literal `__all__` as read; a name that a function, class or comprehension
+  and a star in a function or class, and counts the names of the file's own
+  first `__all__` as read: a list or tuple of strings, `+` of two of one
+  kind, `*seq` inside one, and `m.__all__` of a module it reads (a `from m
+  import __all__` too); when that binding is anything else (a call) it
+  reports nothing; a name that a function, class or comprehension
   binds itself (a variable, a parameter) and reads there is not a use of the
   wildcard's name. Divergences: a module is found as base
   classes are (the directories above the file, and the standard library
@@ -1537,8 +1540,6 @@ Known divergences of the project rules (`E0401`, `E0402`, `E0611`, `R0401`,
 * `R0902` counts an attribute that another class assigns through an inferred
   instance (`self.worker_fixup.worker = w`, a property returning the class);
   ferrolint counts the `self.x` of the class itself.
-* `W0614` takes `__all__ = mod.__all__` of the file as the list of the names
-  it exports; ferrolint reads only a literal list or tuple.
 * A file system that ignores case (macOS, Windows) opens `TTFont.py` as
   `ttFont.py`, and astroid tests `isfile`: a submodule or compiled module is
   found by any spelling there, as in Pylint, so `from pkg import TTFont` is an
