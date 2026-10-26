@@ -838,7 +838,7 @@ mod tests {
                 ("pkg/__init__.py", ""),
                 (
                     "pkg/a.py",
-                    "import os\nimport nothing\nfrom pkg import b, c\nfrom os import sep, nope\nfrom ... import far\nfrom . import b\n",
+                    "import os\nimport nothing\nfrom pkg import b, c\nfrom os import sep, nope\nfrom ... import far\nfrom . import b\nimport __main__\nfrom __main__ import anything\n",
                 ),
                 ("pkg/b.py", "VALUE = 1\n"),
             ],

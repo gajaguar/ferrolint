@@ -624,6 +624,10 @@ impl Project {
         }
         let Some((parent, last)) = name.rsplit_once('.') else {
             return self.search(&self.roots, name, name);
+        // The running interpreter's `__main__` is in `sys.modules`, so astroid always finds it.
+        if name == "__main__" {
+            return Some(Spec::of(Kind::Made));
+        }
         };
         let parent = self.spec(parent);
         let found = parent
