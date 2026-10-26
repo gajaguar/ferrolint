@@ -295,7 +295,7 @@ impl Project {
         if let Some(found) = self.modules.borrow().get(name) {
             return found.clone();
         }
-        let module = self.read(name).map(Rc::new);
+        let module = self.read(name);
         self.modules
             .borrow_mut()
             .insert(name.to_owned(), module.clone());
@@ -328,34 +328,14 @@ impl Project {
         })
     }
 
-    fn read(&self, name: &str) -> Option<Module> {
+    fn read(&self, name: &str) -> Option<Rc<Module>> {
         let (file, is_package) = self.locate(name)?;
         // astroid prefers the compiled `m.*.so` to `m.py` and cannot read it
         if !self.strict && !is_package && has_extension(&file) {
             return None;
         }
         self.touched.borrow_mut().insert(file.clone());
-        let source = std::fs::read_to_string(file).ok()?;
-        let parsed = crate::checks::parse(&source, ParseOptions::from(PySourceType::Python));
-        if !parsed.errors().is_empty() {
-            return None;
-        }
-        let package = if is_package {
-            name.to_owned()
-        } else {
-            name.rsplit_once('.')
-                .map_or(String::new(), |(p, _)| p.to_owned())
-        };
-        let (mut imports, mut stars) = (HashMap::new(), Vec::new());
-        collect_imports(&parsed.syntax().body, &package, &mut imports, &mut stars);
-        Some(Module {
-            name: name.to_owned(),
-            lines: LineIndex::new(&source),
-            parsed,
-            package,
-            imports,
-            stars,
-        })
+        read_module(&file, name, is_package)
     }
 
     /// What `module.name` stands for when the module binds `name` by `name = X`, also under `if`
@@ -1302,6 +1282,65 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
         }
     }
     found
+}
+
+/// Parsed modules by file and name, once per worker thread: the next file
+/// linted on the thread reads the same modules again. An entry is valid while
+/// the file keeps its size and date.
+type Kept = HashMap<(PathBuf, String), (String, Option<Rc<Module>>)>;
+
+thread_local! {
+    static PARSED: RefCell<Kept> = RefCell::new(HashMap::new());
+}
+
+/// Most modules a thread keeps; past it the thread starts over.
+const KEPT: usize = 512;
+
+fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> {
+    let stamp = stamp_of(file);
+    let key = (file.to_path_buf(), name.to_owned());
+    let hit = PARSED.with(|kept| {
+        kept.borrow()
+            .get(&key)
+            .filter(|(known, _)| *known == stamp)
+            .map(|(_, module)| module.clone())
+    });
+    if let Some(module) = hit {
+        return module;
+    }
+    let module = parse_module(file, name, is_package).map(Rc::new);
+    PARSED.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.len() >= KEPT {
+            kept.clear();
+        }
+        kept.insert(key, (stamp, module.clone()));
+    });
+    module
+}
+
+fn parse_module(file: &Path, name: &str, is_package: bool) -> Option<Module> {
+    let source = std::fs::read_to_string(file).ok()?;
+    let parsed = crate::checks::parse(&source, ParseOptions::from(PySourceType::Python));
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let package = if is_package {
+        name.to_owned()
+    } else {
+        name.rsplit_once('.')
+            .map_or(String::new(), |(p, _)| p.to_owned())
+    };
+    let (mut imports, mut stars) = (HashMap::new(), Vec::new());
+    collect_imports(&parsed.syntax().body, &package, &mut imports, &mut stars);
+    Some(Module {
+        name: name.to_owned(),
+        lines: LineIndex::new(&source),
+        parsed,
+        package,
+        imports,
+        stars,
+    })
 }
 
 /// Whether the last component of `path` is spelled as its directory lists
