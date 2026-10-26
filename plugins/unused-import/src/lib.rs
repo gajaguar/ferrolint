@@ -6,7 +6,8 @@
 //! the check is by name, not by binding, so `import json; json = 1;
 //! print(json)` uses the import. On top of name reads it counts `del`,
 //! the target of an augmented assignment, names listed in a module's
-//! `__all__`. A read in a class body
+//! `__all__` (as the host reads it, `Context::all_names`; the literal lists
+//! of the file where it cannot). A read in a class body
 //! (or in the class's own decorators) of a name the class also binds is the
 //! class's, not the import's, as in Pylint. It leaves alone what Pylint
 //! leaves alone with its default options: `__future__` imports, imports
@@ -36,6 +37,8 @@ struct UnusedImport {
     type_names: HashSet<String>,
     /// The star imports whose names the host told, by alias node.
     stars: Vec<(u32, Vec<String>)>,
+    /// The names of the literal `__all__` lists, for a host that cannot read it.
+    listed: Vec<String>,
 }
 
 /// An import alias that binds a name.
@@ -100,15 +103,17 @@ impl Checker for UnusedImport {
                 }
             }
             NodeKind::Assign if cx.scope(node).kind == ScopeKind::Module => {
-                for name in dunder_all(node, cx) {
-                    self.used.insert((0, name));
-                }
+                self.listed.extend(dunder_all(node, cx));
             }
             _ => {}
         }
     }
 
     fn end_file(&mut self, cx: &mut Context<'_>) {
+        // The host reads `__all__` as Pylint does; where it cannot, the literal lists stand.
+        let literal = std::mem::take(&mut self.listed);
+        let listed = cx.all_names().unwrap_or(literal);
+        self.used.extend(listed.into_iter().map(|name| (0, name)));
         let in_init = cx.path() == "__init__.py" || cx.path().ends_with("/__init__.py");
         self.type_names.extend(type_comment_names(cx));
         let mut checked = HashSet::new();

@@ -78,7 +78,8 @@ export_checker!(NoPrint);
   node binds, or none when the host cannot tell. `plugins/undefined-variable`
   uses it. `overridden_parameters(method)` gives the parameter names of the
   method that a `FunctionDef` overrides, or none; `plugins/redefined-builtin`
-  uses it.
+  uses it. `all_names()` gives the names the module's `__all__` makes Pylint
+  take for used, or none; `plugins/unused-import` uses it.
 * A `Comment` also has `own_line`, true when only whitespace precedes it on
   its line, so a plugin can tell a comment-only line from a trailing comment.
 * A `Diagnostic` takes its rule's severity unless it sets one, and may

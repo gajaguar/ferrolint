@@ -31,9 +31,11 @@ interface a rule would ask it through is in the
 * **The value a name stands for.** `C0103` (a constant that comes from a
   call or an attribute chain, such as `ctypes.c_size_t`), `W0632` (an
   iterable that is a function result or another module's dict), `W0143` and
-  `W0125` (an operand of a comparison or a condition), `W0614` (an `__all__`
-  that is `list(m.__all__)` or a name: ferrolint reports nothing for the
-  file).
+  `W0125` (an operand of a comparison or a condition), `W0614` and `W0611` (an
+  `__all__` that is a call of a function of the project, a slice, a product,
+  or a name that a branch rebinds, such as `__all__ = helper()`: ferrolint
+  reports nothing for the file where Pylint reads the list the call
+  returns).
 * **A class that is not a plain class statement.** `R0903` (a base that a
   call returns), `W0223` (methods of a C class such as `io.IOBase`), `R0901`
   (an ancestor list that doubles through a C class) and `W0237` or `W0221`

@@ -353,6 +353,15 @@ interface modules {
     /// packages.
     @since(version = 0.4.2)
     overridden-parameters: func(method: u32) -> option<list<string>>;
+
+    /// The names that the file's module-level `__all__` makes Pylint take
+    /// for used: those of its first binding, when that is a list or a tuple
+    /// of strings, also written `a + b`, `[*a]`, `list(a)`, as a name bound
+    /// before, or as `m.__all__` of a module of the project. Empty when the
+    /// file has none, or its value is not a list or a tuple for astroid
+    /// (`sorted(...)`, a set). None when the host cannot tell.
+    @since(version = 0.4.2)
+    all-names: func() -> option<list<string>>;
 }
 
 /// The plugin's exports.
