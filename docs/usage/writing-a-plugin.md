@@ -21,7 +21,7 @@ crate-type = ["cdylib"]
 
 [dependencies.ferrolint-plugin-sdk]
 path = "../../crates/ferrolint-plugin-sdk"
-version = "=0.4.2"
+version = "=0.4.3"
 ```
 
 Pin the SDK exactly: its version is the version of the
@@ -71,8 +71,8 @@ export_checker!(NoPrint);
   option set only for this plugin, in the `options` table of its
   `[[plugins]]` entry. `plugins/test-markers` uses both: it reports the
   comments that hold a marker its `markers` option names.
-* A plugin built with SDK 0.4.2 needs a host of contract 0.4.2. That host
-  still loads plugins built with SDK 0.4.0 or 0.4.1, but refuses 0.3.x or
+* A plugin built with SDK 0.4.3 needs a host of contract 0.4.3. That host
+  still loads plugins built with SDK 0.4.0 to 0.4.2, but refuses 0.3.x or
   older: rebuild those.
 * `star_names(alias)` gives the names the `from m import *` at an alias
   node binds, or none when the host cannot tell. `plugins/undefined-variable`

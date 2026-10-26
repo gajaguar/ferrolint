@@ -39,7 +39,7 @@ SDK.
   * `modules.overridden-parameters` (contract 0.4.2) returns the parameter
     names, position-only ones left out, of the method that a method
     overrides, or none when the host cannot tell.
-  * `modules.all-names` (contract 0.4.2) returns the names the file's
+  * `modules.all-names` (contract 0.4.3) returns the names the file's
     module-level `__all__` makes Pylint take for used, empty when it lists
     none, or none when the host cannot tell.
   * `settings.plugin-options` returns the plugin's own options, the
@@ -70,9 +70,9 @@ in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
 nothing of them.
 
-Contract 0.4.2 adds `modules.overridden-parameters` and `modules.all-names`
-to the `modules` interface: it only adds functions, so a host of 0.4.2 still
-loads a plugin built against 0.4.1.
+Contract 0.4.3 adds `modules.all-names` to the `modules` interface and 0.4.2
+added `modules.overridden-parameters`: each only adds a function, so a host of
+0.4.3 still loads a plugin built against 0.4.2 or 0.4.1.
 
 Contract 0.4.1 adds the `modules` interface with `star-names`: the names the
 `from m import *` at an alias node binds, when the host can tell (see
