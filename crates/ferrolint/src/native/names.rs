@@ -1139,7 +1139,10 @@ impl<'a> Walk<'a, '_> {
             Expr::Name(name) => self.name_val(name, value, depth),
             Expr::Attribute(_) => {
                 let qualified = self.qualified(value);
-                if typing_class(qualified.as_deref()) || self.is_class(qualified.as_deref()) {
+                if typing_class(qualified.as_deref())
+                    || self.is_class(qualified.as_deref())
+                    || self.env.class_of(value).is_some()
+                {
                     Val::Class
                 } else if qualified.is_some_and(|q| HOST_CONSTS.contains(&q.as_str())) {
                     Val::Const
@@ -1402,7 +1405,15 @@ impl<'a> Walk<'a, '_> {
         };
         let args: Vec<&Expr> = call.arguments.args.iter().collect();
         match callee.as_str() {
-            "type" if matches!(args.len(), 1 | 3) => Val::Class,
+            "type" if args.len() == 3 => Val::Class,
+            // astroid cannot tell the type of a call it cannot infer.
+            "type"
+                if args.len() == 1
+                    && (!args[0].is_call_expr()
+                        || self.val(args[0], depth + 1) != Val::Unknown) =>
+            {
+                Val::Class
+            }
             "int" | "str" | "bool" | "len" if !args.is_empty() && all(&args) => Val::Const,
             // astroid builds a `str` constant whatever the argument is, and an
             // instance for the other builtin types when it cannot fold it.
@@ -1662,6 +1673,11 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         for base in bases(class) {
+            // `Base[int]` is `Base` to astroid.
+            let base = match base {
+                Expr::Subscript(s) => &*s.value,
+                other => other,
+            };
             if let Some(local) = self.env.class_of(base) {
                 out.push(Anc::Local(local));
                 self.local_ancestors(local, out, depth + 1);
@@ -2411,6 +2427,22 @@ mod tests {
         let found = lint_at(source, &package.join("child.py"), "pkg.child");
         let lines: Vec<_> = found.iter().map(|(line, _)| *line).collect();
         assert_eq!(lines, [12], "{found:?}");
+    }
+
+    #[test]
+    fn a_class_a_function_of_the_project_defines_and_returns() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("maker.py"),
+            "def make(base):\n    class Made(base):\n        pass\n\n    return Made\n",
+        )
+        .unwrap();
+        let source = "from pkg.maker import make\n\n\ndef build(base):\n    Klass = make(base)\n    return Klass\n";
+        let found = lint_at(source, &package.join("child.py"), "pkg.child");
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]
