@@ -548,7 +548,10 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   `src/class_methods.rs` (the exceptions, `dict`, `logging.Handler`,
   `threading.Thread`, `json.JSONEncoder`, `argparse.Action`, ...) are known
   with every method of theirs and of their ancestors, from a table that
-  `tools/class-methods.py` dumps from Python 3.14 through astroid; a class
+  `tools/class-methods.py` dumps from Python 3.14 through astroid, whatever
+  the interpreter of the linted project is (Python 3.15 differs in a few
+  private helpers, `str.maketrans`, `logging.Filter.__repr__` and the
+  `pathlib` `__fspath__` and `is_reserved`); a class
   missing from it counts as having no methods. Because the answer depends
   on other files, a cached result is stale until the file changes or the
   cache is cleared with `--no-cache`.
