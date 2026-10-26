@@ -2,6 +2,8 @@
 
 ## 2026-10-26
 
+* **Result cache, result-cache.md**: a file's entry records what the native
+  rules read from other modules and replays only while it is unchanged.
 * **Native rules, native-rules.md**: `E0202` spares a method with a
   decorator that subclasses `property` or comes from a module that is
   nowhere, and names the module as the run's root does. `E0401` finds

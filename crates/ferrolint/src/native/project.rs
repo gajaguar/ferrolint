@@ -363,7 +363,7 @@ impl Project {
         if !self.strict && !is_package && has_extension(&file) {
             return None;
         }
-        self.touched.borrow_mut().insert(file.clone());
+        self.touch(file.clone());
         read_module(&file, name, is_package)
     }
 
@@ -571,7 +571,7 @@ impl Project {
         if let Some(found) = self.listings.borrow().get(dir) {
             return found.clone();
         }
-        self.touched.borrow_mut().insert(dir.to_path_buf());
+        self.touch(dir.to_path_buf());
         let mut listing = Listing::default();
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -799,6 +799,11 @@ impl Project {
     }
 
     /// The directories listed and the files read so far, for a cache to stamp.
+    fn touch(&self, path: PathBuf) {
+        READS.with(|reads| reads.borrow_mut().insert(path.clone()));
+        self.touched.borrow_mut().insert(path);
+    }
+
     pub fn touched(&self) -> Vec<PathBuf> {
         self.touched.borrow().iter().cloned().collect()
     }
@@ -1433,7 +1438,19 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
 type Kept = HashMap<(PathBuf, String), (String, Option<Rc<Module>>)>;
 
 thread_local! {
+    /// What every `Project` of the thread read since [`take_reads`], so a file's cached
+    /// result can be replayed only while those paths are unchanged.
+    static READS: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
     static PARSED: RefCell<Kept> = RefCell::new(HashMap::new());
+}
+
+/// The files and directories the projects of this thread read since the last call.
+pub fn take_reads() -> Vec<PathBuf> {
+    READS.with(|reads| {
+        std::mem::take(&mut *reads.borrow_mut())
+            .into_iter()
+            .collect()
+    })
 }
 
 /// Most modules a thread keeps; past it the thread starts over.
