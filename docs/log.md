@@ -10,7 +10,7 @@
 * **Native rules, native-rules.md**: `W0614` reads `list(...)`, `tuple(...)`
   and a name for `__all__`, and takes no name for used where astroid infers
   no list or tuple (`sorted(...)`, a set, a list plus a tuple), as Pylint
-  does. **Plugin star imports, plugins.md**: Contract 0.4.2 adds
+  does. **Plugin star imports, plugins.md**: Contract 0.4.3 adds
   `modules.all-names`; `unused-import` (`W0611`) reads `__all__` through it.
   Updated `requirements/plugin-contract.md`, `usage/writing-a-plugin.md` and
   `usage/inference-dependent-rules.md`.

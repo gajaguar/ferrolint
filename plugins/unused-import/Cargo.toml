@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 # Pinned exactly: the SDK's version is the contract version this plugin
 # implements.
-ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.4.2" }
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=0.4.3" }
 
 [lints]
 workspace = true
