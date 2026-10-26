@@ -3,7 +3,7 @@ members = ["crates/*", "plugins/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.28.0"
+version = "0.28.1"
 edition = "2024"
 description = "Extensible Python linter in Rust that runs custom rules as WASM plugins next to Ruff"
 license = "MIT"
