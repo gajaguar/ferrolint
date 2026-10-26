@@ -445,34 +445,33 @@ pub struct FunctionRef {
 
 impl FunctionRef {
     pub fn func(&self) -> Option<&StmtFunctionDef> {
-        self.module
-            .parsed
-            .syntax()
-            .body
-            .iter()
-            .find_map(|stmt| match stmt {
-                Stmt::FunctionDef(f) if f.name.as_str() == self.name => Some(f),
-                _ => None,
-            })
+        find_function(&self.module.parsed.syntax().body, &self.name)
     }
 }
 
 impl Project {
-    /// The function `qualified` (`pkg.module.func`) names, when its module defines it once, at
-    /// the top level and undecorated, and binds the name nowhere else.
-    // shortcut: the module that defines it, not one that re-exports it; upgrade with `class_at`'s walk.
+    /// The function `qualified` (`pkg.module.func`) names, when its module defines it once,
+    /// undecorated, or imports it once from a module that does, and binds the name nowhere else.
     pub fn function(&self, qualified: &str) -> Option<FunctionRef> {
+        self.function_at(qualified, 0)
+    }
+
+    fn function_at(&self, qualified: &str, depth: u8) -> Option<FunctionRef> {
         let (module, name) = qualified.rsplit_once('.')?;
         let loaded = self.load(module)?;
         let body = &loaded.parsed.syntax().body;
         let once = locals(body).iter().filter(|(n, _)| n == name).count() == 1;
-        let plain = body.iter().any(|stmt| {
-            matches!(stmt, Stmt::FunctionDef(f) if f.name.as_str() == name && f.decorator_list.is_empty())
-        });
-        (once && plain && !loaded.stub && loaded.stars.is_empty()).then(|| FunctionRef {
-            module: loaded,
-            name: name.to_owned(),
-        })
+        if !once || loaded.stub || !loaded.stars.is_empty() {
+            return None;
+        }
+        if find_function(body, name).is_some_and(|f| f.decorator_list.is_empty()) {
+            return Some(FunctionRef {
+                module: loaded,
+                name: name.to_owned(),
+            });
+        }
+        let origin = loaded.imports.get(name).and_then(|o| o.last())?;
+        (depth < 8).then(|| self.function_at(origin, depth + 1))?
     }
 
     /// Whether the function `qualified` (`pkg.module.func`) is annotated
@@ -1566,6 +1565,17 @@ fn alias(loaded: &Module, module: &str, name: &str) -> Option<String> {
 }
 
 /// The last class `name` of the top level, also under `if` and `try`.
+/// The function `name` a module body defines at the top level or inside an `if` or `try`.
+fn find_function<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtFunctionDef> {
+    body.iter().find_map(|stmt| match stmt {
+        Stmt::FunctionDef(f) if f.name.as_str() == name => Some(f),
+        Stmt::If(_) | Stmt::Try(_) => blocks(stmt)
+            .into_iter()
+            .find_map(|block| find_function(block, name)),
+        _ => None,
+    })
+}
+
 fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
     let mut found = None;
     for stmt in body {

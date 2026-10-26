@@ -13,7 +13,8 @@
 //! enclosing class, or a class of this file with an `__init__` (`W1114` and
 //! `W1117`, and the arity rules, which also drop a class whose bases are not
 //! all known), or an undecorated function another module of the project
-//! defines once, imported by a name bound once; a `self` is a `TestCase` when a base is named `...TestCase`
+//! defines once (under an `if` or `try` too) or imports once from one that
+//! does, imported by a name bound once; a `self` is a `TestCase` when a base is named `...TestCase`
 //! (`W1503`). `E1111` and `E1128` take the same callees but a constructor,
 //! and not the builtin methods (`lst.sort()`). Upgrade with a call inference.
 
@@ -1361,18 +1362,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let package = dir.path().join("pkg");
         std::fs::create_dir(&package).unwrap();
-        std::fs::write(package.join("__init__.py"), "").unwrap();
         std::fs::write(
-            package.join("funcs.py"),
-            "import functools\n\n\ndef helper(x):\n    return x\n\n\ndef pair(a, b):\n    return a\n\n\n@functools.cache\ndef wrapped(x):\n    return x\n\n\ndef twice(x):\n    return x\n\n\ndef twice(x, y):\n    return x\n\n\nif functools:\n    def cond(x):\n        return x\n",
+            package.join("__init__.py"),
+            "from .funcs import pair as relayed\n",
         )
         .unwrap();
-        let source = "import pkg.funcs\nimport pkg.funcs as alias\nfrom pkg import funcs\nfrom pkg.funcs import cond, helper, pair, twice, wrapped\nfrom pkg.funcs import helper as h2\n\nfuncs.helper(1, 2)\nalias.helper()\nhelper(1, 2)\nh2(y=1)\npair(b, a)\nwrapped(1, 2)\ntwice(1)\ncond(1, 2)\nfuncs.helper(1)\n\n\ndef rebound(helper):\n    return helper(1, 2)\n";
+        std::fs::write(
+            package.join("funcs.py"),
+            "import functools\n\n\ndef helper(x):\n    return x\n\n\ndef pair(a, b):\n    return a\n\n\n@functools.cache\ndef wrapped(x):\n    return x\n\n\ndef twice(x):\n    return x\n\n\ndef twice(x, y):\n    return x\n\n\nif functools:\n    def cond(x):\n        return x\n\n\ntry:\n    def guarded(x):\n        return x\nexcept ImportError:\n    pass\n",
+        )
+        .unwrap();
+        let source = "import pkg.funcs\nimport pkg.funcs as alias\nfrom pkg import funcs, relayed\nfrom pkg.funcs import cond, guarded, helper, pair, twice, wrapped\nfrom pkg.funcs import helper as h2\n\nfuncs.helper(1, 2)\nalias.helper()\nhelper(1, 2)\nh2(y=1)\npair(b, a)\nwrapped(1, 2)\ntwice(1)\ncond(1, 2)\nfuncs.helper(1)\nrelayed(1)\nguarded()\n\n\ndef rebound(helper):\n    return helper(1, 2)\n";
         let ids = ["E1120", "E1121", "E1123", "W1114"];
         let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &ids);
         assert_eq!(
             found,
-            "7:E1121:Too many positional arguments for function call\n8:E1120:No value for argument 'x' in function call\n9:E1121:Too many positional arguments for function call\n10:E1120:No value for argument 'x' in function call\n10:E1123:Unexpected keyword argument 'y' in function call\n11:W1114:Positional arguments appear to be out of order",
+            "7:E1121:Too many positional arguments for function call\n8:E1120:No value for argument 'x' in function call\n9:E1121:Too many positional arguments for function call\n10:E1120:No value for argument 'x' in function call\n10:E1123:Unexpected keyword argument 'y' in function call\n11:W1114:Positional arguments appear to be out of order\n14:E1121:Too many positional arguments for function call\n16:E1120:No value for argument 'b' in function call\n17:E1120:No value for argument 'x' in function call",
             "{found}"
         );
     }
