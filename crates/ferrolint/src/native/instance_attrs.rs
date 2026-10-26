@@ -1006,12 +1006,20 @@ impl<'a> Walk<'a, '_> {
             {
                 return true;
             }
-            if matches!(expr, Expr::Name(n) if n.id.as_str() == "property")
+            // `property` defines `__get__` and `__set__`, so a subclass does too.
+            if self.env.base_is(expr, &|name| name == "property")
                 || self
                     .env
                     .qualified(expr)
                     .is_some_and(|name| name == "functools.cached_property")
             {
+                return true;
+            }
+            // Pylint stops at a decorator it cannot infer: its module is missing.
+            if self.env.qualified(expr).is_some_and(|name| {
+                name.rsplit_once('.')
+                    .is_some_and(|(module, _)| self.hierarchy.project.is_missing(module))
+            }) {
                 return true;
             }
             let Some(found) = self.hierarchy.resolve(&Class::Local(class), expr) else {
