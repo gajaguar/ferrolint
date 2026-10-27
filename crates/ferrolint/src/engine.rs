@@ -596,8 +596,8 @@ impl Linter<'_> {
                 std::env::var("PYTHONPATH")
             );
             // A run where ty did not start must not reuse a run where it did.
-            // shortcut: a change in another module does not invalidate it, as
-            // with the rules above that read other files; use `--no-cache`.
+            // shortcut: ty's reads of other modules are not stamped, so a change
+            // in one does not invalidate a ty result; use `--no-cache`.
             #[cfg(feature = "ty")]
             let ty = setup.types.is_some().to_string();
             #[cfg(not(feature = "ty"))]

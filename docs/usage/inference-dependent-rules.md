@@ -106,6 +106,17 @@ A class that is not a plain class statement:
 * `E0701` 3: `except StatusAuthnFailed:` after a class of an installed
   package that is its ancestor.
 
+## What ty does not close
+
+A build with ty answers the operation rules (see [Rules answered by ty](ty-rules.md)),
+not these: `E1120`, `E1121`, `E1124`, `E0712`, `E0702` and `W0632`. On a
+Django project and on a set of installed packages ty's diagnostics for them
+covered none of the lines only Pylint reports, and added findings Pylint does
+not give: ty reports one diagnostic per member of a union or overload, and it
+trusts a declared signature or return type where Pylint reads the function.
+What these rules lack is the value: a task a decorator wraps, a
+`functools.partial`, a tuple of classes or a list a call returns.
+
 ## What does not wait for it
 
 * `R0401` differs in the cycle it names, not in whether there is one. Pylint
