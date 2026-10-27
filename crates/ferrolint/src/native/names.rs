@@ -271,8 +271,19 @@ fn predefined(kind: &str, name: &str) -> bool {
             let extra = if kind == "paramspec" { "P" } else { "Ts" };
             all_caps(rest) || (words(rest, extra) && !rest.ends_with("Type"))
         }
-        _ => !starts_t(rest) && !rest.starts_with("Type") && words(rest, ""),
+        _ => !starts_t(rest) && !rest.starts_with("Type") && alias_words(rest),
     }
+}
+
+/// `[A-Z]+[a-z0-9]+(?:[A-Z][a-z0-9]+)*`: only the first word may open with several capitals.
+fn alias_words(text: &str) -> bool {
+    static ALIAS: OnceLock<Regex> = OnceLock::new();
+    ALIAS
+        .get_or_init(|| {
+            Regex::new(r"^[A-Z]+[a-z0-9]+(?:[A-Z][a-z0-9]+)*$")
+                .unwrap_or_else(|_| unreachable!("a static regex"))
+        })
+        .is_match(text)
 }
 
 struct Matcher {
@@ -1068,8 +1079,6 @@ impl<'a> Walk<'a, '_> {
         )
     }
 
-    /// What the value of a binding is: `val`, and for a name, attribute or call that it
-    /// cannot follow, the value ty infers when the build has it.
     /// Whether the value that `parent` takes from `value` is a class: the value itself, or
     /// its element for a name in a tuple (`tasks, Task = self.tasks, self.Task`).
     fn assigned_class(&self, parent: Parent<'a>, value: Option<&Expr>) -> bool {
@@ -1088,6 +1097,8 @@ impl<'a> Walk<'a, '_> {
         self.val_at(assigner) == Val::Class
     }
 
+    /// What the value of a binding is: `val`, and for a name, attribute or call that it
+    /// cannot follow, the value ty infers when the build has it.
     fn val_at(&self, value: &Expr) -> Val {
         // astroid takes `A if c else B` for a class when both arms are classes.
         if let Expr::If(i) = value
@@ -1097,7 +1108,9 @@ impl<'a> Walk<'a, '_> {
             return Val::Class;
         }
         let val = self.val(value, 0);
-        if val != Val::Unknown
+        // A lower-case import is taken for a function (`from itertools import cycle`): ty knows.
+        let guessed = val == Val::Func && self.imported(value);
+        if (val != Val::Unknown && !guessed)
             || !matches!(value, Expr::Name(_) | Expr::Attribute(_) | Expr::Call(_))
             || self.rebound_import(value)
         {
@@ -1111,7 +1124,7 @@ impl<'a> Walk<'a, '_> {
             // Only a class: ty's function and literal are wider than Pylint's `Const` (an enum
             // member is a literal to ty and an instance to Pylint).
             Some(TyValue::Class(_)) => Val::Class,
-            _ => Val::Unknown,
+            _ => val,
         }
     }
 
@@ -1295,6 +1308,12 @@ impl<'a> Walk<'a, '_> {
     }
 
     /// Whether `qualified` names a class that the project defines, once.
+    /// Whether `value` is a name bound by `from m import name`.
+    fn imported(&self, value: &Expr) -> bool {
+        matches!(value, Expr::Name(name)
+            if self.env.binding(name).is_some_and(|b| b.kind == BindingKind::FromImport))
+    }
+
     /// Whether `value` names a class of the project that its own module binds again, as
     /// urllib3's `HTTPSConnection = DummyConnection` under `if not ssl`: astroid infers two
     /// values and names neither, though ty sees the class.
@@ -1467,7 +1486,8 @@ impl<'a> Walk<'a, '_> {
         };
         let args: Vec<&Expr> = call.arguments.args.iter().collect();
         match callee.as_str() {
-            "type" if args.len() == 3 => Val::Class,
+            // astroid builds the class only from a name it can fold to a string.
+            "type" if args.len() == 3 && self.const_kind(args[0], 0) == Some("str") => Val::Class,
             // astroid cannot tell the type of a call it cannot infer.
             "type"
                 if args.len() == 1
@@ -2441,6 +2461,24 @@ mod tests {
             .collect()
     }
 
+    /// The predefined alias pattern lets only the first word open with several capitals.
+    #[test]
+    fn alias_words_follow_the_predefined_pattern() {
+        let source = "from typing import Any\n\nZSetPop = int | None\nTimeMRange = list[Any] | None\nBlockingZSet = int | None\nTimeSeries = int | None\n";
+        let found = lint_at(source, std::path::Path::new("use.py"), "use");
+        let names: Vec<_> = found.iter().map(|(l, _)| *l).collect();
+        assert_eq!(names, [4, 5], "{found:?}");
+    }
+
+    /// `type(name, bases, dict)` is a class only when astroid can fold the name.
+    #[test]
+    fn type_call_needs_a_known_name() {
+        let source = "class P:\n    pass\n\n\ndef make(name, dic):\n    Made = type(\"Made\", (P,), dic)\n    Proxy = type(name, (P,), dic)\n    return Made, Proxy\n";
+        let found = lint_at(source, std::path::Path::new("use.py"), "use");
+        let lines: Vec<_> = found.iter().map(|(l, _)| *l).collect();
+        assert_eq!(lines, [7], "{found:?}");
+    }
+
     /// A class in a function, by an `if` of two classes or by its place in a tuple; an arm that
     /// is no class leaves the name a variable.
     #[test]
@@ -2472,6 +2510,30 @@ mod tests {
             })
             .unwrap();
         assert_eq!(with, []);
+    }
+
+    /// A lower-case import that is a class (`from itertools import cycle`): ty names it.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_names_a_lower_case_imported_class() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("use.py");
+        let source = "from itertools import cycle\nfrom os import getcwd\n\nrobin = cycle\ncurrent = getcwd\n";
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        let with = types
+            .with_file(&path, source, |db, file| {
+                let values = crate::ty::values::Values::new(db, file);
+                lint_with(source, &path, "use", Some(&values))
+            })
+            .unwrap();
+        assert_eq!(
+            with,
+            [(
+                4,
+                "Class name \"robin\" doesn't conform to PascalCase naming style".to_owned()
+            )]
+        );
     }
 
     /// A class the rule cannot follow, named by ty; what is not one stays silent.

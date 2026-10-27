@@ -80,7 +80,8 @@ and keep the answer only when it is one concrete type:
 * `C0103` takes a name, attribute or call that is a class (`orig = queue.LifoQueue`)
   for a class and checks its name as PascalCase, also for a variable of a function,
   an element of a tuple (`tasks, Task = self.tasks, self.Task`) and an `if` of two
-  classes (the last needs no ty). A function or a literal is not
+  classes (the last needs no ty), and for a lower-case import that is a class
+  (`from itertools import cycle`). A function or a literal is not
   taken: ty's are wider than Pylint's `Const` (an enum member is a literal to ty
   and an instance to Pylint). A class that its own module binds again
   (`HTTPSConnection = DummyConnection` under `if not ssl`) is left alone: Pylint
