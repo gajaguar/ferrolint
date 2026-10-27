@@ -75,6 +75,20 @@ has no `__getattr__` agrees on 17 more lines, but reports 110 on Django models
 (`ModelBase` is plain), where `pylint_django` makes Pylint silent. Telling
 `ModelBase` from a serializer's metaclass would take the name of a package.
 
+What `E1101` does not close, and why:
+
+* A member of another object (690 lines on one codebase, 675 of them): ty types
+  an annotated parameter or attribute by its declaration and Pylint infers a
+  value, so 80 to 95% of ty's reports on them are not Pylint's.
+* Lines ty does not flag at all (310 of the 690): Pylint infers a value ty
+  types as a union or `Unknown`, and the rule starts from ty's diagnostic.
+* A class with a plain metaclass (15 lines): see above; Django models make it
+  noisy.
+* 8 extras on the packages with no common cause (a base from the system
+  library, a line under `# type: ignore`). A `hasattr` guard is not read, and
+  the ancestors of a class are parsed again for every file, with no cache
+  across files.
+
 ## Where it differs from Pylint
 
 * ty trusts declarations and Pylint infers values. A function annotated
