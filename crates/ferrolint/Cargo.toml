@@ -9,6 +9,9 @@ license.workspace = true
 # Build the repository plugins into the binary: what a source install (pip,
 # Poetry) needs, since only `make wheel` supplies prebuilt ones.
 bundle = []
+# Type inference with ty: off by default, so the default build keeps its
+# dependency graph.
+ty = ["dep:ruff_db", "dep:ty_project", "dep:ty_python_core", "dep:ty_python_semantic"]
 
 [dependencies]
 ferrolint-core = { path = "../ferrolint-core" }
@@ -28,6 +31,10 @@ ruff_python_ast = { workspace = true }
 ruff_python_semantic = { workspace = true }
 ruff_python_stdlib = { workspace = true }
 ruff_text_size = { workspace = true }
+ruff_db = { workspace = true, optional = true }
+ty_project = { workspace = true, optional = true }
+ty_python_core = { workspace = true, optional = true }
+ty_python_semantic = { workspace = true, optional = true }
 
 [dev-dependencies]
 toml = { workspace = true }

@@ -119,6 +119,8 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         cache: cache.as_ref(),
         counters: Counters::new(workers),
         started: options.started,
+        #[cfg(feature = "ty")]
+        types: crate::ty::Types::new(cwd).ok(),
     };
     let (displays, names, per_file, lint_time) = std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -478,6 +480,29 @@ struct Linter<'a> {
     cache: Option<&'a Cache>,
     counters: Counters,
     started: Instant,
+    /// `None` when ty cannot start (a virtualenv without `site-packages`):
+    /// no rule needs it yet, so the host parses the files itself.
+    #[cfg(feature = "ty")]
+    types: Option<crate::ty::Types>,
+}
+
+/// The tree of a file: the host's own, or the one ty's database holds.
+enum Tree {
+    Own(Parsed<ModModule>),
+    #[cfg(feature = "ty")]
+    Ty(ruff_db::parsed::ParsedModuleRef),
+}
+
+impl std::ops::Deref for Tree {
+    type Target = Parsed<ModModule>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Own(parsed) => parsed,
+            #[cfg(feature = "ty")]
+            Self::Ty(parsed) => parsed,
+        }
+    }
 }
 
 /// A file read and parsed, before any plugin runs.
@@ -485,7 +510,7 @@ enum Prepared {
     NotUtf8,
     Source {
         source: String,
-        parsed: Parsed<ModModule>,
+        parsed: Tree,
         index: LineIndex,
     },
 }
@@ -502,7 +527,7 @@ impl Linter<'_> {
     }
 
     /// Decode and parse a file, noting when the run's first parse began.
-    fn prepare(&self, bytes: &[u8]) -> Prepared {
+    fn prepare(&self, path: &Path, bytes: &[u8]) -> Prepared {
         let since_start = u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.counters
             .first_parse
@@ -514,7 +539,18 @@ impl Linter<'_> {
         // silently skip the file.
         let options =
             ParseOptions::from(PySourceType::Python).with_target_version(PythonVersion::latest());
-        let parsed = checks::parse(source, options);
+        #[cfg(feature = "ty")]
+        let shared = self
+            .types
+            .as_ref()
+            .and_then(|types| types.parsed(path, source))
+            .map(Tree::Ty);
+        #[cfg(not(feature = "ty"))]
+        let shared = {
+            let _ = path;
+            None
+        };
+        let parsed = shared.unwrap_or_else(|| Tree::Own(checks::parse(source, options)));
         Prepared::Source {
             source: source.to_owned(),
             parsed,
@@ -527,7 +563,11 @@ impl Linter<'_> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
         // While the plugins still load, parse ahead instead of waiting.
-        let early = self.setup.get().is_none().then(|| self.prepare(&bytes));
+        let early = self
+            .setup
+            .get()
+            .is_none()
+            .then(|| self.prepare(path, &bytes));
         let Ok(setup) = self.setup.wait() else {
             return Ok(Vec::new());
         };
@@ -609,7 +649,7 @@ impl Linter<'_> {
             }
             stored => {
                 self.counters.parsed.fetch_add(1, Ordering::Relaxed);
-                let prepared = early.unwrap_or_else(|| self.prepare(bytes));
+                let prepared = early.unwrap_or_else(|| self.prepare(path, bytes));
                 let file = FileRef {
                     display,
                     module: &module,
