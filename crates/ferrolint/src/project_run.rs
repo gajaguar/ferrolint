@@ -18,7 +18,7 @@ use ferrolint_core::{Finding, Registry};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
-use crate::cache::{Cache, ProjectEntry};
+use crate::cache::{self, Cache, ProjectEntry};
 use crate::engine::hex;
 use crate::native::Project;
 use crate::native::project_phase::{
@@ -348,6 +348,8 @@ pub(crate) fn stamp_of(path: &Path) -> String {
                 .into_iter()
                 .flatten()
                 .flatten()
+                // The first run creates the cache directory; it must not change the stamp.
+                .filter(|entry| entry.file_name() != cache::DIR)
                 .map(|entry| {
                     // A symlink needs the stat; any other entry says what it is.
                     let dir = entry.file_type().map_or_else(
