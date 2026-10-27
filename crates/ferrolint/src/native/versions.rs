@@ -224,6 +224,7 @@ mod tests {
             module: "mod",
             path: std::path::Path::new("mod.py"),
             roots: &[],
+            types: None,
         };
         let enabled = Versions.rules().into_iter().map(|r| r.code).collect();
         let mut out = Vec::new();

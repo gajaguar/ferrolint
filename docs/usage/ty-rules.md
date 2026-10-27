@@ -11,9 +11,10 @@ status: draft
 A build with the `ty` cargo feature (`cargo build --features ty`, or
 `make release-build FEATURES=ty`) adds nine Pylint rules that need the type of
 a value. Without the feature they do not exist: `select` and `ignore` do not
-know them. ty starts only when one of them is enabled, and it reads
-`VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint` prints a
-warning and the nine rules report nothing.
+know them. ty starts only when one of them, `C0103` or a plugin is on, and it
+reads `VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint`
+prints a warning and the nine rules report nothing; `C0103` and the plugins
+fall back to what the host infers by itself.
 
 | Rule                                       | Reports                        | Node                                         |
 | :----------------------------------------- | :----------------------------- | :------------------------------------------- |
@@ -70,6 +71,25 @@ of the node, not the text of the message, tells the rules apart.
 * The cache does not notice a change in another module that alters an
   inferred type; use `--no-cache` after one.
 * `*x` in a call and `yield from x` are not checked for `E1133`.
+
+## What ty completes in the other rules
+
+Two places ask ty for the value of an expression that the host cannot follow,
+and keep the answer only when it is one concrete type:
+
+* `C0103` takes a name, attribute or call that is a class (`orig = queue.LifoQueue`)
+  for a class and checks its name as PascalCase. A function or a literal is not
+  taken: ty's are wider than Pylint's `Const` (an enum member is a literal to ty
+  and an instance to Pylint). On a set of installed packages it closed 3 of 22
+  lines only Pylint reports and added none; on a Django codebase it changed
+  nothing. One difference remains: `threading.Lock` is a class to ty and a
+  function to Pylint.
+* A plugin's `inference` query answers `type[Name]`, `function` or `module` when
+  the host's own engine is unresolved. The contract does not change.
+
+`W0125`, `W0143`, `C1803` and `E0701` are not completed: on the same packages
+every line only Pylint reports was an attribute that ty types as `Unknown` or a
+union, and outside its crate ty exposes no class hierarchy for `E0701`.
 
 ## Why ty does not share the host's tree
 

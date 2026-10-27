@@ -6,6 +6,7 @@
 
 mod criterion;
 pub mod operations;
+pub mod values;
 
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};

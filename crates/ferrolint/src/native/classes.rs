@@ -929,6 +929,7 @@ pub(super) fn render_at(
         module,
         path,
         roots: &crate::native::Project::test_roots(path, module),
+        types: None,
     };
     let enabled = super::rules().into_iter().map(|rule| rule.code).collect();
     let mut found: Vec<(u32, String, String)> = super::check(&ctx, &enabled)

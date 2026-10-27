@@ -41,7 +41,7 @@ use super::misc::{Names as Lists, catches_import_error, csv, imported_names, reg
 use super::project::{ClassRef, Project};
 use super::scopes::{Step, exclusive};
 use super::statements::is_generator;
-use super::{Checker, Ctx, rule};
+use super::{Checker, Ctx, TyValue, rule};
 use crate::class_methods;
 use crate::wit::BindingKind;
 
@@ -1068,6 +1068,27 @@ impl<'a> Walk<'a, '_> {
         )
     }
 
+    /// What the value of a binding is: `val`, and for a name, attribute or call that it
+    /// cannot follow, the value ty infers when the build has it.
+    fn val_at(&self, value: &Expr) -> Val {
+        let val = self.val(value, 0);
+        if val != Val::Unknown
+            || !matches!(value, Expr::Name(_) | Expr::Attribute(_) | Expr::Call(_))
+        {
+            return val;
+        }
+        match self
+            .ctx()
+            .types
+            .and_then(|types| types.value(value.range()))
+        {
+            // Only a class: ty's function and literal are wider than Pylint's `Const` (an enum
+            // member is a literal to ty and an instance to Pylint).
+            Some(TyValue::Class(_)) => Val::Class,
+            _ => Val::Unknown,
+        }
+    }
+
     fn val(&self, value: &Expr, depth: u8) -> Val {
         if depth > 6 {
             return Val::Unknown;
@@ -1557,7 +1578,7 @@ impl<'a> Walk<'a, '_> {
             return;
         }
         let Some(value) = site.value else { return };
-        let val = self.val(value, 0);
+        let val = self.val_at(value);
         match val {
             Val::Unknown => return,
             Val::Class | Val::Enum => return self.check("class", name, range, None),
@@ -1583,7 +1604,7 @@ impl<'a> Walk<'a, '_> {
             .any(|b| b.kind == Bk::Name && b.value.is_some_and(|v| self.container_instance(v)));
         // Pylint's inference of every binding of the name: an uninferable binding.
         let unknown = binds.iter().any(|b| match b.kind {
-            Bk::Name | Bk::Foreign => b.value.is_none_or(|v| self.val(v, 0) == Val::Unknown),
+            Bk::Name | Bk::Foreign => b.value.is_none_or(|v| self.val_at(v) == Val::Unknown),
             Bk::FromImport => true,
             // astroid cannot infer `+=` of a display that holds a `*starred`.
             Bk::Aug => {
@@ -2343,6 +2364,15 @@ mod tests {
 
     /// Lint `source` as the module `module` of the file `path`.
     fn lint_at(source: &str, path: &std::path::Path, module: &str) -> Vec<(u32, String)> {
+        lint_with(source, path, module, None)
+    }
+
+    fn lint_with(
+        source: &str,
+        path: &std::path::Path,
+        module: &str,
+        types: Option<&dyn super::super::TypeAt>,
+    ) -> Vec<(u32, String)> {
         use ferrolint_core::LineIndex;
 
         let parsed = ruff_python_parser::parse_module(source).unwrap();
@@ -2361,6 +2391,7 @@ mod tests {
             module,
             path,
             roots: &crate::native::Project::test_roots(path, module),
+            types,
         };
         let enabled = IDS.iter().map(|id| (*id).to_owned()).collect();
         let mut out = Vec::new();
@@ -2368,6 +2399,31 @@ mod tests {
         out.into_iter()
             .map(|d| (d.range.start.line, d.message))
             .collect()
+    }
+
+    /// A class the rule cannot follow, named by ty; what is not one stays silent.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_names_a_class_the_rule_cannot_follow() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("use.py");
+        let source = "import io\nimport queue\n\norig_queue = queue.LifoQueue\nwriter = io.StringIO.write\nbuffer = queue.Queue()\n";
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        let with = types
+            .with_file(&path, source, |db, file| {
+                let values = crate::ty::values::Values::new(db, file);
+                lint_with(source, &path, "use", Some(&values))
+            })
+            .unwrap();
+        assert_eq!(lint_at(source, &path, "use"), []);
+        assert_eq!(
+            with,
+            [(
+                4,
+                "Class name \"orig_queue\" doesn't conform to PascalCase naming style".to_owned()
+            )]
+        );
     }
 
     #[test]
