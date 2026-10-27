@@ -53,11 +53,14 @@ of the node, not the text of the message, tells the rules apart.
   and a `# pylint: disable` hides most of the rest.
 * `E1131` is reported where Pylint does not infer (`1 + None`). The `E1130`
   message names ty's type (`Literal["a"]`), where Pylint names `str`.
-* Extra findings that wait for the Django plugin and are not worked around: a
-  `JSONField` or `ArrayField` read as the field and not as its value,
-  `factory_boy` declarations (`Faker`, `LazyFunction`, `LazyAttribute`) read as
-  the declaration and not as the value of the model, and an attribute annotated
-  as an instance to which the class is assigned.
+* Without `django-stubs` in the environment, ty reads a `JSONField` or
+  `ArrayField` as the field and not as its value. Install `django-stubs` in
+  the `VIRTUAL_ENV` ty reads: on one Django codebase it cut `E1137` from 156
+  to 3 and `E1136` from 69 to 12. What stays is `factory_boy` declarations
+  (`Faker`, `LazyFunction`, `LazyAttribute`) read as the declaration and not
+  as the value of the model, a few fields ty still types as the field, and an
+  attribute annotated as an instance to which the class is assigned. These
+  wait for the Django plugin and are not worked around.
 * The bundled `not-callable` plugin (`CAL001`, alias `E1102`) is not bundled
   in a build with `ty`, which answers `E1102` itself. A `[[plugins]]` entry
   that loads it fails with the alias error.
