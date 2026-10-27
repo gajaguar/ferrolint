@@ -14,6 +14,9 @@ use sha2::{Digest, Sha256};
 use crate::engine::hex;
 use crate::suppress::Span;
 
+/// The directory the cache lives in, under the working directory.
+pub const DIR: &str = ".ferrolint-cache";
+
 /// Bumped when an entry's layout or meaning changes.
 const LAYOUT: &str = "v3";
 
@@ -79,7 +82,7 @@ impl Cache {
             })
             .unwrap_or_default();
         Self {
-            root: cwd.join(".ferrolint-cache").join(LAYOUT),
+            root: cwd.join(DIR).join(LAYOUT),
             build: format!("{}:{executable}", env!("CARGO_PKG_VERSION")),
         }
     }
