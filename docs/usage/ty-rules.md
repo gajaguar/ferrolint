@@ -31,6 +31,13 @@ fall back to what the host infers by itself.
 `E1126` and `E1127` (a bad sequence index or slice) are not covered: ty has no
 lint for them.
 
+`E1101` (`no-member`) is not covered either. ty's `unresolved-attribute` and
+`possibly-missing-attribute` are the starting point, but no general criterion
+brings them near Pylint's: on one Django codebase, one that silences dynamic
+bases kept 148 lines Pylint reports (of 1417) and 16 634 it does not, and on a
+set of installed packages 12 (of 421) and 40. See
+[what ty does not close](inference-dependent-rules.md).
+
 ## The criterion
 
 ty reports far more than Pylint (513 unsubscriptable values against 11 on one
