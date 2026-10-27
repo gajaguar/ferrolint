@@ -350,10 +350,11 @@ impl Project {
         self.roots.iter().find_map(|root| {
             let file = root.join(&relative).with_extension("py");
             let init = root.join(&relative).join("__init__.py");
-            if file.is_file() && exact_case(&file) {
+            if file.is_file() && self.exact_case(&file) {
                 Some((file, false))
             } else {
-                (init.is_file() && init.parent().is_some_and(exact_case)).then_some((init, true))
+                (init.is_file() && init.parent().is_some_and(|dir| self.exact_case(dir)))
+                    .then_some((init, true))
             }
         })
     }
@@ -361,7 +362,7 @@ impl Project {
     fn read(&self, name: &str) -> Option<Rc<Module>> {
         let (file, is_package) = self.locate(name)?;
         // astroid prefers the compiled `m.*.so` to `m.py` and cannot read it
-        if !self.strict && !is_package && has_extension(&file) {
+        if !self.strict && !is_package && self.has_extension(&file) {
             return None;
         }
         self.touch(file.clone());
@@ -610,33 +611,20 @@ impl Project {
             return found.clone();
         }
         self.touch(dir.to_path_buf());
-        let mut listing = Listing::default();
-        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let is_dir = entry.path().is_dir();
-            if !is_dir
-                && Path::new(&name)
-                    .extension()
-                    .is_some_and(|e| e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd"))
-            {
+        // The worker lists a directory once: a file builds a dozen projects.
+        // shortcut: a directory that changes during the run is read as it
+        // was at first; a run lasts seconds, the next one lists it again.
+        let listing = LISTED
+            .with(|listed| listed.borrow().get(dir).cloned())
+            .unwrap_or_else(|| {
+                let listing = Rc::new(list(dir));
+                LISTED.with(|listed| {
+                    listed
+                        .borrow_mut()
+                        .insert(dir.to_path_buf(), listing.clone())
+                });
                 listing
-                    .compiled
-                    .insert(name.split('.').next().unwrap_or_default().to_owned());
-            }
-            listing.entries.insert(name, is_dir);
-        }
-        let probe = listing.entries.keys().find(|n| n.to_uppercase() != **n);
-        if probe.is_some_and(|n| {
-            let upper = n.to_uppercase();
-            !listing.entries.contains_key(&upper) && dir.join(upper).exists()
-        }) {
-            listing.folded = listing
-                .entries
-                .keys()
-                .map(|n| (n.to_lowercase(), n.clone()))
-                .collect();
-        }
-        let listing = Rc::new(listing);
+            });
         self.listings
             .borrow_mut()
             .insert(dir.to_path_buf(), listing.clone());
@@ -1602,6 +1590,44 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
     found
 }
 
+/// What the directory `dir` holds, read from disk.
+fn list(dir: &Path) -> Listing {
+    let mut listing = Listing::default();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // `file_type` comes with the entry; only a link needs a `stat`.
+        let is_dir = entry.file_type().is_ok_and(|kind| {
+            if kind.is_symlink() {
+                entry.path().is_dir()
+            } else {
+                kind.is_dir()
+            }
+        });
+        if !is_dir
+            && Path::new(&name)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd"))
+        {
+            listing
+                .compiled
+                .insert(name.split('.').next().unwrap_or_default().to_owned());
+        }
+        listing.entries.insert(name, is_dir);
+    }
+    let probe = listing.entries.keys().find(|n| n.to_uppercase() != **n);
+    if probe.is_some_and(|n| {
+        let upper = n.to_uppercase();
+        !listing.entries.contains_key(&upper) && dir.join(upper).exists()
+    }) {
+        listing.folded = listing
+            .entries
+            .keys()
+            .map(|n| (n.to_lowercase(), n.clone()))
+            .collect();
+    }
+    listing
+}
+
 /// Parsed modules by file and name, once per worker thread: the next file
 /// linted on the thread reads the same modules again. An entry is valid while
 /// the file keeps its size and date.
@@ -1612,6 +1638,7 @@ thread_local! {
     /// result can be replayed only while those paths are unchanged.
     static READS: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
     static PARSED: RefCell<Kept> = RefCell::new(HashMap::new());
+    static LISTED: RefCell<HashMap<PathBuf, Rc<Listing>>> = RefCell::new(HashMap::new());
     static WEIGHT: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -1680,37 +1707,27 @@ fn parse_module(file: &Path, name: &str, is_package: bool) -> Option<Module> {
     })
 }
 
-/// Whether the last component of `path` is spelled as its directory lists
-/// it: macOS and Windows would open `iterTools.py` as `itertools.py`.
-fn exact_case(path: &Path) -> bool {
-    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
-        return false;
-    };
-    std::fs::read_dir(dir).is_ok_and(|mut entries| {
-        entries.any(|entry| entry.is_ok_and(|entry| entry.file_name() == name))
-    })
-}
+impl Project {
+    /// Whether the last component of `path` is spelled as its directory lists
+    /// it: macOS and Windows would open `iterTools.py` as `itertools.py`.
+    fn exact_case(&self, path: &Path) -> bool {
+        let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+            return false;
+        };
+        self.listing(dir)
+            .entries
+            .contains_key(name.to_string_lossy().as_ref())
+    }
 
-/// Whether a compiled module (`m.cpython-314-darwin.so`, `m.pyd`) sits next
-/// to the source file `m.py`.
-fn has_extension(file: &Path) -> bool {
-    let (Some(dir), Some(stem)) = (file.parent(), file.file_stem().and_then(|s| s.to_str())) else {
-        return false;
-    };
-    std::fs::read_dir(dir).is_ok_and(|mut entries| {
-        entries.any(|entry| {
-            entry.is_ok_and(|entry| {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                name.strip_prefix(stem).is_some_and(|rest| {
-                    rest.starts_with('.')
-                        && Path::new(rest).extension().is_some_and(|e| {
-                            e.eq_ignore_ascii_case("so") || e.eq_ignore_ascii_case("pyd")
-                        })
-                })
-            })
-        })
-    })
+    /// Whether a compiled module (`m.cpython-314-darwin.so`, `m.pyd`) sits next
+    /// to the source file `m.py`.
+    fn has_extension(&self, file: &Path) -> bool {
+        let (Some(dir), Some(stem)) = (file.parent(), file.file_stem().and_then(|s| s.to_str()))
+        else {
+            return false;
+        };
+        self.listing(dir).compiled.contains(stem)
+    }
 }
 
 /// The standard library and the `site-packages` directories of the
