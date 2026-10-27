@@ -48,3 +48,7 @@ def silent(maybe: int | None, either: int | str, anything: object, var: T, unkno
     d = {}
     d[1] = 2
     print(1 < Plain())
+    classes = [int, str]
+    classes += [bytes]  # ty reports it; a container literal is not
+    flags = {1}
+    flags |= {"a"}

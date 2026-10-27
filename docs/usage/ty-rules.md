@@ -51,6 +51,9 @@ of the node, not the text of the message, tells the rules apart.
   from `deepcopy(...)` is reported by Pylint and not here.
 * Pylint infers a default (`x = None`) that ty sees as `Unknown` or a union,
   and a `# pylint: disable` hides most of the rest.
+* `E1131` is not reported for `xs += [...]` or `xs |= {...}`: ty types
+  `xs = [A]` as a list of `A` only and rejects the other element types, which
+  Python accepts and Pylint does not report.
 * `E1131` is reported where Pylint does not infer (`1 + None`). The `E1130`
   message names ty's type (`Literal["a"]`), where Pylint names `str`.
 * Without `django-stubs` in the environment, ty reads a `JSONField` or
