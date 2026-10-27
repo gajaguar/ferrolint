@@ -3,8 +3,7 @@
 //! `R1713` consider-using-join, `W4701` modified-iterating-list, `E4702`
 //! modified-iterating-dict, `E4703` modified-iterating-set, `W4801`
 //! looping-through-iterator, `E3102`
-//! positional-only-arguments-expected, `R5102`
-//! http-response-with-content-type-json (pylint-django), `E0113`
+//! positional-only-arguments-expected, `E0113`
 //! invalid-star-assignment-target, `C0302`
 //! too-many-lines and `C0325` superfluous-parens.
 //!
@@ -38,7 +37,6 @@ const SET: &str = "E4703";
 const ITERATOR: &str = "W4801";
 const POSITIONAL_ONLY: &str = "E3102";
 const STAR_TARGET: &str = "E0113";
-const JSON_RESPONSE: &str = "R5102";
 const TOO_MANY_LINES: &str = "C0302";
 const PARENS: &str = "C0325";
 
@@ -93,11 +91,6 @@ impl Checker for Statements {
                 "A positional-only parameter passed as a keyword.",
             ),
             rule(
-                JSON_RESPONSE,
-                "http-response-with-content-type-json",
-                "`HttpResponse(content_type='application/json')`.",
-            ),
-            rule(
                 STAR_TARGET,
                 "invalid-star-assignment-target",
                 "`*a = b`, a starred target that is not in a list or tuple.",
@@ -132,7 +125,6 @@ impl Checker for Statements {
             SET,
             ITERATOR,
             POSITIONAL_ONLY,
-            JSON_RESPONSE,
             STAR_TARGET,
         ];
         if !ours.iter().any(|id| enabled.contains(*id)) {
@@ -797,23 +789,6 @@ impl<'a> Walk<'a, '_> {
                 }
             }
         }
-        if self.on(JSON_RESPONSE)
-            && super::django::plugin(ctx)
-            && self.text(&call.func).ends_with("HttpResponse")
-            && call.arguments.keywords.iter().any(|k| {
-                k.arg.as_ref().is_some_and(|a| a.as_str() == "content_type")
-                    && self
-                        .text(&k.value)
-                        .to_lowercase()
-                        .contains("application/json")
-            })
-        {
-            self.out.push(ctx.report(
-                JSON_RESPONSE,
-                call,
-                "Instead of HttpResponse(content_type='application/json') use JsonResponse()",
-            ));
-        }
         if self.on(ITERATOR) && !matches!(&*call.func, Expr::Name(n) if n.id.as_str() == "next") {
             for arg in &call.arguments.args {
                 self.usage(arg);
@@ -1106,8 +1081,7 @@ mod tests {
     fn statements_and_loops() {
         let source = include_str!("fixtures/statements.py");
         let expected = include_str!("fixtures/statements.expected").trim_end();
-        let options = [("load-plugins", "pylint_django")];
-        assert_eq!(render(source, &options, BATCH_C), expected);
+        assert_eq!(render(source, &[], BATCH_C), expected);
     }
 
     #[test]

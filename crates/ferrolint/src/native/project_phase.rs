@@ -22,7 +22,6 @@ use ferrolint_core::{Diagnostic, LineIndex, Position, Range, Registry, Severity}
 use rayon::prelude::*;
 use regex::Regex;
 use ruff_python_parser::ParseOptions;
-use ruff_text_size::Ranged;
 
 use super::duplicates::{LineSet, Settings};
 use super::imports_scan::{self, Import};
@@ -36,7 +35,6 @@ pub const RELATIVE_BEYOND_TOP: &str = "E0402";
 pub const NO_NAME: &str = "E0611";
 pub const CYCLIC: &str = "R0401";
 pub const DUPLICATE: &str = "R0801";
-pub const NEW_FIELD_DEFAULT: &str = "W5198";
 
 /// The rules of this phase; the per-file checkers do not own them.
 pub fn rules() -> Vec<ferrolint_core::RuleInfo> {
@@ -57,11 +55,6 @@ pub fn rules() -> Vec<ferrolint_core::RuleInfo> {
             DUPLICATE,
             "duplicate-code",
             "Similar lines in several files",
-        ),
-        rule(
-            NEW_FIELD_DEFAULT,
-            "new-db-field-with-default",
-            "An `AddField` with a default in the latest migration of an app",
         ),
     ]
 }
@@ -734,55 +727,6 @@ pub fn duplicates(units: &[Unit], opts: &Opts, registry: &Registry) -> Vec<Diagn
             range: file_start(),
             severity: Severity::Info,
             fix: None,
-        })
-        .collect()
-}
-
-/// W5198's diagnostics, as `(position in units, diagnostic)`: the
-/// `AddField` calls with a default in the latest migration of each app, which
-/// is the greatest path among the migrations that share what precedes the
-/// first `migrations` in it, as the sub-plugin picks it.
-pub fn field_defaults(units: &[Unit], registry: &Registry) -> Vec<(usize, Diagnostic)> {
-    let mut migrations: Vec<(usize, String)> = units
-        .iter()
-        .enumerate()
-        .filter(|(_, unit)| super::django::migrations_path(&unit.path))
-        .map(|(at, unit)| (at, unit.path.to_string_lossy().into_owned()))
-        .collect();
-    migrations.sort_by(|a, b| b.1.cmp(&a.1));
-    let mut latest: Vec<usize> = Vec::new();
-    let mut last_space = "";
-    for (at, path) in &migrations {
-        let space = path.split("migrations").next().unwrap_or_default();
-        if space != last_space {
-            last_space = space;
-            latest.push(*at);
-        }
-    }
-    latest
-        .into_par_iter()
-        .flat_map_iter(|at| {
-            let unit = &units[at];
-            let Some(loaded) = load(&unit.path) else {
-                return Vec::new();
-            };
-            let spans = suppress::spelled(&loaded.source, &loaded.parsed, &loaded.index);
-            let suppressions = Suppressions::resolve(&spans, registry);
-            super::django::frame_calls(&loaded.parsed.syntax().body)
-                .into_iter()
-                .filter(|call| super::django::adds_field_with_default(call))
-                .map(|call| {
-                    let range = call.range();
-                    let range = loaded.index.range(
-                        &loaded.source,
-                        range.start().to_u32(),
-                        range.end().to_u32(),
-                    );
-                    let message = format!("{} AddField with default value", unit.module);
-                    (at, diagnostic(NEW_FIELD_DEFAULT, message, range))
-                })
-                .filter(|(_, d)| !suppressions.suppresses(d))
-                .collect()
         })
         .collect()
 }

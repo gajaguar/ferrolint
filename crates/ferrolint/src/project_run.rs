@@ -22,8 +22,7 @@ use crate::cache::{Cache, ProjectEntry};
 use crate::engine::hex;
 use crate::native::Project;
 use crate::native::project_phase::{
-    self, CYCLIC, DUPLICATE, IMPORT_ERROR, NEW_FIELD_DEFAULT, NO_NAME, Opts, RELATIVE_BEYOND_TOP,
-    Unit,
+    self, CYCLIC, DUPLICATE, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
 };
 use crate::selection::Selection;
 
@@ -94,9 +93,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let cyclic = params.selection.is_enabled(CYCLIC);
     let opts = Opts::new(params.options);
     let duplicates = params.selection.is_enabled(DUPLICATE) && opts.duplicates.min > 0;
-    let defaults = crate::native::migrations_plugin(params.options)
-        && enabled.iter().any(|set| set.contains(NEW_FIELD_DEFAULT));
-    if !imports && !cyclic && !duplicates && !defaults {
+    if !imports && !cyclic && !duplicates {
         return (Vec::new(), Vec::new());
     }
     let units = units(params, files, &opts, &enabled);
@@ -104,13 +101,7 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let anchor = (duplicates || cyclic)
         .then(|| checked_last(arguments(params.cwd, params.arguments), &units))
         .flatten();
-    let project_codes = [
-        IMPORT_ERROR,
-        RELATIVE_BEYOND_TOP,
-        NO_NAME,
-        DUPLICATE,
-        NEW_FIELD_DEFAULT,
-    ];
+    let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
     let key = params.cache.map(|cache| {
         let hashes: Vec<String> = files
             .par_iter()
@@ -191,13 +182,6 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
             );
         }
         touched = project.touched();
-    }
-    if defaults {
-        for (at, diagnostic) in project_phase::field_defaults(&units, params.registry) {
-            if enabled[at].contains(NEW_FIELD_DEFAULT) {
-                out.push((units[at].display.clone(), diagnostic));
-            }
-        }
     }
     if duplicates && let Some(last) = anchor {
         out.extend(

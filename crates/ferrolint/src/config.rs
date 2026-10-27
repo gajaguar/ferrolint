@@ -277,7 +277,7 @@ mod tests {
     fn a_pylintrc_reports_unknown_options_and_message_names() {
         let issues = issue_codes(
             ".pylintrc",
-            "[MASTER]\nbogus=1\nload-plugins=pylint_django\n[MESSAGES CONTROL]\ndisable=fixme,nope,print-statement,C,design\nenable=other\n[FORMAT]\nmax-line-length=99\nZed=2\n",
+            "[MASTER]\nbogus=1\nload-plugins=pylint.extensions.mccabe\n[MESSAGES CONTROL]\ndisable=fixme,nope,print-statement,C,design\nenable=other\n[FORMAT]\nmax-line-length=99\nZed=2\n",
         );
         let codes: Vec<_> = issues.iter().map(|(code, _)| *code).collect();
         assert_eq!(codes, ["W0012", "R0022", "W0012", "E0015"]);
@@ -383,13 +383,13 @@ mod tests {
         write(
             &dir,
             ".pylintrc",
-            "[MASTER]\nignore=CVS\nload-plugins=pylint_django\npy-version=3.12\n\n\
+            "[MASTER]\nignore=CVS\nload-plugins=pylint.extensions.mccabe\npy-version=3.12\n\n\
              [MESSAGES CONTROL]\ndisable=fixme,\n  W\nenable=unused-import\n",
         );
         let config = load(dir.path(), None).unwrap();
         assert_eq!(config.exclude, ["CVS"]);
         assert_eq!(config.py_version, Some((3, 12)));
-        assert_eq!(config.options["load-plugins"], "pylint_django");
+        assert_eq!(config.options["load-plugins"], "pylint.extensions.mccabe");
         assert_eq!(config.pylint_disable.len(), 3);
         assert_eq!(config.root, dir.path());
         write(&dir, ".pylintrc", "py-version=3\n");

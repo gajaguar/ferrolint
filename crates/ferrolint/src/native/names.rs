@@ -1517,25 +1517,6 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    /// `pylint_django` leaves `application` in `wsgi.py` and `asgi.py`, and
-    /// `js` in a `Media` class, out of `invalid-name`.
-    fn django_name(&self, name: &str) -> bool {
-        if !super::django::plugin(self.ctx()) {
-            return false;
-        }
-        match name {
-            "application" if self.frame().kind == Kind::Module => {
-                let path = self.ctx().path.to_string_lossy();
-                path.ends_with("wsgi.py") || path.ends_with("asgi.py")
-            }
-            "js" => self
-                .frame()
-                .class
-                .is_some_and(|class| class.name.as_str() == "Media"),
-            _ => false,
-        }
-    }
-
     fn module_store(
         &mut self,
         name: &'a str,
@@ -1543,9 +1524,6 @@ impl<'a> Walk<'a, '_> {
         site: Site<'a>,
         parent: Parent<'a>,
     ) {
-        if self.django_name(name) {
-            return;
-        }
         if site.kind == SiteKind::AnnAssign
             && site
                 .annotation
@@ -1643,9 +1621,6 @@ impl<'a> Walk<'a, '_> {
     }
 
     fn class_store(&mut self, name: &'a str, range: TextRange, site: Site<'a>) {
-        if self.django_name(name) {
-            return;
-        }
         let Some(class) = self.frame().class else {
             return;
         };
@@ -2368,15 +2343,6 @@ mod tests {
 
     /// Lint `source` as the module `module` of the file `path`.
     fn lint_at(source: &str, path: &std::path::Path, module: &str) -> Vec<(u32, String)> {
-        lint_with(source, path, module, &[])
-    }
-
-    fn lint_with(
-        source: &str,
-        path: &std::path::Path,
-        module: &str,
-        options: &[(String, String)],
-    ) -> Vec<(u32, String)> {
         use ferrolint_core::LineIndex;
 
         let parsed = ruff_python_parser::parse_module(source).unwrap();
@@ -2390,7 +2356,7 @@ mod tests {
             parsed: &parsed,
             flat: &flat,
             model: &model,
-            options,
+            options: &[],
             py_version: None,
             module,
             path,
@@ -2402,28 +2368,6 @@ mod tests {
         out.into_iter()
             .map(|d| (d.range.start.line, d.message))
             .collect()
-    }
-
-    #[test]
-    fn pylint_django_leaves_its_names_out_of_invalid_name() {
-        let source = "application = 1\npk = 1\nhandler404 = 1\nBadName = 1\n\n\nclass Media:\n    js = 1\n    application = 2\n\n\nclass Other:\n    js = 1\n";
-        let style = (
-            "class-attribute-naming-style".to_owned(),
-            "UPPER_CASE".to_owned(),
-        );
-        let django = [
-            style.clone(),
-            ("load-plugins".to_owned(), "pylint_django".to_owned()),
-        ];
-        let lines = |file: &str, options: &[(String, String)]| {
-            let path = std::path::Path::new("/nowhere").join(file);
-            let found = lint_with(source, &path, "mod", options);
-            found.iter().map(|(line, _)| *line).collect::<Vec<_>>()
-        };
-        // Without the plugin every name is judged; with it only the rest.
-        assert_eq!(lines("wsgi.py", &[style]), [1, 2, 3, 4, 8, 9, 13]);
-        assert_eq!(lines("wsgi.py", &django), [4, 9, 13]);
-        assert_eq!(lines("views.py", &django), [1, 4, 9, 13]);
     }
 
     #[test]

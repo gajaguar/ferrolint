@@ -130,12 +130,8 @@ pub(super) struct Names {
 
 impl Names {
     pub(super) fn new(ctx: &Ctx<'_>) -> Self {
-        let mut good = csv(ctx, "good-names", "i,j,k,ex,Run,_");
-        if super::django::plugin(ctx) {
-            good.extend(super::django::GOOD_NAMES.map(str::to_owned));
-        }
         Self {
-            good,
+            good: csv(ctx, "good-names", "i,j,k,ex,Run,_"),
             good_rx: regexps(ctx.option("good-names-rgxs").unwrap_or_default()),
             bad: csv(ctx, "bad-names", "foo,bar,baz,toto,tutu,tata"),
             bad_rx: regexps(ctx.option("bad-names-rgxs").unwrap_or_default()),

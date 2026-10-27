@@ -31,6 +31,3 @@
 222:W4801:Iterator 'g' from an outer scope is reused or consumed in a nested loop.
 235:E3102:`positional()` got some positional-only arguments passed as keyword arguments: 'a'
 236:E3102:`positional()` got some positional-only arguments passed as keyword arguments: 'a', 'b'
-247:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
-249:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()
-250:R5102:Instead of HttpResponse(content_type='application/json') use JsonResponse()

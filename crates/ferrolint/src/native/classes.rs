@@ -629,7 +629,6 @@ impl Checker for Classes {
             env: &env,
             enabled,
             out,
-            nested: HashSet::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -639,8 +638,6 @@ struct Walk<'a, 'e> {
     env: &'e Env<'a>,
     enabled: &'e BTreeSet<String>,
     out: &'e mut Vec<Diagnostic>,
-    /// The classes written directly in the body of another class, by address.
-    nested: HashSet<usize>,
 }
 
 /// An option of Pylint's `csv` type.
@@ -676,11 +673,6 @@ impl<'a> Walk<'a, '_> {
     }
 
     fn class(&mut self, class: &'a StmtClassDef) {
-        for stmt in &class.body {
-            if let Stmt::ClassDef(inner) = stmt {
-                self.nested.insert(std::ptr::from_ref(inner).addr());
-            }
-        }
         if [NO_ARGUMENT, MCS_METHOD, MCS_CLASSMETHOD]
             .iter()
             .any(|id| self.on(id))
@@ -769,44 +761,8 @@ impl<'a> Walk<'a, '_> {
         }
     }
 
-    /// `pylint_django` does not count the methods of a Django `TestCase`
-    /// named `...Test` or nested in a class, nor of a `ModelAdmin` named
-    /// `...Admin`. shortcut: an imported base is a test case when its name
-    /// ends in `TestCase` (but not the simple, transaction, live-server or
-    /// `unittest` ones), since its ancestry is in another file; upgrade with
-    /// a cross-file class lookup.
-    fn django_exempt(&self, class: &StmtClassDef) -> bool {
-        let plugin = self
-            .env
-            .ctx
-            .option("load-plugins")
-            .is_some_and(|list| list.split(',').any(|name| name.trim() == "pylint_django"));
-        let nested = self.nested.contains(&std::ptr::from_ref(class).addr());
-        let name = class.name.as_str();
-        let (test_case, admin) = (
-            name.ends_with("Test") || nested,
-            name.ends_with("Admin") && !nested,
-        );
-        plugin
-            && bases(class).iter().any(|base| {
-                self.env.base_is(base, &|qualified| {
-                    let last = qualified.rsplit('.').next().unwrap_or(qualified);
-                    (admin && qualified.ends_with(".ModelAdmin"))
-                        || (test_case
-                            && last.ends_with("TestCase")
-                            && !qualified.starts_with("unittest.")
-                            && !["Simple", "Transaction", "LiveServer", "IsolatedAsyncio"]
-                                .iter()
-                                .any(|kind| last.contains(kind)))
-                })
-            })
-    }
-
     fn public_methods(&mut self, class: &StmtClassDef) {
         let ctx = self.env.ctx;
-        if self.django_exempt(class) {
-            return;
-        }
         let max = ctx
             .option("max-public-methods")
             .and_then(|value| value.trim().parse::<usize>().ok())
@@ -1054,25 +1010,6 @@ mod tests {
         let expected = include_str!("fixtures/too_many_public_methods.expected").trim_end();
         assert_eq!(
             render(source, &[("max-public-methods", "2")], &["R0904"]),
-            expected
-        );
-    }
-
-    #[test]
-    fn pylint_django_exempts_test_cases_and_admins() {
-        let source = include_str!("fixtures/pylint_django_exempts_test_cases_and_admins.py");
-        let expected =
-            include_str!("fixtures/pylint_django_exempts_test_cases_and_admins.expected")
-                .trim_end();
-        assert_eq!(
-            render(
-                source,
-                &[
-                    ("max-public-methods", "2"),
-                    ("load-plugins", "pylint_django")
-                ],
-                &["R0904"]
-            ),
             expected
         );
     }

@@ -238,16 +238,3 @@ def calls():
     positional2(1, a=1)
     positional(1, 2, 3, **{})
 
-
-from django.http import HttpResponse, StreamingHttpResponse, JsonResponse
-import django.http
-
-
-def resp():
-    HttpResponse("x", content_type="application/json")
-    HttpResponse("x", content_type="text/html")
-    StreamingHttpResponse("x", content_type='Application/JSON; charset=utf-8')
-    django.http.HttpResponse("x", content_type=f"application/json")
-    JsonResponse({}, content_type="application/json")
-    HttpResponse("x", content_type=CT)
-    HttpResponse("x", other="application/json")
