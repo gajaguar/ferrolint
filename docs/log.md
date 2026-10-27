@@ -7,6 +7,8 @@
   exist only with the `ty` feature. **Bundled plugins, plugins.md**: a build
   with `ty` leaves `not-callable` out. **Rules that wait for type inference,
   inference-dependent-rules.md**: `E1102` points to the new note.
+* **Rules answered by ty, ty-rules.md**: recommends `django-stubs` in the
+  environment, which removes most `JSONField` findings.
 * **Native rules, native-rules.md**: Batch E (the `pylint_django` messages and
   their `good-names`, `invalid-name` and `too-many-public-methods`
   adjustments) is removed from the core: ferrolint is agnostic like Pylint and
