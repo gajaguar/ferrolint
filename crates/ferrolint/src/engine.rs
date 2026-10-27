@@ -345,6 +345,7 @@ fn type_engine(selection: &Selection, cwd: &Path, plugins: bool) -> Option<Arc<c
     if !crate::ty::operations::rules()
         .iter()
         .any(|rule| selection.is_enabled(&rule.code))
+        && !selection.is_enabled("E1101")
         && !selection.is_enabled("C0103")
         && !plugins
     {
@@ -917,6 +918,12 @@ fn native_findings(
         && crate::ty::operations::wanted(enabled)
     {
         found.extend(crate::ty::operations::check(types, &ctx, enabled));
+    }
+    #[cfg(feature = "ty")]
+    if let Some(types) = &setup.types
+        && crate::ty::members::wanted(enabled)
+    {
+        found.extend(crate::ty::members::check(types, &ctx));
     }
     found
 }

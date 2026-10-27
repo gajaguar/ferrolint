@@ -112,8 +112,7 @@ A class that is not a plain class statement:
 A build with ty answers the operation rules, a class assigned in `C0103` and the
 class an attribute of `self` stands for in `W0201` (see
 [Rules answered by ty](ty-rules.md)), not these: `E1120`, `E1121`, `E1124`,
-`E0712`, `E0702`, `W0632`, `W0125`, `W0143`, `C1803`, `E0701` and `E1101`
-(`no-member`, below). On a
+`E0712`, `E0702`, `W0632`, `W0125`, `W0143`, `C1803`, `E0701`. On a
 Django project and on a set of installed packages ty's diagnostics for them
 covered none of the lines only Pylint reports, and added findings Pylint does
 not give: ty reports one diagnostic per member of a union or overload, and it
@@ -137,14 +136,6 @@ is a known gap, not a bug to chase: record it under its rule in
 [native rules](native-rules.md) and leave it. Anything that does not fall
 under them is a bug.
 
-`E1101` is not implemented, with ty or without it. Pylint reports it on 1417
-lines of a Django codebase and 421 of a set of installed packages (the
-codebase's own `.pylintrc` disables it, so these come from a run with
-`--enable=no-member`). ty gives 20 515 `unresolved-attribute` diagnostics on
-the codebase. Keeping only those on a receiver of one concrete type, not on a
-store, and with no dynamic base or `__getattr__` in the class, 148 of them
-fall on a line Pylint reports and 16 634 do not; on the packages, 12 and 40.
-Without the factory classes (a metaclass `__call__` returns an instance Pylint
-cannot infer) it is still 145 against 918 on the codebase. What is left is
-Django fields and models, which wait for the Django plugin, and values ty types
-by declaration where Pylint infers them. See [Rules answered by ty](ty-rules.md).
+`E1101` is answered by ty only for `self` and `cls` (see
+[Rules answered by ty](ty-rules.md)); a member of any other object waits for
+inference of values, and Django's for the plugin.

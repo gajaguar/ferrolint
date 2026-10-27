@@ -5,6 +5,7 @@
 //! rewrites the nodes' indices, which ty's lookups rely on.
 
 mod criterion;
+pub mod members;
 pub mod operations;
 pub mod values;
 

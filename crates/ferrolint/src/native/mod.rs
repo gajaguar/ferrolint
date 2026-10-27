@@ -180,7 +180,9 @@ pub fn rules() -> Vec<RuleInfo> {
         .chain(project_phase::rules());
     // The rules ty answers exist only in a build with it.
     #[cfg(feature = "ty")]
-    let rules = rules.chain(crate::ty::operations::rules());
+    let rules = rules
+        .chain(crate::ty::operations::rules())
+        .chain(crate::ty::members::rules());
     rules.collect()
 }
 
@@ -204,7 +206,7 @@ pub fn rules_for(load_plugins: Option<&str>, taken: &HashSet<String>) -> Vec<Rul
 /// Whether any native rule is enabled, so a file needs the model at all.
 pub fn wanted(enabled: &BTreeSet<String>) -> bool {
     #[cfg(feature = "ty")]
-    if crate::ty::operations::wanted(enabled) {
+    if crate::ty::operations::wanted(enabled) || crate::ty::members::wanted(enabled) {
         return true;
     }
     CHECKERS.iter().any(|checker| {
