@@ -80,7 +80,9 @@ and keep the answer only when it is one concrete type:
 * `C0103` takes a name, attribute or call that is a class (`orig = queue.LifoQueue`)
   for a class and checks its name as PascalCase. A function or a literal is not
   taken: ty's are wider than Pylint's `Const` (an enum member is a literal to ty
-  and an instance to Pylint). On a set of installed packages it closed 3 of 22
+  and an instance to Pylint). A class that its own module binds again
+  (`HTTPSConnection = DummyConnection` under `if not ssl`) is left alone: Pylint
+  infers two values there. On a set of installed packages it closed 2 of 21
   lines only Pylint reports and added none; on a Django codebase it changed
   nothing. One difference remains: `threading.Lock` is a class to ty and a
   function to Pylint.
