@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Rules answered by ty
-description: The nine Pylint operation rules that exist only in a build with the ty feature, the single-type criterion that keeps them close to Pylint, and the differences that remain.
+description: The ten Pylint rules that exist only in a build with the ty feature, the single-type criterion that keeps them close to Pylint, and the differences that remain.
 tags: [rules, inference, ty]
 status: draft
 ---
@@ -9,11 +9,11 @@ status: draft
 # Rules answered by ty
 
 A build with the `ty` cargo feature (`cargo build --features ty`, or
-`make release-build FEATURES=ty`) adds nine Pylint rules that need the type of
+`make release-build FEATURES=ty`) adds ten Pylint rules that need the type of
 a value. Without the feature they do not exist: `select` and `ignore` do not
 know them. ty starts only when one of them, `C0103` or a plugin is on, and it
 reads `VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint`
-prints a warning and the nine rules report nothing; `C0103` and the plugins
+prints a warning and the ten rules report nothing; `C0103` and the plugins
 fall back to what the host infers by itself.
 
 | Rule                                       | Reports                        | Node                                         |
@@ -27,16 +27,10 @@ fall back to what the host infers by itself.
 | `E1135` `unsupported-membership-test`      | `1 in x`, `1 not in x`         | a single `in` comparison                     |
 | `E1130` `invalid-unary-operand-type`       | `-x`                           | a unary operator                             |
 | `E1131` `unsupported-binary-operation`     | `x + y`, `x += y`              | a binary operator or an augmented assignment |
+| `E1101` `no-member`                        | `self.x`, `cls.x`              | a read of a member `self` or `cls` lacks     |
 
 `E1126` and `E1127` (a bad sequence index or slice) are not covered: ty has no
 lint for them.
-
-`E1101` (`no-member`) is not covered either. ty's `unresolved-attribute` and
-`possibly-missing-attribute` are the starting point, but no general criterion
-brings them near Pylint's: on one Django codebase, one that silences dynamic
-bases kept 148 lines Pylint reports (of 1417) and 16 634 it does not, and on a
-set of installed packages 12 (of 421) and 40. See
-[what ty does not close](inference-dependent-rules.md).
 
 ## The criterion
 
@@ -48,6 +42,31 @@ only when the operand has a **single concrete type**. A union, an
 intersection, an unknown or unresolved type, a type variable, `object` and a
 special form such as `Annotated[...]` are all silent, as Pylint is. The shape
 of the node, not the text of the message, tells the rules apart.
+
+### `E1101` reports only on `self` and `cls`
+
+ty types an annotated parameter or attribute by its declaration, where Pylint
+infers a value, so any other receiver disagrees with Pylint on most lines (on
+one Django codebase 80 to 95% of them). `self` and `cls` are different: ty
+types them as the enclosing class, and `E1101` keeps a read of a missing member
+there when the class is closed. A class is closed when no ancestor defines
+`__getattr__` or `__getattribute__`, sets a metaclass or has a base ty cannot
+resolve. It is silent as Pylint is for a name that matches `mixin-class-rgx`
+(`ignored-checks-for-mixins`), a name in `generated-members` or `ignored-classes`,
+and a read inside a `try` whose handler catches `AttributeError`. The message
+carries Pylint's hint (`; maybe 'x'?`), read from `missing-member-hint`,
+`missing-member-hint-distance` and `missing-member-max-choices`.
+
+Measured against Pylint run with `--enable=no-member` (a Django codebase whose
+own `.pylintrc` disables it, and a set of installed packages): the codebase
+727 lines agree, none only here and 690 only Pylint (51% of 1417); the packages
+327 agree, 39 only here and 94 only Pylint (78% of 421). 31 of the 39 are one
+class family in one package (`__slots__ = ()` classes its docstrings call
+mixins, which Pylint does not report). On the codebase it takes 4.3 s and
+1.6 GB with five threads. What stays with Pylint: members of another object
+(an instance of a class, a module), Django models and fields (the Django
+plugin), and a class with a plain metaclass, which Pylint checks and this rule
+leaves silent.
 
 ## Where it differs from Pylint
 
