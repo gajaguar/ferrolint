@@ -16,7 +16,9 @@ use regex::Regex;
 use ruff_db::files::File;
 use ruff_db::parsed::parsed_module;
 use ruff_python_ast::visitor::source_order::{self, SourceOrderVisitor};
-use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprContext, ExprRef, Stmt};
+use ruff_python_ast::{
+    ExceptHandler, Expr, ExprAttribute, ExprContext, ExprRef, Stmt, StmtClassDef,
+};
 use ruff_text_size::{Ranged, TextRange};
 use ty_project::{Db as _, ProjectDatabase};
 use ty_python_core::{Program, ProgramFile};
@@ -247,8 +249,9 @@ struct Scan<'a, 'db> {
     env: &'a ProgramEnvironment<'db>,
     closed: Closed<'a, 'db>,
     settings: Settings,
-    /// The classes enclosing the node, innermost last.
-    classes: Vec<Option<Type<'db>>>,
+    /// The classes enclosing the node, innermost last, with the names they
+    /// assign on `self` when they declare `__slots__`.
+    classes: Vec<(Option<Type<'db>>, HashSet<String>)>,
     /// Inside a `try` whose handler would catch an `AttributeError`.
     guarded: usize,
     out: Vec<Diagnostic>,
@@ -275,9 +278,13 @@ impl Scan<'_, '_> {
         {
             return;
         }
-        let Some(&Some(class_ty)) = self.classes.last() else {
+        let Some((Some(class_ty), assigned)) = self.classes.last() else {
             return;
         };
+        let class_ty = *class_ty;
+        if assigned.contains(attr.attr.as_str()) {
+            return;
+        }
         let Some(class) = type_hierarchy_prepare(self.closed.db, self.env, class_ty) else {
             return;
         };
@@ -315,6 +322,34 @@ impl Scan<'_, '_> {
     }
 }
 
+/// The names a class with `__slots__` assigns on `self`. ty ignores them where
+/// the slots omit them, and Pylint reads them as members.
+fn slotted(class: &StmtClassDef) -> HashSet<String> {
+    let declares = class.body.iter().any(|stmt| {
+        matches!(stmt, Stmt::Assign(a) if a.targets.iter().any(
+            |t| matches!(t, Expr::Name(n) if n.id.as_str() == "__slots__")))
+    });
+    let mut names = Assigned(HashSet::new());
+    if declares {
+        names.visit_body(&class.body);
+    }
+    names.0
+}
+
+struct Assigned(HashSet<String>);
+
+impl<'a> SourceOrderVisitor<'a> for Assigned {
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        if let Expr::Attribute(attr) = expr
+            && attr.ctx == ExprContext::Store
+            && matches!(&*attr.value, Expr::Name(n) if n.id.as_str() == "self")
+        {
+            self.0.insert(attr.attr.to_string());
+        }
+        source_order::walk_expr(self, expr);
+    }
+}
+
 /// Whether a handler of `try` would catch an `AttributeError`.
 fn catches(handlers: &[ExceptHandler]) -> bool {
     let named = |expr: &Expr| {
@@ -346,7 +381,8 @@ impl<'a> SourceOrderVisitor<'a> for Scan<'_, '_> {
                 self.visit_body(&node.finalbody);
             }
             Stmt::ClassDef(class) => {
-                self.classes.push(class.inferred_type(self.model));
+                self.classes
+                    .push((class.inferred_type(self.model), slotted(class)));
                 source_order::walk_stmt(self, stmt);
                 self.classes.pop();
             }

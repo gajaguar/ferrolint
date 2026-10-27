@@ -57,16 +57,23 @@ and a read inside a `try` whose handler catches `AttributeError`. The message
 carries Pylint's hint (`; maybe 'x'?`), read from `missing-member-hint`,
 `missing-member-hint-distance` and `missing-member-max-choices`.
 
+A class that declares `__slots__` keeps the names it assigns as `self.x = ...`
+as members: ty drops the ones the slots omit and Pylint does not.
+
 Measured against Pylint run with `--enable=no-member` (a Django codebase whose
 own `.pylintrc` disables it, and a set of installed packages): the codebase
 727 lines agree, none only here and 690 only Pylint (51% of 1417); the packages
-327 agree, 39 only here and 94 only Pylint (78% of 421). 31 of the 39 are one
-class family in one package (`__slots__ = ()` classes its docstrings call
-mixins, which Pylint does not report). On the codebase it takes 4.3 s and
-1.6 GB with five threads. What stays with Pylint: members of another object
-(an instance of a class, a module), Django models and fields (the Django
-plugin), and a class with a plain metaclass, which Pylint checks and this rule
-leaves silent.
+327 agree, 8 only here and 94 only Pylint (78% of 421). On the codebase it takes
+3.3 s and 1.6 GB with five threads. Of the 690, none is a `self` or `cls`
+receiver except 15 (13 in a class with a plain metaclass); the rest read a
+member of another object or a value ty does not flag. What stays with Pylint:
+members of another object (an instance of a class, a module), Django models and
+fields (the Django plugin), and a class with a plain metaclass.
+
+The last is left silent on purpose. Resolving the metaclass and checking that it
+has no `__getattr__` agrees on 17 more lines, but reports 110 on Django models
+(`ModelBase` is plain), where `pylint_django` makes Pylint silent. Telling
+`ModelBase` from a serializer's metaclass would take the name of a package.
 
 ## Where it differs from Pylint
 
