@@ -47,6 +47,29 @@ pub fn infer(flat: &Flat, model: &Model, source: &str, node: u32) -> Inferred {
     .infer(node, DEPTH)
 }
 
+/// What ty infers for the expression at `range`, when the engine above gave up.
+/// shortcut: a class, a function, a method or a module only; ty names no more outside its crate.
+#[cfg(feature = "ty")]
+pub fn from_ty(
+    types: &crate::ty::Types,
+    path: &std::path::Path,
+    source: &str,
+    range: ruff_text_size::TextRange,
+) -> Option<Inferred> {
+    use crate::native::{TyValue, TypeAt};
+
+    let value = types.with_file(path, source, |db, file| {
+        crate::ty::values::Values::new(db, file).value(range)
+    })??;
+    let name = match value {
+        TyValue::Class(name) => format!("type[{name}]"),
+        TyValue::Function | TyValue::Method => "function".to_owned(),
+        TyValue::Module => "module".to_owned(),
+        TyValue::Literal => return None,
+    };
+    Some(known(name, Origin::Unknown))
+}
+
 fn unknown() -> Inferred {
     Inferred {
         name: "unknown".into(),
@@ -447,5 +470,28 @@ mod tests {
         assert_eq!(infer_name(source, "fast", 0), ("unknown".into(), false));
         assert_eq!(infer_name(source, "callback", 0), ("unknown".into(), false));
         assert_eq!(infer_name(source, "x", 2), ("unknown".into(), false));
+    }
+
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_answers_what_the_engine_cannot_follow() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("use.py");
+        let source =
+            "from queue import LifoQueue\nimport os\nx = LifoQueue\ny = os.getcwd\nz = os\nn = 1\n";
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        let answer = |name: &str, value: &str| {
+            let start = source.find(&format!("{name} = {value}")).unwrap() + name.len() + 3;
+            let range = ruff_text_size::TextRange::at(
+                u32::try_from(start).unwrap().into(),
+                u32::try_from(value.len()).unwrap().into(),
+            );
+            from_ty(&types, &path, source, range).map(|found| found.name)
+        };
+        assert_eq!(answer("x", "LifoQueue").as_deref(), Some("type[LifoQueue]"));
+        assert_eq!(answer("y", "os.getcwd").as_deref(), Some("function"));
+        assert_eq!(answer("z", "os").as_deref(), Some("module"));
+        assert_eq!(answer("n", "1"), None);
     }
 }

@@ -56,6 +56,11 @@ pub struct FileData {
     pub overridden: HashMap<u32, Vec<String>>,
     /// The names the module's `__all__` lists, for the `modules` query.
     pub all_names: Option<Vec<String>>,
+    /// The type engine and the file's path, for the inference queries ty completes.
+    #[cfg(feature = "ty")]
+    pub types: Option<Arc<crate::ty::Types>>,
+    #[cfg(feature = "ty")]
+    pub path: std::path::PathBuf,
 }
 
 /// Per-store host state.
@@ -166,12 +171,21 @@ impl wit::ferrolint::plugin::semantic::Host for State {
 impl wit::ferrolint::plugin::inference::Host for State {
     fn infer(&mut self, node: u32) -> wasmtime::Result<Inferred> {
         let file = self.check_node(node)?;
-        Ok(crate::infer::infer(
-            &file.flat,
-            &file.model,
-            &file.source,
-            node,
-        ))
+        let answer = crate::infer::infer(&file.flat, &file.model, &file.source, node);
+        #[cfg(feature = "ty")]
+        if !answer.resolved
+            && let Some(types) = &file.types
+            && let Some(found) = file.flat.nodes.get(node as usize).and_then(|n| {
+                let range = ruff_text_size::TextRange::new(
+                    n.range.start.offset.into(),
+                    n.range.end.offset.into(),
+                );
+                crate::infer::from_ty(types, &file.path, &file.source, range)
+            })
+        {
+            return Ok(found);
+        }
+        Ok(answer)
     }
 }
 

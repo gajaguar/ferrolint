@@ -108,8 +108,9 @@ A class that is not a plain class statement:
 
 ## What ty does not close
 
-A build with ty answers the operation rules (see [Rules answered by ty](ty-rules.md)),
-not these: `E1120`, `E1121`, `E1124`, `E0712`, `E0702` and `W0632`. On a
+A build with ty answers the operation rules and a class assigned in `C0103` (see
+[Rules answered by ty](ty-rules.md)), not these: `E1120`, `E1121`, `E1124`,
+`E0712`, `E0702`, `W0632`, `W0125`, `W0143`, `C1803` and `E0701`. On a
 Django project and on a set of installed packages ty's diagnostics for them
 covered none of the lines only Pylint reports, and added findings Pylint does
 not give: ty reports one diagnostic per member of a union or overload, and it

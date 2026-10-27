@@ -290,7 +290,7 @@ struct Setup {
     /// The type engine, only when a rule that asks it is enabled and it
     /// starts (it does not in a virtualenv without `site-packages`).
     #[cfg(feature = "ty")]
-    types: Option<crate::ty::Types>,
+    types: Option<Arc<crate::ty::Types>>,
 }
 
 impl Setup {
@@ -322,7 +322,7 @@ impl Setup {
         let options: Vec<(String, String)> = config.options.clone().into_iter().collect();
         let opts = project_phase::Opts::new(&options);
         #[cfg(feature = "ty")]
-        let types = type_engine(&selection, cwd);
+        let types = type_engine(&selection, cwd, !host.plugins.is_empty());
         Ok(Self {
             host,
             registry,
@@ -340,14 +340,18 @@ impl Setup {
 
 /// Start ty when an enabled rule needs it, and say so when it cannot.
 #[cfg(feature = "ty")]
-fn type_engine(selection: &Selection, cwd: &Path) -> Option<crate::ty::Types> {
+fn type_engine(selection: &Selection, cwd: &Path, plugins: bool) -> Option<Arc<crate::ty::Types>> {
+    // C0103 and the plugins ask ty for the value of a name they cannot follow themselves.
     if !crate::ty::operations::rules()
         .iter()
         .any(|rule| selection.is_enabled(&rule.code))
+        && !selection.is_enabled("C0103")
+        && !plugins
     {
         return None;
     }
     crate::ty::Types::new(cwd)
+        .map(Arc::new)
         .map_err(|err| eprintln!("ferrolint: warning: {err}; the ty rules report nothing"))
         .ok()
 }
@@ -596,8 +600,9 @@ impl Linter<'_> {
                 std::env::var("PYTHONPATH")
             );
             // A run where ty did not start must not reuse a run where it did.
-            // shortcut: ty's reads of other modules are not stamped, so a change
-            // in one does not invalidate a ty result; use `--no-cache`.
+            // shortcut: ty's reads of other modules are not stamped (the native
+            // rules' are, through `touch`), so a change in one does not
+            // invalidate a ty result; use `--no-cache`.
             #[cfg(feature = "ty")]
             let ty = setup.types.is_some().to_string();
             #[cfg(not(feature = "ty"))]
@@ -719,35 +724,9 @@ impl Linter<'_> {
             &plugin_loaded,
         );
         if parsed.has_no_syntax_errors() && native::wanted(enabled) {
-            let flat = ast::flatten(&source, &index, parsed.syntax());
-            let model = Model::build(
-                parsed.syntax(),
-                &flat.nodes,
-                &source,
-                &index,
-                setup.py_version,
-            );
-            let ctx = native::Ctx {
-                source: &source,
-                index: &index,
-                parsed: &parsed,
-                flat: &flat,
-                model: &model,
-                options: &setup.options,
-                py_version: setup.py_version,
-                module: file.module,
-                path: file.path,
-                roots: &setup.roots,
-            };
-            entry.host.extend(native::check(&ctx, enabled));
-            #[cfg(feature = "ty")]
-            if let Some(types) = &setup.types
-                && crate::ty::operations::wanted(enabled)
-            {
-                entry
-                    .host
-                    .extend(crate::ty::operations::check(types, &ctx, enabled));
-            }
+            entry.host.extend(native_findings(
+                setup, file, &source, &parsed, &index, enabled,
+            ));
         }
         entry.stamps = native::take_reads()
             .into_iter()
@@ -773,6 +752,8 @@ impl Linter<'_> {
                 options: &setup.options,
                 roots: &setup.roots,
                 opts: &setup.opts,
+                #[cfg(feature = "ty")]
+                types: setup.types.as_ref(),
             };
             for (position, outcome) in self.run_plugins(host, &context, &missing)? {
                 let plugin = &host.plugins[position];
@@ -815,6 +796,7 @@ impl Linter<'_> {
             module: context.module,
             path: context.path,
             roots: context.roots,
+            types: None,
         });
         // `listed_in_all` answers for a file without `__all__` too, but costs a project.
         let all_names = if context.source.contains("__all__") {
@@ -826,6 +808,10 @@ impl Linter<'_> {
         let data = Arc::new(FileData {
             overridden,
             all_names,
+            #[cfg(feature = "ty")]
+            types: context.types.cloned(),
+            #[cfg(feature = "ty")]
+            path: context.path.to_owned(),
             stars: star_names(&flat, context),
             flat,
             ast,
@@ -877,6 +863,64 @@ impl Linter<'_> {
     }
 }
 
+/// The native rules' findings on one file, and ty's operations rules when it runs.
+fn native_findings(
+    setup: &Setup,
+    file: &FileRef<'_>,
+    source: &str,
+    parsed: &Parsed<ModModule>,
+    index: &LineIndex,
+    enabled: &BTreeSet<String>,
+) -> Vec<Diagnostic> {
+    let flat = ast::flatten(source, index, parsed.syntax());
+    let model = Model::build(
+        parsed.syntax(),
+        &flat.nodes,
+        source,
+        index,
+        setup.py_version,
+    );
+    let ctx = native::Ctx {
+        source,
+        index,
+        parsed,
+        flat: &flat,
+        model: &model,
+        options: &setup.options,
+        py_version: setup.py_version,
+        module: file.module,
+        path: file.path,
+        roots: &setup.roots,
+        types: None,
+    };
+    #[cfg(feature = "ty")]
+    let mut found = setup
+        .types
+        .as_ref()
+        .and_then(|types| {
+            types.with_file(file.path, source, |db, program_file| {
+                let values = crate::ty::values::Values::new(db, program_file);
+                native::check(
+                    &native::Ctx {
+                        types: Some(&values),
+                        ..ctx
+                    },
+                    enabled,
+                )
+            })
+        })
+        .unwrap_or_else(|| native::check(&ctx, enabled));
+    #[cfg(not(feature = "ty"))]
+    let found = native::check(&ctx, enabled);
+    #[cfg(feature = "ty")]
+    if let Some(types) = &setup.types
+        && crate::ty::operations::wanted(enabled)
+    {
+        found.extend(crate::ty::operations::check(types, &ctx, enabled));
+    }
+    found
+}
+
 /// Keep the diagnostics whose code reports for this file and attach the
 /// path and aliases a report needs. A plugin abort always reports.
 fn place(
@@ -920,6 +964,8 @@ struct PluginContext<'a> {
     options: &'a [(String, String)],
     roots: &'a [PathBuf],
     opts: &'a project_phase::Opts,
+    #[cfg(feature = "ty")]
+    types: Option<&'a Arc<crate::ty::Types>>,
 }
 
 /// What each `from m import *` of the file binds, by alias node, for the

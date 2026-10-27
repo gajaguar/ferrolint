@@ -77,6 +77,29 @@ pub struct Ctx<'a> {
     pub path: &'a std::path::Path,
     /// The directories above the run's packages, where imports are searched.
     pub roots: &'a [std::path::PathBuf],
+    /// What ty says an expression is, in a build with ty that started it.
+    pub types: Option<&'a dyn TypeAt>,
+}
+
+/// What ty says a value is, as far as the rules need: ty's own API names no
+/// more than this outside its crate.
+#[cfg_attr(not(feature = "ty"), allow(dead_code))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TyValue {
+    /// A class, by its name.
+    Class(String),
+    /// A function that no instance binds.
+    Function,
+    /// A function bound to an instance or a class.
+    Method,
+    Module,
+    /// A literal value: a number, a string, an enum member.
+    Literal,
+}
+
+/// The value ty infers for the expression at a range, when it is one concrete type.
+pub trait TypeAt {
+    fn value(&self, range: TextRange) -> Option<TyValue>;
 }
 
 impl Ctx<'_> {
@@ -265,6 +288,7 @@ pub fn lint_with(source: &str, options: &[(&str, &str)]) -> Vec<(u32, String)> {
         module: "mod",
         path: std::path::Path::new("mod.py"),
         roots: &[],
+        types: None,
     };
     let enabled = rules().into_iter().map(|rule| rule.code).collect();
     check(&ctx, &enabled)
