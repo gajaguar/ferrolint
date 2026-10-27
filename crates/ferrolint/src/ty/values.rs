@@ -50,8 +50,11 @@ impl TypeAt for Values<'_> {
             return None;
         }
         match ty {
-            Type::ClassLiteral(_) => type_hierarchy_prepare(self.db, &self.env, ty)
-                .map(|class| TyValue::Class(class.name.to_string())),
+            // `self.Task` is `type[Task]`, the class reached through an instance.
+            Type::ClassLiteral(_) | Type::SubclassOf(_) => {
+                type_hierarchy_prepare(self.db, &self.env, ty)
+                    .map(|class| TyValue::Class(class.name.to_string()))
+            }
             Type::FunctionLiteral(_) => Some(TyValue::Function),
             Type::BoundMethod(_) => Some(TyValue::Method),
             Type::ModuleLiteral(_) => Some(TyValue::Module),

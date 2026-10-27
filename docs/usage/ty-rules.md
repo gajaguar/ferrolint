@@ -78,7 +78,9 @@ Two places ask ty for the value of an expression that the host cannot follow,
 and keep the answer only when it is one concrete type:
 
 * `C0103` takes a name, attribute or call that is a class (`orig = queue.LifoQueue`)
-  for a class and checks its name as PascalCase. A function or a literal is not
+  for a class and checks its name as PascalCase, also for a variable of a function,
+  an element of a tuple (`tasks, Task = self.tasks, self.Task`) and an `if` of two
+  classes (the last needs no ty). A function or a literal is not
   taken: ty's are wider than Pylint's `Const` (an enum member is a literal to ty
   and an instance to Pylint). A class that its own module binds again
   (`HTTPSConnection = DummyConnection` under `if not ssl`) is left alone: Pylint

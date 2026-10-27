@@ -1070,7 +1070,32 @@ impl<'a> Walk<'a, '_> {
 
     /// What the value of a binding is: `val`, and for a name, attribute or call that it
     /// cannot follow, the value ty infers when the build has it.
+    /// Whether the value that `parent` takes from `value` is a class: the value itself, or
+    /// its element for a name in a tuple (`tasks, Task = self.tasks, self.Task`).
+    fn assigned_class(&self, parent: Parent<'a>, value: Option<&Expr>) -> bool {
+        let assigner = match (parent, value) {
+            (Parent::Direct, Some(value)) => value,
+            (Parent::Tuple(index, _), Some(Expr::Tuple(values)))
+                if !values.elts.iter().any(Expr::is_starred_expr) =>
+            {
+                match values.elts.get(index) {
+                    Some(element) => element,
+                    None => return false,
+                }
+            }
+            _ => return false,
+        };
+        self.val_at(assigner) == Val::Class
+    }
+
     fn val_at(&self, value: &Expr) -> Val {
+        // astroid takes `A if c else B` for a class when both arms are classes.
+        if let Expr::If(i) = value
+            && self.val_at(&i.body) == Val::Class
+            && self.val_at(&i.orelse) == Val::Class
+        {
+            return Val::Class;
+        }
         let val = self.val(value, 0);
         if val != Val::Unknown
             || !matches!(value, Expr::Name(_) | Expr::Attribute(_) | Expr::Call(_))
@@ -1543,9 +1568,8 @@ impl<'a> Walk<'a, '_> {
                 {
                     self.check("typealias", name, range, None);
                 } else if !(matches!(parent, Parent::Direct)
-                    && site.value.is_some_and(|v| {
-                        self.val(v, 0) == Val::Class || self.typevar_kind(v).is_some()
-                    }))
+                    && site.value.is_some_and(|v| self.typevar_kind(v).is_some())
+                    || self.assigned_class(parent, site.value))
                 {
                     self.check("variable", name, range, None);
                 }
@@ -2415,6 +2439,39 @@ mod tests {
         out.into_iter()
             .map(|d| (d.range.start.line, d.message))
             .collect()
+    }
+
+    /// A class in a function, by an `if` of two classes or by its place in a tuple; an arm that
+    /// is no class leaves the name a variable.
+    #[test]
+    fn names_a_class_by_if_or_tuple() {
+        let source = "class Task:\n    pass\n\n\ndef run(flag):\n    Pool = Task if flag else int\n    count, Other = 1, Task\n    Bad = Task if flag else 1\n    return Pool, count, Other, Bad\n";
+        let found = lint_at(source, std::path::Path::new("use.py"), "use");
+        assert_eq!(
+            found,
+            [(
+                8,
+                "Variable name \"Bad\" doesn't conform to snake_case naming style".to_owned()
+            )]
+        );
+    }
+
+    /// `self.Task`, a class attribute, in a tuple and in an `if`: ty names the class.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_names_a_class_attribute_in_a_function() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("use.py");
+        let source = "class Task:\n    pass\n\n\nclass Box:\n    Task = Task\n    Other = int\n    tasks = []\n\n    def run(self, flag):\n        tasks, Worker = self.tasks, self.Task\n        Pool = self.Task if flag else self.Other\n        return tasks, Worker, Pool\n";
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        let with = types
+            .with_file(&path, source, |db, file| {
+                let values = crate::ty::values::Values::new(db, file);
+                lint_with(source, &path, "use", Some(&values))
+            })
+            .unwrap();
+        assert_eq!(with, []);
     }
 
     /// A class the rule cannot follow, named by ty; what is not one stays silent.
