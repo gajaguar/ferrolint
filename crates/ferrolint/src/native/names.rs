@@ -99,6 +99,7 @@ impl Checker for Naming {
             loops: 0,
             main: 0,
             project: Project::new(ctx.path, ctx.module, ctx.roots),
+            packages: Project::with_packages(ctx.path, ctx.module, ctx.roots),
             cache: RefCell::default(),
             outside: std::cell::OnceCell::new(),
         };
@@ -709,6 +710,8 @@ struct Walk<'a, 'c> {
     /// The `if __name__ == "__main__":` bodies around.
     main: usize,
     project: Project,
+    /// The same, reading the standard library and the installed packages, for the ancestors.
+    packages: Project,
     /// The known ancestors of each class, by the start of its name.
     cache: RefCell<HashMap<u32, Rc<Vec<Anc<'a>>>>>,
     /// The attributes that code outside a class gives its instances, by class address.
@@ -725,8 +728,8 @@ enum Anc<'a> {
     External(String),
 }
 
-/// The methods and attributes of `unittest.TestCase`, which the test
-/// cases of Django and Django REST framework derive from.
+/// The methods and attributes of `unittest.TestCase`, for when the standard
+/// library cannot be read (no environment to search).
 const TEST_CASE: [&str; 61] = [
     "addAsyncCleanup",
     "addClassCleanup",
@@ -791,49 +794,17 @@ const TEST_CASE: [&str; 61] = [
     "tearDownClass",
 ];
 
-/// What Django's test cases add to `unittest.TestCase`.
-const DJANGO_TEST_CASE: [&str; 17] = [
-    "assertContains",
-    "assertFieldOutput",
-    "assertFormError",
-    "assertFormSetError",
-    "assertHTMLEqual",
-    "assertHTMLNotEqual",
-    "assertInHTML",
-    "assertJSONEqual",
-    "assertJSONNotEqual",
-    "assertNotContains",
-    "assertNumQueries",
-    "assertQuerySetEqual",
-    "assertRaisesMessage",
-    "assertRedirects",
-    "assertTemplateNotUsed",
-    "assertTemplateUsed",
-    "assertWarnsMessage",
-];
-
-/// Whether a class outside the project and the file defines `name`. The
-/// methods of the classes in `class_methods` are known; of the rest only
-/// test cases are: a class whose name ends in `TestCase` is taken to derive
-/// from `unittest.TestCase`, and from Django's `TestCase`, which owns
-/// `setUpTestData`, unless it is a unittest, transaction, simple or live
-/// server one.
+/// Whether a class outside the project and the file defines `name`: the
+/// methods of the classes in `class_methods`, and the members of the
+/// `unittest` test cases. The rest are read from the environment.
 fn external_defines(qualified: &str, name: &str, method: bool) -> bool {
     if method && let Some(found) = class_methods::methods(qualified) {
         return found.binary_search(&name).is_ok();
     }
-    if !qualified.ends_with("TestCase") {
-        return false;
-    }
-    let unittest = qualified.starts_with("unittest.");
-    let atomic = !unittest
-        && !["Transaction", "Simple", "LiveServer"]
-            .iter()
-            .any(|kind| qualified.contains(kind));
-    TEST_CASE.contains(&name)
-        || (!unittest && DJANGO_TEST_CASE.contains(&name))
-        || (atomic && name == "setUpTestData")
-        || (!method && matches!(name, "maxDiff" | "longMessage" | "failureException"))
+    qualified.starts_with("unittest.")
+        && qualified.ends_with("TestCase")
+        && (TEST_CASE.contains(&name)
+            || (!method && matches!(name, "maxDiff" | "longMessage" | "failureException")))
 }
 
 fn is_main_test(test: &Expr) -> bool {
@@ -1764,8 +1735,8 @@ impl<'a> Walk<'a, '_> {
                 self.local_ancestors(local, out, depth + 1);
             } else {
                 for qualified in self.env.qualified_all(base) {
-                    let qualified = self.project.absolute(&qualified);
-                    match self.project.class(&qualified) {
+                    let qualified = self.packages.absolute(&qualified);
+                    match self.packages.class(&qualified) {
                         Some(remote) => self.remote_ancestors(&remote, out, depth + 1),
                         None => self.external(qualified, out),
                     }
@@ -1779,7 +1750,7 @@ impl<'a> Walk<'a, '_> {
         if depth >= 16 {
             return;
         }
-        for base in class.bases_all(&self.project) {
+        for base in class.bases_all(&self.packages) {
             match base {
                 Ok(remote) => self.remote_ancestors(&remote, out, depth + 1),
                 Err(qualified) => self.external(qualified, out),
@@ -1789,7 +1760,7 @@ impl<'a> Walk<'a, '_> {
 
     /// A class the project does not hold, or what a name of the project that aliases one stands for.
     fn external(&self, qualified: String, out: &mut Vec<Anc<'a>>) {
-        let aliased = self.project.unalias(&qualified);
+        let aliased = self.packages.unalias(&qualified);
         if aliased.is_empty() {
             out.push(Anc::External(qualified));
         } else {
@@ -1826,17 +1797,21 @@ impl<'a> Walk<'a, '_> {
                     | "enum.Flag"
                     | "enum.IntFlag"
                     | "enum.ReprEnum"
-            ) || name.starts_with("django.db.models.") && name.ends_with("Choices")
+            )
         };
-        self.ancestors(class)
-            .iter()
-            .any(|anc| matches!(anc, Anc::External(q) if enum_class(q)))
+        self.ancestors(class).iter().any(|anc| match anc {
+            Anc::External(q) => enum_class(q),
+            Anc::Remote(class) => enum_class(&class.qname()),
+            Anc::Local(_) => false,
+        })
     }
 
     fn is_metaclass(&self, class: &'a StmtClassDef) -> bool {
-        self.ancestors(class)
-            .iter()
-            .any(|anc| matches!(anc, Anc::External(q) if q == "type" || q == "abc.ABCMeta"))
+        self.ancestors(class).iter().any(|anc| match anc {
+            Anc::External(q) => q == "type" || q == "abc.ABCMeta",
+            Anc::Remote(class) => class.qname() == "abc.ABCMeta",
+            Anc::Local(_) => false,
+        })
     }
 
     fn is_dataclass(&self, class: &StmtClassDef) -> bool {

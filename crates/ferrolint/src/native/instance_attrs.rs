@@ -10,7 +10,8 @@
 //! of `self._Nested` or of `__new__` on it or on `object`
 //! (`object.__new__(self.__class__)`); a branch that rebinds the name is not
 //! read, nor is a class reached through a list, a field or a call to another
-//! module. Upgrade with a value inference. The ancestors come from
+//! module. With ty, `self.X` is also a class of the file that a class attribute
+//! rebinds. Upgrade with a value inference. The ancestors come from
 //! [`super::hierarchy`]: a class without an MRO is not checked by the rules
 //! that look at its ancestors.
 
@@ -376,11 +377,12 @@ impl<'a> Clients<'a, '_> {
                         .filter(|(n, _)| n == attr)
                         .count()
                         == 1
-                    {
-                        return class.body.iter().find_map(|stmt| match stmt {
+                        && let Some(nested) = class.body.iter().find_map(|stmt| match stmt {
                             Stmt::ClassDef(c) if c.name.as_str() == attr => Some(c),
                             _ => None,
-                        });
+                        })
+                    {
+                        return Some(nested);
                     }
                 }
             }
@@ -391,6 +393,17 @@ impl<'a> Clients<'a, '_> {
         }
         if let Some(value) = self.bound(expr) {
             return self.class(value, depth + 1);
+        }
+        // `self.Connection`, a class of this file that a class attribute rebinds
+        // (`Connection = Connection`), which ty follows and the lookup above does not.
+        if matches!(expr, Expr::Attribute(_))
+            && let Some(name) = self
+                .env
+                .ctx
+                .types
+                .and_then(|types| types.local_class(expr.range()))
+        {
+            return self.file_class(name);
         }
         let Expr::Call(call) = expr else { return None };
         let Expr::Name(callee) = &*call.func else {
@@ -408,6 +421,24 @@ impl<'a> Clients<'a, '_> {
             .all(|class| class == Some(first))
             .then(|| self.class(returns.0[0], depth + 1))
             .flatten()
+    }
+
+    /// The class of this file whose name spans `name`.
+    fn file_class(&self, name: TextRange) -> Option<&'a StmtClassDef> {
+        struct Find<'a>(TextRange, Option<&'a StmtClassDef>);
+        impl<'a> Visitor<'a> for Find<'a> {
+            fn visit_stmt(&mut self, stmt: &'a Stmt) {
+                if let Stmt::ClassDef(c) = stmt
+                    && c.name.range() == self.0
+                {
+                    self.1 = Some(c);
+                }
+                visitor::walk_stmt(self, stmt);
+            }
+        }
+        let mut find = Find(name, None);
+        find.visit_body(&self.env.ctx.parsed.syntax().body);
+        find.1
     }
 
     /// The class of this file whose instance `expr` is.
@@ -1249,6 +1280,65 @@ impl<'a> Visitor<'a> for Walk<'a, '_> {
 #[cfg(test)]
 mod tests {
     use crate::native::classes::render;
+
+    /// The lines `W0201` reports on `source`, linted as `use.py` with ty's answers.
+    #[cfg(feature = "ty")]
+    fn outside_init_with_ty(source: &str) -> Vec<u32> {
+        use ferrolint_core::LineIndex;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("use.py");
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        types
+            .with_file(&path, source, |db, file| {
+                let values = crate::ty::values::Values::new(db, file);
+                let parsed = ruff_python_parser::parse_module(source).unwrap();
+                let index = LineIndex::new(source);
+                let flat = crate::ast::flatten(source, &index, parsed.syntax());
+                let model = crate::semantic::Model::build(
+                    parsed.syntax(),
+                    &flat.nodes,
+                    source,
+                    &index,
+                    None,
+                );
+                let ctx = super::Ctx {
+                    source,
+                    index: &index,
+                    parsed: &parsed,
+                    flat: &flat,
+                    model: &model,
+                    options: &[],
+                    py_version: None,
+                    module: "use",
+                    path: &path,
+                    roots: &crate::native::Project::test_roots(&path, "use"),
+                    types: Some(&values),
+                };
+                let enabled = ["W0201".to_owned()].into_iter().collect();
+                let mut out = Vec::new();
+                super::Checker::check(&super::InstanceAttrs, &ctx, &enabled, &mut out);
+                out.into_iter().map(|d| d.range.start.line).collect()
+            })
+            .unwrap()
+    }
+
+    /// `conn = self.Connection()`, where a class attribute rebinds a class of the file.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_names_the_class_a_class_attribute_rebinds() {
+        let source = "class Connection:\n    pass\n\n\nclass Transport:\n    Connection = Connection\n\n    def connect(self):\n        conn = self.Connection()\n        conn.client = self\n";
+        assert_eq!(outside_init_with_ty(source), [10]);
+    }
+
+    /// A class attribute that holds a class of another module is not a class of the file.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_ignores_a_class_of_another_module() {
+        let source = "from json import JSONDecoder as Other\n\n\nclass Decoder:\n    pass\n\n\nclass Box:\n    Decoder = Other\n\n    def load(self):\n        loader = self.Decoder()\n        loader.source = self\n";
+        assert_eq!(outside_init_with_ty(source), Vec::<u32>::new());
+    }
 
     #[test]
     fn instance_attributes() {

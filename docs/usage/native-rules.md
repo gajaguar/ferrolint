@@ -486,11 +486,10 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   file and in the other modules of the project, which are found as files
   under the directories above the linted file and followed through
   `import` and `from` statements at the top level (see `native/project.rs`).
-  Classes from installed packages are not read: of those only the test
-  cases are known, a class named `...TestCase` standing for
-  `unittest.TestCase`, and for Django's `TestCase` (which owns
-  `setUpTestData`) unless its name holds `Transaction`, `Simple` or
-  `LiveServer`. The builtin and standard library classes in
+  `C0103` also reads the standard library and the installed packages when
+  `VIRTUAL_ENV` names an environment, so a base from either is followed to
+  the class; without one only `unittest`'s test cases are known, by the names
+  of their members. The builtin and standard library classes in
   `src/class_methods.rs` (the exceptions, `dict`, `logging.Handler`,
   `threading.Thread`, `json.JSONEncoder`, `argparse.Action`, ...) are known
   with every method of theirs and of their ancestors, from a table that

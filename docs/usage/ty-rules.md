@@ -89,12 +89,24 @@ and keep the answer only when it is one concrete type:
   lines only Pylint reports and added none; on a Django codebase it changed
   nothing. One difference remains: `threading.Lock` is a class to ty and a
   function to Pylint.
+* `W0201` takes the receiver `self.Connection()` of an attribute store
+  (`conn = self.Connection(); conn.client = self`) for an instance of a class
+  of the same file when a class attribute rebinds it
+  (`Connection = Connection`), which the host's own lookup does not follow.
+  ty must name the class and say it is written in this file. On a set of
+  installed packages it closed 3 of 9 lines only Pylint reports and added
+  none; on a Django codebase it changed nothing.
 * A plugin's `inference` query answers `type[Name]`, `function` or `module` when
   the host's own engine is unresolved. The contract does not change.
 
-`W0125`, `W0143`, `C1803` and `E0701` are not completed: on the same packages
-every line only Pylint reports was an attribute that ty types as `Unknown` or a
-union, and outside its crate ty exposes no class hierarchy for `E0701`.
+The class rules (`W0221`, `W0237`, `W0223`, `R0901`, `R0903`, `E0203`) are
+not completed: the 7 lines only Pylint reports in them on a set of installed
+packages (none on a Django codebase) sit in classes whose bases the host
+reads, or whose base ty types as a union or `Unknown`, so naming the class
+through ty closes none. `W0125`, `W0143`, `C1803` and `E0701` are not
+completed either: on the same packages every line only Pylint reports was an
+attribute that ty types as `Unknown` or a union, and outside its crate ty
+exposes no class hierarchy for `E0701`.
 
 ## Why ty does not share the host's tree
 

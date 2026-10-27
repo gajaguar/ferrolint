@@ -38,17 +38,31 @@ impl<'db> Values<'db> {
     }
 }
 
-impl TypeAt for Values<'_> {
-    fn value(&self, range: TextRange) -> Option<TyValue> {
+impl<'db> Values<'db> {
+    /// The type of the expression at `range`, when it is one concrete type.
+    fn single_type(&self, range: TextRange) -> Option<Type<'db>> {
         let mut find = Find {
             target: range,
             found: None,
         };
         find.visit_body(self.module.suite());
         let ty = ExprRef::from(find.found?).inferred_type(&self.model)?;
-        if !criterion::single(self.db, &self.env, ty) {
+        criterion::single(self.db, &self.env, ty).then_some(ty)
+    }
+}
+
+impl TypeAt for Values<'_> {
+    fn local_class(&self, range: TextRange) -> Option<TextRange> {
+        let ty = self.single_type(range)?;
+        if !matches!(ty, Type::ClassLiteral(_) | Type::SubclassOf(_)) {
             return None;
         }
+        let class = type_hierarchy_prepare(self.db, &self.env, ty)?;
+        (class.file.file(self.db) == self.model.file()).then_some(class.selection_range)
+    }
+
+    fn value(&self, range: TextRange) -> Option<TyValue> {
+        let ty = self.single_type(range)?;
         match ty {
             // `self.Task` is `type[Task]`, the class reached through an instance.
             Type::ClassLiteral(_) | Type::SubclassOf(_) => {

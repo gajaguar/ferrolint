@@ -57,7 +57,8 @@ example.
 The type of a call result or attribute:
 
 * `W0201` 32 [5]: `self._storage.cvar = _CVar()`, an instance reached
-  through an attribute.
+  through an attribute (a build with ty also takes `self.Connection()` when
+  a class attribute rebinds a class of the file).
 * `R0902` 6: `self.x = ...` through an instance a call returns, or through
   a field (`self.worker_fixup.worker = worker`), which adds an attribute
   to the count.
@@ -108,7 +109,8 @@ A class that is not a plain class statement:
 
 ## What ty does not close
 
-A build with ty answers the operation rules and a class assigned in `C0103` (see
+A build with ty answers the operation rules, a class assigned in `C0103` and the
+class an attribute of `self` stands for in `W0201` (see
 [Rules answered by ty](ty-rules.md)), not these: `E1120`, `E1121`, `E1124`,
 `E0712`, `E0702`, `W0632`, `W0125`, `W0143`, `C1803` and `E0701`. On a
 Django project and on a set of installed packages ty's diagnostics for them
