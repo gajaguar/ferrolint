@@ -15,6 +15,8 @@ from `ferrolint --help` alone.
   batch, and where they differ from Pylint.
 * [Rules that wait for type inference](inference-dependent-rules.md) - the
   differences from Pylint that only type inference closes, and ty.
+* [Rules answered by ty](ty-rules.md) - the operation rules of a build with
+  the `ty` feature, and where they differ from Pylint.
 * [Writing a plugin](writing-a-plugin.md) - the SDK's `Checker`, building to
   `wasm32-wasip2`, loading by SHA-256, and parity fixtures against Pylint.
 * [A plugin outside this repository](out-of-tree-plugin.md) - depending on the

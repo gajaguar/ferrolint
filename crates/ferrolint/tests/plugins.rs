@@ -30,9 +30,12 @@ fn findings_beside(package: &str, tokens: &str, source: &str) -> Vec<String> {
     run.finding_lines()
         .iter()
         // the sources name things as they like, import `*` and declare bare
-        // classes; `C0103`, `W0401` and `R0903` are not under test
+        // classes; `C0103`, `W0401`, `R0903` and, with ty, `E1133` are not under test
         .filter(|line| {
-            !(line.contains(" C0103 ") || line.contains(" W0401 ") || line.contains(" R0903 "))
+            !(line.contains(" C0103 ")
+                || line.contains(" W0401 ")
+                || line.contains(" R0903 ")
+                || line.contains(" E1133 "))
         })
         .map(|line| {
             let (location, rest) = line.split_once(": ").unwrap();
@@ -284,6 +287,8 @@ fn unnecessary_pass() {
     );
 }
 
+// With ty, E1102 is native and the plugin's alias clashes with it.
+#[cfg(not(feature = "ty"))]
 #[test]
 fn not_callable_reports_resolved_builtin_instances() {
     let source = "x = 1\nx()\nname: str = 'a'\nname()\nNone()\nitems = [x]\nitems()\n\ndef f(y):\n    return y()\n";
@@ -298,6 +303,8 @@ fn not_callable_reports_resolved_builtin_instances() {
     );
 }
 
+// With ty, E1102 is native and the plugin's alias clashes with it.
+#[cfg(not(feature = "ty"))]
 #[test]
 fn not_callable_stays_silent_when_the_type_is_unresolved() {
     let source = "import random\nfrom os import sep\n\nclass C:\n    pass\n\ndef make() -> C:\n    return C()\n\nfn = random.choice([len, 1])\nfn()\nsep()\nC()\nmake()\nlen('a')\nint('1')\na, b = 1, 2\na()\ntry:\n    from _speedups import fast\nexcept ImportError:\n    fast = None\nfast()\ncallback: Callable[[], None] | None = None\ncallback()\nflag = 1 == 2\nflag()\n\ndef g(validate_host: bool):\n    validate_host(1)\ng(True)\n";

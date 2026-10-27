@@ -1,44 +1,33 @@
 //! Pylint's criterion over ty's types. ty reports far more than Pylint
-//! (513 unsubscriptable values against 11 on one codebase), so a rule asks
-//! this module, not ty, whether a value fails.
+//! (513 unsubscriptable values against 11 on one codebase), so a rule keeps a
+//! diagnostic only when the operand has a single, concrete type: Pylint's
+//! `safe_infer` is silent on a union, on what it cannot infer and on what it
+//! only knows by declaration.
 
-use ty_python_semantic::Db;
-use ty_python_semantic::types::Type;
+use ty_python_semantic::types::{KnownClass, Type};
+use ty_python_semantic::{Db, ProgramEnvironment};
 
-/// What a `None` member of a union counts for; each rule picks its own.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NoneMember {
-    /// Pylint skips it: `x[0]` with `x: list | None` is not reported.
-    Ignore,
-    /// It is a member like any other, and fails the test.
-    Count,
-}
-
-/// Whether the value fails `test`, as Pylint would report it.
-///
-/// An unknown or divergent type is silent. A union fails only when every
-/// member does, once a `None` is set aside under [`NoneMember::Ignore`]; a
-/// union that was only `None` is silent. `test` sees the members that are
-/// neither dynamic, nor `None`, nor a union.
-pub fn fails<'db>(
-    db: &'db dyn Db,
-    ty: Type<'db>,
-    none: NoneMember,
-    test: &dyn Fn(Type<'db>) -> bool,
-) -> bool {
-    match ty {
-        Type::Dynamic(_) | Type::Divergent(_) => false,
-        Type::Union(union) => {
-            let members: Vec<_> = union
-                .elements(db)
-                .iter()
-                .copied()
-                .filter(|member| none == NoneMember::Count || !member.is_none(db))
-                .collect();
-            !members.is_empty() && members.iter().all(|&m| fails(db, m, none, test))
-        }
-        _ => (none == NoneMember::Count || !ty.is_none(db)) && test(ty),
-    }
+/// Whether `ty` is one concrete type: not a union, an intersection, a
+/// dynamic or recursive type, a type variable, a special form such as
+/// `Annotated[...]`, nor `object`, which stands for "anything".
+pub fn single<'db>(db: &'db dyn Db, env: &ProgramEnvironment<'db>, ty: Type<'db>) -> bool {
+    !matches!(
+        ty,
+        Type::Dynamic(_)
+            | Type::Divergent(_)
+            | Type::Recursive(_)
+            | Type::RecursiveVar(_)
+            | Type::Never
+            | Type::Union(_)
+            | Type::Intersection(_)
+            | Type::EnumComplement(_)
+            | Type::AlwaysTruthy
+            | Type::AlwaysFalsy
+            | Type::TypeVar(_)
+            | Type::SpecialForm(_)
+            | Type::KnownInstance(_)
+            | Type::TypeAlias(_)
+    ) && ty != KnownClass::Object.to_instance(db, env)
 }
 
 #[cfg(test)]
@@ -52,21 +41,27 @@ mod tests {
     use super::*;
     use crate::ty::Types;
 
-    // One expression statement per parameter, in order; the test treats
-    // `int`, `str` and `None` as the values that fail.
+    // One expression statement per name, in order.
     const SOURCE: &str = "\
-def f(only_none: None, list_or_none: list | None, int_or_none: int | None,
-      int_or_str: int | str, int_or_list: int | list, unknown, missing: Missing):
+from typing import Annotated
+Alias = Annotated[int, 1]
+
+
+def f[T](only_none: None, plain: int, int_or_none: int | None, int_or_str: int | str,
+         unknown, missing: Missing, anything: object, var: T):
     only_none
-    list_or_none
+    plain
     int_or_none
     int_or_str
-    int_or_list
     unknown
     missing
+    anything
+    var
+    Alias
 ";
 
-    fn verdicts(none: NoneMember) -> Vec<bool> {
+    #[test]
+    fn only_a_concrete_single_type_counts() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("f.py"), SOURCE).unwrap();
         let db = Types::new(dir.path()).unwrap().database();
@@ -79,16 +74,10 @@ def f(only_none: None, list_or_none: list | None, int_or_none: int | None,
         let module = parsed_module(&db, program_file.python_file(&db)).load(&db);
         let model = SemanticModel::new(&db, program_file);
         let env = model.program_environment();
-        let Stmt::FunctionDef(function) = &module.syntax().body[0] else {
-            unreachable!("the source starts with a function");
+        let Stmt::FunctionDef(function) = &module.syntax().body[2] else {
+            unreachable!("the source ends with a function");
         };
-        let test = |ty: Type<'_>| {
-            matches!(
-                ty.display(&db, &env).to_string().as_str(),
-                "int" | "str" | "None"
-            )
-        };
-        function
+        let verdicts: Vec<bool> = function
             .body
             .iter()
             .map(|stmt| {
@@ -98,25 +87,13 @@ def f(only_none: None, list_or_none: list | None, int_or_none: int | None,
                 let ty = ExprRef::from(&*statement.value)
                     .inferred_type(&model)
                     .unwrap();
-                fails(&db, ty, none, &test)
+                single(&db, &env, ty)
             })
-            .collect()
-    }
-
-    #[test]
-    fn none_is_skipped_when_ignored() {
-        // only None, list|None, int|None, int|str, int|list, unknown, unresolved
+            .collect();
+        // None, int, int|None, int|str, unknown, unresolved, object, T, Alias
         assert_eq!(
-            verdicts(NoneMember::Ignore),
-            [false, false, true, true, false, false, false]
-        );
-    }
-
-    #[test]
-    fn none_is_a_member_when_counted() {
-        assert_eq!(
-            verdicts(NoneMember::Count),
-            [true, false, true, true, false, false, false]
+            verdicts,
+            [true, true, false, false, false, false, false, false, false]
         );
     }
 }

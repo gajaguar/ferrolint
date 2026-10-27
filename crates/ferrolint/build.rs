@@ -82,7 +82,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         let names = fs::read_dir(&dir)?
             .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
             .collect::<Result<_, Box<dyn Error>>>()?;
-        let names = bundle::plugin_files(names);
+        let mut names = bundle::plugin_files(names);
+        // The `ty` feature answers E1102 itself, and the plugin's alias would clash.
+        if env::var_os("CARGO_FEATURE_TY").is_some() {
+            names.retain(|name| name != "ferrolint_plugin_not_callable.wasm");
+        }
         if names.is_empty() {
             return Err(format!("no ferrolint_plugin_*.wasm in {}", dir.display()).into());
         }
