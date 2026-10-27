@@ -52,3 +52,13 @@ class FromUnknown(Unknown):
 class Holder:
     def reads(self, other):
         return other.anything
+
+
+class Slotted:
+    __slots__ = ()
+
+    def __init__(self):
+        self.assigned = 1
+
+    def reads(self):
+        return self.assigned, self.never
