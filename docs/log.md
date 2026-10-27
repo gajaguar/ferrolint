@@ -9,6 +9,8 @@
   inference-dependent-rules.md**: `E1102` points to the new note.
 * **Rules answered by ty, ty-rules.md**: recommends `django-stubs` in the
   environment, which removes most `JSONField` findings.
+* **Rules answered by ty, ty-rules.md**: `E1131` skips an augmented
+  assignment of a container literal.
 * **Native rules, native-rules.md**: Batch E (the `pylint_django` messages and
   their `good-names`, `invalid-name` and `too-many-public-methods`
   adjustments) is removed from the core: ferrolint is agnostic like Pylint and

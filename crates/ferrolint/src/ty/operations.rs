@@ -166,7 +166,16 @@ impl<'db> Scan<'_, 'db> {
 
     fn aug_assign(&mut self, stmt: &StmtAugAssign) {
         let range = stmt.range();
-        if self.reported("E1131", "unsupported-operator", range)
+        // ty types `xs = [A]; xs += [B]` as a list of A only; Pylint is silent.
+        if !matches!(
+            &*stmt.value,
+            Expr::List(_)
+                | Expr::Set(_)
+                | Expr::Dict(_)
+                | Expr::ListComp(_)
+                | Expr::SetComp(_)
+                | Expr::DictComp(_)
+        ) && self.reported("E1131", "unsupported-operator", range)
             && self.single(&stmt.target).is_some()
             && self.single(&stmt.value).is_some()
         {
