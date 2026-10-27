@@ -52,6 +52,14 @@ Once a pull request is open, the agent MUST:
   [`docs/conventions/versioning.md`](docs/conventions/versioning.md) defines;
   it is the only place those rules live.
 
+## Publishing to PyPI
+
+- Publish nothing before 1.0.0: the `publish` job skips a `v0.*` tag. From
+  1.0.0, publish only when asked: create the GitHub Release from the `vX.Y.Z`
+  tag, and approve the `pypi` environment's deployment, only on request.
+- Follow [`docs/toolchain/release-builds.md`](docs/toolchain/release-builds.md)
+  for the wheels, the sdist and the one-time PyPI setup.
+
 ## Documentation
 
 - Write documentation as an OKF bundle of atomic notes under `docs/`: one
