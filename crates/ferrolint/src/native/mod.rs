@@ -100,6 +100,10 @@ pub enum TyValue {
 /// The value ty infers for the expression at a range, when it is one concrete type.
 pub trait TypeAt {
     fn value(&self, range: TextRange) -> Option<TyValue>;
+
+    /// The range of the name of the class the expression at `range` is, when
+    /// the class is written in this same file.
+    fn local_class(&self, range: TextRange) -> Option<TextRange>;
 }
 
 impl Ctx<'_> {

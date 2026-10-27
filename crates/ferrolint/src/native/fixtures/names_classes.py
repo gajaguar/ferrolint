@@ -5,7 +5,7 @@ import functools
 from dataclasses import dataclass
 from typing import ClassVar, Final
 import typing
-from django.db import models
+import os
 
 
 class Base:
@@ -89,7 +89,7 @@ class Color(enum.Enum):
     _ignore_ = ["x"]
 
 
-class Choice(models.TextChoices):
+class Choice(enum.StrEnum):
     A_B = "a", "A"
     camelChoice = "c", "C"
 
