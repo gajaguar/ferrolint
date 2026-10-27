@@ -23,6 +23,8 @@ mod report;
 mod selection;
 mod semantic;
 mod suppress;
+#[cfg(feature = "ty")]
+mod ty;
 mod wit;
 
 use std::io::Write;

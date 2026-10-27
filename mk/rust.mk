@@ -39,6 +39,11 @@ fmt-check: ## Check formatting with rustfmt, without writing — accepts FILES="
 deny: ## Check dependencies for advisories, licenses and sources with cargo-deny
 	$(CARGO) deny --locked check
 
+ty-check: ## Lint, test and check the dependencies with the ty feature on
+	$(CARGO) clippy --locked --all-targets --features ty -- -D warnings
+	$(CARGO) test --locked --features ty
+	$(CARGO) deny --locked --features ty check
+
 cargo-test: ## Run the test suite with cargo test
 	$(CARGO) test --locked
 
@@ -84,4 +89,4 @@ pylint-deprecated: ## Dump Pylint's deprecation tables into src/pylint_deprecate
 	$(PYTHON) tools/pylint-deprecated.py > crates/ferrolint/src/pylint_deprecated.rs
 
 # `plugins` is also a directory, so without this make calls the target up to date.
-.PHONY: install-rust clippy fmt fmt-check deny cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
+.PHONY: install-rust clippy fmt fmt-check deny ty-check cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated

@@ -14,6 +14,17 @@ duplicate versions, and the sources dependencies may come from. Only the
 settings that differ from cargo-deny's default are in `deny.toml`: the
 licenses allowed, and `deny` for an unknown registry or git source.
 
+## The `ty` feature
+
+`make deny` checks the default graph. The optional `ty` feature brings crates
+that graph never meets, so `make ty-check` runs `cargo deny --features ty`
+too. Four crates get a license exception by name (`colored`, `notify`,
+`option-ext`, `version-ranges`: MPL-2.0 and CC0-1.0), not a global allowance.
+Six advisories on `zip`, `zstd` and `zstd-safe` are ignored with a reason in
+`deny.toml`: they have no patched release, and ty reads only its embedded
+typeshed archive, never extracting one. Without the feature, `cargo deny`
+warns that those entries went unused.
+
 ## Why cargo install
 
 [The toolchain layering rule](../toolchain/layering-rule.md) gives mise the
