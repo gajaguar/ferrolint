@@ -33,6 +33,19 @@ const BACKWARDS: &str = "W5197";
 
 const MIGRATIONS_PLUGIN: &str = "pylint_django.checkers.migrations";
 
+/// What `pylint_django` adds to `good-names`.
+pub const GOOD_NAMES: [&str; 9] = [
+    "pk",
+    "qs",
+    "urlpatterns",
+    "register",
+    "app_name",
+    "handler400",
+    "handler403",
+    "handler404",
+    "handler500",
+];
+
 const INTERPOLATION: &str = "Pass interpolated values as arguments to format_html() instead of building the format string; arguments are automatically HTML-escaped";
 
 /// Whether the configuration loads the `pylint_django` plugin.

@@ -463,6 +463,20 @@ file whose path contains `migrations` and does not end in `__init__.py`:
   default value`). `F` is not checked to be a field type, and a bare
   `AddField(...)` is not read, as in Pylint.
 
+The same gate adds what `pylint_django` changes in the naming rules:
+
+* `pk`, `qs`, `urlpatterns`, `register`, `app_name` and `handler400`,
+  `handler403`, `handler404`, `handler500` join `good-names`.
+* `invalid-name` (`C0103`) skips `application` assigned at module level in a
+  file whose path ends in `wsgi.py` or `asgi.py`, and `js` assigned in the
+  body of a class named `Media`.
+
+The plugin also adds `migrations` and `south_migrations` to Pylint's
+`black_list`, but Pylint 4.1.3 ignores that setting and lints those
+directories whatever the plugins; ferrolint does the same. The exemptions of
+`protected-access` for `._meta` and of `unused-import` for `ForeignKey` and
+`OneToOneField` wait for those two rules.
+
 Skipped: `W5101` model-missing-unicode never fires on Python 3, the plugin
 returns before it; `E5110`, `F5110` and `F5101` need Django to import and
 configure; `W5199` and the foreign-key transforms are internal to astroid.
