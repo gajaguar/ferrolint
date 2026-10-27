@@ -77,8 +77,9 @@ answers to its Pylint msg-id and symbol as well as its code.
 
 ## Bundled by default
 
-A release binary embeds these eleven plugins and loads them before any
-configured plugin, so every bundled rule is active with no `[[plugins]]`
+A release binary embeds these eleven plugins (ten with the `ty` feature,
+which answers `E1102` itself and leaves out `not-callable`) and loads them
+before any configured plugin, so every bundled rule is active with no `[[plugins]]`
 table: `select` and `ignore` work on their codes and Pylint spellings
 alone. `make release-build` and `make wheel` build the binary this way.
 A binary from `cargo build`, such as the one the tests run, bundles none.

@@ -63,8 +63,10 @@ The type of a call result or attribute:
   to the count.
 * `E1120` 5 and `E1121` 4: `obj = cls()` where `cls` is a metaclass, and
   `type(self)(value)`.
-* `E1102` 14 [3]: `self.callback()` where an attribute holds a value that is
-  not callable, or `new_instance = cls()` in a class method.
+* `E1102` 14 [3] (a build with ty answers it; see
+  [Rules answered by ty](ty-rules.md)): `self.callback()` where an attribute
+  holds a value that is not callable, or `new_instance = cls()` in a class
+  method.
 * `E1124` 13: `f(worker, sig="X")` where `f` is bound to a
   `functools.partial` that already fills `sig`.
 * `E0712` 6: `except autoretry_for:` where a name holds a tuple of classes

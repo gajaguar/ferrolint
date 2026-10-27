@@ -2,6 +2,11 @@
 
 ## 2026-10-27
 
+* **Rules answered by ty, ty-rules.md**: new note for `E0633`, `E1102`,
+  `E1130`, `E1131`, `E1133`, `E1135`, `E1136`, `E1137` and `E1138`, which
+  exist only with the `ty` feature. **Bundled plugins, plugins.md**: a build
+  with `ty` leaves `not-callable` out. **Rules that wait for type inference,
+  inference-dependent-rules.md**: `E1102` points to the new note.
 * **Native rules, native-rules.md**: Batch E (the `pylint_django` messages and
   their `good-names`, `invalid-name` and `too-many-public-methods`
   adjustments) is removed from the core: ferrolint is agnostic like Pylint and

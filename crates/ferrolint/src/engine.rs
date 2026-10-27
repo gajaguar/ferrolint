@@ -119,8 +119,6 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         cache: cache.as_ref(),
         counters: Counters::new(workers),
         started: options.started,
-        #[cfg(feature = "ty")]
-        types: crate::ty::Types::new(cwd).ok(),
     };
     let (displays, names, per_file, lint_time) = std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -289,6 +287,10 @@ struct Setup {
     opts: project_phase::Opts,
     /// The stamps taken so far: the files share the modules they read.
     stamps: Mutex<HashMap<PathBuf, String>>,
+    /// The type engine, only when a rule that asks it is enabled and it
+    /// starts (it does not in a virtualenv without `site-packages`).
+    #[cfg(feature = "ty")]
+    types: Option<crate::ty::Types>,
 }
 
 impl Setup {
@@ -319,6 +321,8 @@ impl Setup {
         let selection = Selection::new(&registry, config)?;
         let options: Vec<(String, String)> = config.options.clone().into_iter().collect();
         let opts = project_phase::Opts::new(&options);
+        #[cfg(feature = "ty")]
+        let types = type_engine(&selection, cwd);
         Ok(Self {
             host,
             registry,
@@ -328,8 +332,24 @@ impl Setup {
             opts,
             options,
             stamps: Mutex::default(),
+            #[cfg(feature = "ty")]
+            types,
         })
     }
+}
+
+/// Start ty when an enabled rule needs it, and say so when it cannot.
+#[cfg(feature = "ty")]
+fn type_engine(selection: &Selection, cwd: &Path) -> Option<crate::ty::Types> {
+    if !crate::ty::operations::rules()
+        .iter()
+        .any(|rule| selection.is_enabled(&rule.code))
+    {
+        return None;
+    }
+    crate::ty::Types::new(cwd)
+        .map_err(|err| eprintln!("ferrolint: warning: {err}; the ty rules report nothing"))
+        .ok()
 }
 
 /// The rule table: the host's rules, the native ones the configuration
@@ -480,29 +500,6 @@ struct Linter<'a> {
     cache: Option<&'a Cache>,
     counters: Counters,
     started: Instant,
-    /// `None` when ty cannot start (a virtualenv without `site-packages`):
-    /// no rule needs it yet, so the host parses the files itself.
-    #[cfg(feature = "ty")]
-    types: Option<crate::ty::Types>,
-}
-
-/// The tree of a file: the host's own, or the one ty's database holds.
-enum Tree {
-    Own(Parsed<ModModule>),
-    #[cfg(feature = "ty")]
-    Ty(ruff_db::parsed::ParsedModuleRef),
-}
-
-impl std::ops::Deref for Tree {
-    type Target = Parsed<ModModule>;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Own(parsed) => parsed,
-            #[cfg(feature = "ty")]
-            Self::Ty(parsed) => parsed,
-        }
-    }
 }
 
 /// A file read and parsed, before any plugin runs.
@@ -510,7 +507,7 @@ enum Prepared {
     NotUtf8,
     Source {
         source: String,
-        parsed: Tree,
+        parsed: Parsed<ModModule>,
         index: LineIndex,
     },
 }
@@ -527,7 +524,7 @@ impl Linter<'_> {
     }
 
     /// Decode and parse a file, noting when the run's first parse began.
-    fn prepare(&self, path: &Path, bytes: &[u8]) -> Prepared {
+    fn prepare(&self, bytes: &[u8]) -> Prepared {
         let since_start = u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.counters
             .first_parse
@@ -539,18 +536,7 @@ impl Linter<'_> {
         // silently skip the file.
         let options =
             ParseOptions::from(PySourceType::Python).with_target_version(PythonVersion::latest());
-        #[cfg(feature = "ty")]
-        let shared = self
-            .types
-            .as_ref()
-            .and_then(|types| types.parsed(path, source))
-            .map(Tree::Ty);
-        #[cfg(not(feature = "ty"))]
-        let shared = {
-            let _ = path;
-            None
-        };
-        let parsed = shared.unwrap_or_else(|| Tree::Own(checks::parse(source, options)));
+        let parsed = checks::parse(source, options);
         Prepared::Source {
             source: source.to_owned(),
             parsed,
@@ -563,11 +549,7 @@ impl Linter<'_> {
         let bytes = fs::read(path)
             .map_err(|err| Error::io(format!("cannot read {}: {err}", path.display())))?;
         // While the plugins still load, parse ahead instead of waiting.
-        let early = self
-            .setup
-            .get()
-            .is_none()
-            .then(|| self.prepare(path, &bytes));
+        let early = self.setup.get().is_none().then(|| self.prepare(&bytes));
         let Ok(setup) = self.setup.wait() else {
             return Ok(Vec::new());
         };
@@ -613,7 +595,15 @@ impl Linter<'_> {
                 std::env::var("VIRTUAL_ENV"),
                 std::env::var("PYTHONPATH")
             );
+            // A run where ty did not start must not reuse a run where it did.
+            // shortcut: a change in another module does not invalidate it, as
+            // with the rules above that read other files; use `--no-cache`.
+            #[cfg(feature = "ty")]
+            let ty = setup.types.is_some().to_string();
+            #[cfg(not(feature = "ty"))]
+            let ty = String::new();
             cache.key(&[
+                &ty,
                 &hex(&Sha256::digest(bytes)),
                 display,
                 &module,
@@ -649,7 +639,7 @@ impl Linter<'_> {
             }
             stored => {
                 self.counters.parsed.fetch_add(1, Ordering::Relaxed);
-                let prepared = early.unwrap_or_else(|| self.prepare(path, bytes));
+                let prepared = early.unwrap_or_else(|| self.prepare(bytes));
                 let file = FileRef {
                     display,
                     module: &module,
@@ -750,6 +740,14 @@ impl Linter<'_> {
                 roots: &setup.roots,
             };
             entry.host.extend(native::check(&ctx, enabled));
+            #[cfg(feature = "ty")]
+            if let Some(types) = &setup.types
+                && crate::ty::operations::wanted(enabled)
+            {
+                entry
+                    .host
+                    .extend(crate::ty::operations::check(types, &ctx, enabled));
+            }
         }
         entry.stamps = native::take_reads()
             .into_iter()

@@ -53,8 +53,8 @@ build: ## Build the crate into target/
 plugins: ## Build the workspace plugins as WASM components into target/wasm32-wasip2/release/
 	$(CARGO) build --locked --release --target $(WASM_TARGET) $(WASM_PACKAGES)
 
-release-build: plugins ## Build the release binary for TARGET (a target pinned in mise.toml) with the plugins bundled
-	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(CARGO) build --locked --release --target $(TARGET) -p ferrolint
+release-build: plugins ## Build the release binary for TARGET (a target pinned in mise.toml) with the plugins bundled — accepts FEATURES (e.g. ty)
+	FERROLINT_PLUGINS=$(CURDIR)/target/$(WASM_TARGET)/release $(CARGO) build --locked --release --target $(TARGET) -p ferrolint $(if $(FEATURES),--features $(FEATURES))
 
 wheel: release-build ## Build the PyPI wheel for TARGET into target/wheels/, with the plugins bundled
 	rm -rf target/wheels
