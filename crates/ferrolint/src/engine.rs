@@ -1041,7 +1041,7 @@ mod tests {
     fn a_plugin_owns_a_docparams_msg_id_while_the_extension_is_not_loaded() {
         let config = Config {
             select: Some(vec!["W9006".into()]),
-            ..with_load_plugins("pylint_django")
+            ..with_load_plugins("pylint.extensions.mccabe")
         };
         let registry = registry_for(vec![gaj006()], &config).unwrap();
         assert_eq!(registry.resolve("W9006"), Some("GAJ006"));
@@ -1065,7 +1065,7 @@ mod tests {
 
     #[test]
     fn a_clash_with_a_loaded_extension_says_so() {
-        let config = with_load_plugins("pylint_django, pylint.extensions.docparams");
+        let config = with_load_plugins("pylint.extensions.mccabe, pylint.extensions.docparams");
         let message = registry_for(vec![gaj006()], &config)
             .unwrap_err()
             .to_string();

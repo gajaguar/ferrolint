@@ -142,4 +142,3 @@ glyf
 ssize
 getdlopenflags
 setdlopenflags
-wsgi

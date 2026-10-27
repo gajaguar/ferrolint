@@ -27,7 +27,6 @@ mod code_style;
 mod conditions;
 mod contextmgr;
 mod deprecated;
-mod django;
 mod docparams;
 mod docstring;
 mod duplicate_args;
@@ -49,7 +48,6 @@ mod names;
 mod overrides;
 pub use overrides::overridden_parameters;
 mod project;
-pub use django::migrations_plugin;
 pub use project::{Project, environment, take_reads};
 mod duplicates;
 pub mod project_phase;
@@ -116,7 +114,6 @@ const CHECKERS: &[&dyn Checker] = &[
     &conditions::Conditions,
     &contextmgr::ContextManagers,
     &deprecated::Deprecated,
-    &django::Django,
     &docparams::DocParams,
     &duplicate_args::DuplicateArgs,
     &exceptions::Exceptions,

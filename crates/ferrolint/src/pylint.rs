@@ -81,11 +81,7 @@ fn foreign_plugin(entries: &[(String, String)], exists: impl Fn(&str) -> bool) -
         .flat_map(|(_, value)| value.split(','))
         .map(str::trim)
         .filter(|plugin| !plugin.is_empty())
-        .any(|plugin| {
-            !plugin.starts_with("pylint_django")
-                && !plugin.starts_with("pylint.extensions")
-                && exists(plugin)
-        })
+        .any(|plugin| !plugin.starts_with("pylint.extensions") && exists(plugin))
 }
 
 /// What Pylint would say about the names in a configuration. `ini` is true for
@@ -290,7 +286,7 @@ mod tests {
 [MASTER]
 # a comment
 ignore=CVS
-load-plugins=pylint_django   # inline
+load-plugins=pylint.extensions.mccabe   # inline
 
 [MESSAGES CONTROL]
 disable=missing-module-docstring,
@@ -318,7 +314,7 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
                 "ignore-long-lines"
             ]
         );
-        assert_eq!(entries[1].1, "pylint_django");
+        assert_eq!(entries[1].1, "pylint.extensions.mccabe");
         assert_eq!(entries[3].1, "C,\nfixme");
         assert_eq!(entries[4].1, "^\\s*(# )?<?https?://\\S+>?$");
     }
@@ -348,8 +344,12 @@ ignore-long-lines=^\\s*(# )?<?https?://\\S+>?$
 
     #[test]
     fn a_missing_plugin_module_is_e0013() {
-        let entries = ini("[MASTER]\nload-plugins=pylint_django, nowhere.mod\n", false).unwrap();
-        let issues = plugin_issues(&entries, |module| module == "pylint_django");
+        let entries = ini(
+            "[MASTER]\nload-plugins=pylint.extensions.mccabe, nowhere.mod\n",
+            false,
+        )
+        .unwrap();
+        let issues = plugin_issues(&entries, |module| module == "pylint.extensions.mccabe");
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].code, "E0013");
         assert!(issues[0].message.contains("'nowhere.mod'"));

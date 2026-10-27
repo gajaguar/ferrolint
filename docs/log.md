@@ -2,16 +2,12 @@
 
 ## 2026-10-27
 
-* **Native rules, native-rules.md**: Batch E gains the `pylint_django` naming
-  changes: `good-names` additions and the `invalid-name` exemptions for
-  `application` in `wsgi.py`/`asgi.py` and `js` in `Media`; the plugin's
-  `black_list` of migrations is inert in Pylint 4.1.3 and is not ported.
+* **Native rules, native-rules.md**: Batch E (the `pylint_django` messages and
+  their `good-names`, `invalid-name` and `too-many-public-methods`
+  adjustments) is removed from the core: ferrolint is agnostic like Pylint and
+  Django will be a plugin after ty. 0.31.0.
 
 ## 2026-10-26
-
-* **Native rules, native-rules.md**: Batch E gains `W5197` and `W5198` of the
-  `pylint_django.checkers.migrations` sub-plugin; `W5198` runs in the project
-  phase.
 
 * **Release builds, release-builds.md**: `pyproject.toml` moved to the
   repository root with the PyPI metadata, the `python -m ferrolint`

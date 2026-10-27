@@ -109,12 +109,6 @@ Known divergences from Pylint, where Pylint infers a value or a class:
 * `W0213` knows `IntFlag` by an import of `enum.IntFlag` or a class of the
   file derived from it. A class derived from an `IntFlag` of another module
   is not known. A bool value counts as the integer it is (`True` is 1).
-* `R0904` follows `pylint_django` when `load-plugins` names it: a class that
-  has a `TestCase` base and is named `...Test` or nested in a class, and a
-  `...Admin` class with a `ModelAdmin` base, are not counted. An imported
-  base is a `TestCase` when its name ends in `TestCase`, other than the
-  simple, transaction, live-server and `unittest` ones, since its ancestry
-  lives in another file.
 * The slot rules read `__slots__` only as a list, tuple, set or dict written
   in the class body (its last assignment), with literal items: a name, a call
   or an operation is not followed. `E0236` shows only a constant item
@@ -189,19 +183,13 @@ Statements and text:
 * `C0302` `too-many-lines` (`max-module-lines`, default 1000), reported on
   line 1 and counting lines like `wc -l`, and `C0325` `superfluous-parens`,
   which reads the tokens of the file as Pylint does.
-* `R5102` `http-response-with-content-type-json`, a `pylint-django` rule
-  that a Django project meets: a call whose callee ends in
-  `HttpResponse` and has a `content_type` keyword whose text holds
-  `application/json`; it reports only under the `pylint_django` gate of batch E.
 
 `match` statements: `E1901` `bare-name-capture-pattern`, `E1902`
 `invalid-match-args-definition`, `E1903` `too-many-positional-sub-patterns`,
 `E1904` `multiple-class-sub-patterns`, `R1905` `match-class-bind-self` and
 `R1906` `match-class-positional-attributes`.
 
-Not ported: `R0917` `too-many-positional-arguments` (a project may disable it)
-and the other `pylint-django` rules `R5101` and `R5103`, which a typical run
-does not need.
+Not ported: `R0917` `too-many-positional-arguments` (a project may disable it).
 
 Known divergences from Pylint, where Pylint infers a value, a class or a
 call:
@@ -422,80 +410,6 @@ Known divergences from Pylint, where Pylint infers a value or a call:
   parameter of the enclosing function and as the literal when it is a dict
   display of strings; any other `**` skips the call, as Pylint does when
   it cannot infer the keywords.
-
-## Batch E: the pylint_django messages
-
-These ten rules, `R5102` http-response-with-content-type-json and the two of the
-migrations sub-plugin below, port the
-checkers of the `pylint_django` plugin that the syntax decides. They report
-only when the option `load-plugins` names `pylint_django` (a comma list), so
-a project that does not use the plugin is not affected. A `.pylintrc`
-project carries the option already; a `ferrolint.toml` project must set it:
-
-```toml
-[options]
-load-plugins = "pylint_django"
-```
-
-* `E5101` model-unicode-not-callable, `W5102` model-has-unicode and
-  `W5103` model-no-explicit-unicode, `W5104` modelform-uses-exclude.
-* `E5141` hard-coded-auth-user and `E5142` imported-auth-user.
-* `R5101` http-response-with-json-dumps, `R5102`
-  http-response-with-content-type-json and `R5103`
-  redundant-content-type-for-json-response.
-* `W5150` format-html-interpolation and `W5151` mark-safe-interpolation.
-
-Two more rules belong to the sub-plugin `pylint_django.checkers.migrations`,
-which is off unless `load-plugins` names it (it is a separate entry from
-`pylint_django`, and each one loads only its own rules). They read only a
-file whose path contains `migrations` and does not end in `__init__.py`:
-
-* `W5197` missing-backwards-migration-callable: a call whose callee ends in
-  `RunPython`, with fewer than two positional arguments and no
-  `reverse_code=`. Pylint reads only the calls whose frame (the nearest
-  `def`, `class` or `lambda`) is a direct child of the module, so a call in
-  `class Migration` is seen, one in a method of it or at module level is not.
-* `W5198` new-db-field-with-default: an `x.AddField(..., field=F(...,
-  default=...))` call, in the latest migration of each app only: among the
-  linted migrations that share the path before the first `migrations`, the
-  greatest path. It is a project-phase rule, since it compares files, and
-  its message names the module (`app.migrations.0002_x AddField with
-  default value`). `F` is not checked to be a field type, and a bare
-  `AddField(...)` is not read, as in Pylint.
-
-The same gate adds what `pylint_django` changes in the naming rules:
-
-* `pk`, `qs`, `urlpatterns`, `register`, `app_name` and `handler400`,
-  `handler403`, `handler404`, `handler500` join `good-names`.
-* `invalid-name` (`C0103`) skips `application` assigned at module level in a
-  file whose path ends in `wsgi.py` or `asgi.py`, and `js` assigned in the
-  body of a class named `Media`.
-
-The plugin also adds `migrations` and `south_migrations` to Pylint's
-`black_list`, but Pylint 4.1.3 ignores that setting and lints those
-directories whatever the plugins; ferrolint does the same. The exemptions of
-`protected-access` for `._meta` and of `unused-import` for `ForeignKey` and
-`OneToOneField` wait for those two rules.
-
-Skipped: `W5101` model-missing-unicode never fires on Python 3, the plugin
-returns before it; `E5110`, `F5110` and `F5101` need Django to import and
-configure; `W5199` and the foreign-key transforms are internal to astroid.
-
-Known divergences from Pylint:
-
-* A class is a Django `Model` or `ModelForm` by the last name of a base
-  (`Model`, `models.Model`, `ModelForm`, `forms.ModelForm`) or by a base
-  class of the same file that is one. A base imported from another file
-  that derives from a model, and a custom base named otherwise, is not
-  seen. `W5103` looks for the inherited `__unicode__` (or a `__str__` under
-  `python_2_unicode_compatible`) in the classes of the same file only.
-* `E5101` reports a `__unicode__` assigned a literal (string, number,
-  `None`, tuple, list, dict, set, f-string); a name or call is taken as
-  callable, where Pylint infers it.
-* The callee of `HttpResponse`, `JsonResponse`, `format_html`,
-  `format_html_join` and `mark_safe` is matched on its source text, as
-  Pylint matches its `as_string()`, so differences in spacing inside a
-  dotted callee are not normalized.
 
 ## Batch F: naming and exceptions
 
@@ -813,8 +727,8 @@ These rules read the names in a Pylint configuration file and in `# pylint:`
 comments. A configuration finding sits on line 1 of the file, as Pylint
 reports it, and only a Pylint file gets them (`.pylintrc`, `pylintrc`,
 `pyproject.toml`, `setup.cfg`, `tox.ini`); `ferrolint.toml` already rejects
-unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
-`pylint_django` 2.8.0, dumped by `make pylint-names` into
+unknown keys. The names come from Pylint 4.1.3, and its bundled extensions,
+dumped by `tools/pylint-names.py` into
 `src/pylint_names.rs`.
 
 * `E0011` `unrecognized-inline-option`: a `# pylint: key=` comment whose key is
@@ -822,7 +736,7 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 * `W0012` `unknown-option-value`: a `disable` or `enable` option, or a pragma,
   names a message, category or checker Pylint does not know. A name the rule
   registry resolves, such as a plugin's rule, is known. A message or checker
-  of a `pylint.extensions.*` or `pylint_django` plugin is known only when
+  of a `pylint.extensions.*` plugin is known only when
   `load-plugins` names that plugin, as Pylint registers its names only then.
 * `R0022` `useless-option-value`: the same, for a message Pylint removed or
   moved to an extension.
@@ -838,26 +752,24 @@ unknown keys. The names come from Pylint 4.1.3, its bundled extensions and
 
 Known divergences:
 
-* A `load-plugins` entry other than `pylint_django*` and `pylint.extensions.*`
+* A `load-plugins` entry other than `pylint.extensions.*`
   silences `E0015`, `W0012` and `R0022` for the file: its options and
   messages are not listed. An entry that `E0013` reports does not: Pylint
   cannot import it, so it adds none.
 * The `R0022` text omits Pylint's link to the release notes.
 
 Not ported: `fatal`, `astroid-error`, `parse-error`, `config-parse-error`,
-`method-check-failed`, `django-not-configured`, `django-not-available`,
-`django-not-available-placeholder`, `c-extension-no-member` and the
+`method-check-failed`, `c-extension-no-member` and the
 `wrong-spelling-*` family: they report a failure of Pylint's own machinery or
-need what ferrolint does not run (astroid, a Django setup, a spelling
+need what ferrolint does not run (astroid, a spelling
 dictionary).
 
 ## Batch K: messages of Pylint's bundled extensions
 
-These five rules port checkers of `pylint.extensions`. Like the
-`pylint_django` messages, they report only when the option `load-plugins`
-names the extension (a comma list), because Pylint loads none of them by
-default. A `.pylintrc` project carries the option already; a
-`ferrolint.toml` project must set it:
+These five rules port checkers of `pylint.extensions`. They report only
+when the option `load-plugins` names the extension (a comma list), because
+Pylint loads none of them by default. A `.pylintrc` project carries the
+option already; a `ferrolint.toml` project must set it:
 
 ```toml
 [options]
@@ -1022,8 +934,8 @@ not the block rule of the other messages.
 
 Known divergences:
 
-* Only Pylint's own messages are known: a name that belongs to an extension,
-  to `pylint_django` or to a plugin gives no `I0011` and no `I0023`.
+* Only Pylint's own messages are known: a name that belongs to an extension
+  or to a plugin gives no `I0011` and no `I0023`.
 * `disable-next=all` and `disable-msg=all` give no `I0011`; Pylint gives one
   for each message that is off by default.
 * `enable=I` and the other category letters do not switch these messages on
