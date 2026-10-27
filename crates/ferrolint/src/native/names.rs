@@ -1074,6 +1074,7 @@ impl<'a> Walk<'a, '_> {
         let val = self.val(value, 0);
         if val != Val::Unknown
             || !matches!(value, Expr::Name(_) | Expr::Attribute(_) | Expr::Call(_))
+            || self.rebound_import(value)
         {
             return val;
         }
@@ -1269,6 +1270,21 @@ impl<'a> Walk<'a, '_> {
     }
 
     /// Whether `qualified` names a class that the project defines, once.
+    /// Whether `value` names a class of the project that its own module binds again, as
+    /// urllib3's `HTTPSConnection = DummyConnection` under `if not ssl`: astroid infers two
+    /// values and names neither, though ty sees the class.
+    fn rebound_import(&self, value: &Expr) -> bool {
+        let Expr::Name(name) = value else {
+            return false;
+        };
+        self.env
+            .binding(name)
+            .filter(|b| b.kind == BindingKind::FromImport)
+            .and_then(|b| b.origin)
+            .and_then(|origin| self.project.class(&self.project.absolute(&origin)))
+            .is_some_and(|class| !class.is_sole())
+    }
+
     fn is_class(&self, qualified: Option<&str>) -> bool {
         qualified.is_some_and(|q| {
             stdlib_class(q)
@@ -2424,6 +2440,32 @@ mod tests {
                 "Class name \"orig_queue\" doesn't conform to PascalCase naming style".to_owned()
             )]
         );
+    }
+
+    /// A class its own module binds again is two values to astroid: ty's single class is not used.
+    #[cfg(feature = "ty")]
+    #[test]
+    fn ty_leaves_a_class_its_module_rebinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("base.py"),
+            "import ssl\n\n\nclass Dummy:\n    pass\n\n\nclass Conn:\n    pass\n\n\nif not ssl:\n    Conn = Dummy\n",
+        )
+        .unwrap();
+        let path = package.join("child.py");
+        let source = "from pkg.base import Conn\n\norig_conn = Conn\n";
+        std::fs::write(&path, source).unwrap();
+        let types = crate::ty::Types::new(dir.path()).unwrap();
+        let with = types
+            .with_file(&path, source, |db, file| {
+                let values = crate::ty::values::Values::new(db, file);
+                lint_with(source, &path, "pkg.child", Some(&values))
+            })
+            .unwrap();
+        assert_eq!(with, []);
     }
 
     #[test]
