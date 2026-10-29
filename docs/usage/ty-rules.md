@@ -18,8 +18,9 @@ fall back to what the host infers by itself. Without `VIRTUAL_ENV` (unset or
 empty) `ferrolint` does not start ty either: a type from an installed package
 would be unknown and the rules would report findings Pylint does not. It prints
 the same warning and the ten rules report nothing. Set the variable to the
-environment of the project. The published wheels are built without the feature
-(see [Release builds](../toolchain/release-builds.md)).
+environment of the project. `ty` is an optional extension: the published
+wheels are built without the feature (see
+[Release builds](../toolchain/release-builds.md)).
 
 | Rule                                       | Reports                        | Node                                         |
 | :----------------------------------------- | :----------------------------- | :------------------------------------------- |

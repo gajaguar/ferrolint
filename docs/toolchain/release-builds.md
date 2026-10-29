@@ -54,7 +54,8 @@ There is no Windows wheel.
 
 ## The wheel has no ty
 
-The wheels and the sdist are built without the `ty` cargo feature, so the ten
+`ty` is an optional extension: a cargo feature you turn on when you build. The
+wheels and the sdist are built without it, so the ten
 [rules answered by ty](../usage/ty-rules.md) are absent from them. Measured on
 `aarch64-apple-darwin` with five jobs:
 
