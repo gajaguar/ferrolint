@@ -65,8 +65,9 @@ The wheels and the sdist are built without the `ty` cargo feature, so the ten
 
 Size, build time and `make smoke` (1.3 ms to the first parse) would all pass.
 The wheel stays without `ty` because of what a run does when the environment
-is missing. Without `VIRTUAL_ENV`, ty cannot read the installed packages and
-does not warn: on one Django codebase the ten rules then report 29 findings
+is missing. Without `VIRTUAL_ENV`, ty cannot read the installed packages
+(`ferrolint` warns since 0.35.2, but the rules still run): on one Django codebase
+the ten rules then report 29 findings
 that neither the run with the environment nor Pylint give (24 `E1133`, 5
 `E1135`), 10% on top of the 275 it reports with it. A wheel is installed
 where nobody sets that variable for the linter, so shipping the feature would
@@ -74,8 +75,7 @@ ship those findings.
 
 To build with it, run `make release-build TARGET=... FEATURES=ty`, or
 `cargo build --release --features ty`, with `VIRTUAL_ENV` set when you run it.
-Reopen the decision when ferrolint warns that `VIRTUAL_ENV` is unset and the
-ty rules stay silent without it.
+Reopen the decision when the ty rules stay silent without `VIRTUAL_ENV`.
 
 ## Installing from source
 

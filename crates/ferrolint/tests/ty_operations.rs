@@ -32,3 +32,19 @@ fn the_fixture_matches_pylint() {
         .collect();
     assert_eq!(found, expected, "{}", run.summary());
 }
+
+#[test]
+fn a_missing_virtual_env_is_warned() {
+    let project = Project::new();
+    project
+        .write("ferrolint.toml", "select = [\"E1136\"]\n")
+        .write("a.py", "x = 1\n");
+    let without = project.run(&["--no-cache"]);
+    assert!(
+        without.stderr.contains("VIRTUAL_ENV is not set"),
+        "{}",
+        without.stderr
+    );
+    let with = project.run_in(&["--no-cache"], Some(project.path()));
+    assert!(!with.stderr.contains("VIRTUAL_ENV"), "{}", with.stderr);
+}

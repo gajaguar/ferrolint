@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-10-28
+
+* **Rules answered by ty, ty-rules.md**: `ferrolint` warns when ty starts
+  without `VIRTUAL_ENV`. **Release builds, release-builds.md**: the wheel stays
+  without `ty` until the rules stay silent without the variable.
+
 ## 2026-10-27
 
 * **Rules answered by ty, ty-rules.md**: new note for `E0633`, `E1102`,
