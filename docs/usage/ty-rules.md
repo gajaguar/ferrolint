@@ -15,7 +15,7 @@ know them. ty starts only when one of them, `C0103` or a plugin is on, and it
 reads `VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint`
 prints a warning and the ten rules report nothing; `C0103` and the plugins
 fall back to what the host infers by itself. If it starts without
-`VIRTUAL_ENV` it does not warn, and a type from an installed package is
+`VIRTUAL_ENV`, `ferrolint` warns, because a type from an installed package is
 unknown: the rules report fewer findings and some that are wrong. Set the
 variable to the environment of the project. The published wheels are built
 without the feature (see [Release builds](../toolchain/release-builds.md)).

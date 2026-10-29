@@ -338,7 +338,8 @@ impl Setup {
     }
 }
 
-/// Start ty when an enabled rule needs it, and say so when it cannot.
+/// Start ty when an enabled rule needs it, and say so when it cannot or when
+/// it starts blind to the installed packages.
 #[cfg(feature = "ty")]
 fn type_engine(selection: &Selection, cwd: &Path, plugins: bool) -> Option<Arc<crate::ty::Types>> {
     // C0103 and the plugins ask ty for the value of a name they cannot follow themselves.
@@ -353,6 +354,14 @@ fn type_engine(selection: &Selection, cwd: &Path, plugins: bool) -> Option<Arc<c
     }
     crate::ty::Types::new(cwd)
         .map(Arc::new)
+        .inspect(|_| {
+            if std::env::var_os("VIRTUAL_ENV").is_none() {
+                eprintln!(
+                    "ferrolint: warning: VIRTUAL_ENV is not set, so ty cannot read the installed packages; \
+                     the ty rules and C0103 may report findings Pylint does not"
+                );
+            }
+        })
         .map_err(|err| eprintln!("ferrolint: warning: {err}; the ty rules report nothing"))
         .ok()
 }
