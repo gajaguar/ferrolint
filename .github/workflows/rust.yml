@@ -23,3 +23,4 @@ jobs:
         run: make install-rust
       - run: make check
       - run: make test
+      - run: make ty-check

@@ -14,7 +14,11 @@ a value. Without the feature they do not exist: `select` and `ignore` do not
 know them. ty starts only when one of them, `C0103` or a plugin is on, and it
 reads `VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint`
 prints a warning and the ten rules report nothing; `C0103` and the plugins
-fall back to what the host infers by itself.
+fall back to what the host infers by itself. If it starts without
+`VIRTUAL_ENV` it does not warn, and a type from an installed package is
+unknown: the rules report fewer findings and some that are wrong. Set the
+variable to the environment of the project. The published wheels are built
+without the feature (see [Release builds](../toolchain/release-builds.md)).
 
 | Rule                                       | Reports                        | Node                                         |
 | :----------------------------------------- | :----------------------------- | :------------------------------------------- |
@@ -64,9 +68,10 @@ Measured against Pylint run with `--enable=no-member` (a Django codebase whose
 own `.pylintrc` disables it, and a set of installed packages): the codebase
 727 lines agree, none only here and 690 only Pylint (51% of 1417); the packages
 327 agree, 8 only here and 94 only Pylint (78% of 421). On the codebase it takes
-3.3 s and 1.6 GB with five threads. Of the 690, none is a `self` or `cls`
-receiver except 15 (13 in a class with a plain metaclass); the rest read a
-member of another object or a value ty does not flag. What stays with Pylint:
+3.7 s and 1.6 GB with five threads, the rule alone. Of the 690, none is a
+`self` or `cls` receiver except 15 (13 in a class with a plain metaclass); the
+rest read a member of another object or a value ty does not flag. What stays
+with Pylint:
 members of another object (an instance of a class, a module), Django models and
 fields (the Django plugin), and a class with a plain metaclass.
 
@@ -89,6 +94,45 @@ What `E1101` does not close, and why:
   the ancestors of a class are parsed again for every file, with no cache
   across files.
 
+## Measured
+
+Five threads, `--no-cache`, `VIRTUAL_ENV` set, on a Django codebase of 3,400
+files (Core) and on 637 files of installed packages (the corpus). Unless a row
+says otherwise, the Django codebase's environment has no `django-stubs`.
+
+| Run                         | Core time | Core memory | Corpus time | Corpus memory |
+| :-------------------------- | --------: | ----------: | ----------: | ------------: |
+| default build               |     6.8 s |     0.39 GB |       1.8 s |       0.32 GB |
+| `ty` build, the ten rules   |     9.4 s |     1.79 GB |       3.1 s |       0.87 GB |
+| same, with `django-stubs`   |     9.6 s |     1.82 GB |           - |             - |
+| default build, `C0103` only |     0.9 s |     0.26 GB |           - |             - |
+| `ty` build, `C0103` only    |     3.3 s |     1.61 GB |           - |             - |
+
+The last two rows show what starting ty costs when none of its rules is on:
+`C0103` starts it, so a `ty` build pays about 2.5 s and 1.4 GB on this codebase
+whatever the selection.
+
+Against Pylint, by lines (`path:line`):
+
+| Rules                         | Set    | Agree | Only here | Only Pylint |
+| :---------------------------- | :----- | ----: | --------: | ----------: |
+| nine operation rules          | Core   |    11 |       273 |          13 |
+| same, with `django-stubs`     | Core   |    11 |        57 |          13 |
+| `E1101`                       | Core   |   727 |         0 |         694 |
+| same, with `django-stubs`     | Core   |   727 |         4 |         694 |
+| `E1101`                       | corpus |   327 |         8 |          96 |
+| nine operation rules          | corpus |     0 |        11 |          41 |
+
+The operation rules disagree with Pylint far more than `E1101`. Of the 273 on
+Core, 156 are `E1137` and 67 `E1136`: the fields of a model that ty reads as
+the field and not as its value (see the `django-stubs` note below). With
+`django-stubs` and `djangorestframework-stubs` in the environment the 273 fall
+to 57 (`E1137` 156 to 15, `E1136` 69 to 12) and the 11 that agree stay. The
+stubs cost `E1101` four extras on `self`: a member that Django or DRF defines
+at run time and the stubs omit. The corpus has no line that both report.
+The default build reports none of these rules. The `E1101` rows re-measure the
+figures above: Core has since gained four lines in Pylint's count.
+
 ## Where it differs from Pylint
 
 * ty trusts declarations and Pylint infers values. A function annotated
@@ -107,7 +151,7 @@ What `E1101` does not close, and why:
 * Without `django-stubs` in the environment, ty reads a `JSONField` or
   `ArrayField` as the field and not as its value. Install `django-stubs` in
   the `VIRTUAL_ENV` ty reads: on one Django codebase it cut `E1137` from 156
-  to 3 and `E1136` from 69 to 12. What stays is `factory_boy` declarations
+  to 15 and `E1136` from 69 to 12. What stays is `factory_boy` declarations
   (`Faker`, `LazyFunction`, `LazyAttribute`) read as the declaration and not
   as the value of the model, a few fields ty still types as the field, and an
   attribute annotated as an instance to which the class is assigned. These
