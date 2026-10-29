@@ -70,7 +70,19 @@ codebase that neither the run with the environment nor Pylint give (24
 `E1133`, 5 `E1135`), 10% on top of the 275 it reports with it. Since 0.35.3
 `ferrolint` does not start ty without the variable: it warns and the rules
 report nothing (0 findings on that codebase), so that reason no longer holds.
-Whether the wheels carry `ty` is a decision still to be taken.
+
+The default wheel and sdist stay without `ty` for three other reasons:
+
+* With `ty` and no `django-stubs` in the environment, the nine operation rules
+  agree with Pylint on 11 lines of that codebase and add 273 of their own (57
+  with the stubs).
+* `C0103` starts ty, so every run pays about 2.5 s and 1.4 GB there, whichever
+  rules are selected.
+* The feature brings crates under MPL-2.0 and CC0 and six advisories that
+  `deny.toml` ignores for the feature only.
+
+A wheel with `ty` would be a second distribution built with `FEATURES=ty`. It
+is decided when 1.0.0 is released, with the other publishing steps below.
 
 To build with it, run `make release-build TARGET=... FEATURES=ty`, or
 `cargo build --release --features ty`, and set `VIRTUAL_ENV` when you run it.

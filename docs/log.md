@@ -1,5 +1,10 @@
 # Directory Update Log
 
+## 2026-10-29
+
+* **Release builds, release-builds.md**: the default wheel stays without `ty`,
+  and says why; a wheel with `ty` is decided at 1.0.0.
+
 ## 2026-10-28
 
 * **Rules answered by ty, ty-rules.md**: without `VIRTUAL_ENV`, ty does not
