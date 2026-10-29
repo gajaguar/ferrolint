@@ -14,10 +14,23 @@ rather than guess: a missed finding costs less than a false one. The
 differences that remain are of that kind. They cannot be closed rule by rule;
 they close together once an inference engine answers the questions below.
 
-The engine planned for this is [ty](https://github.com/astral-sh/ty), behind
-an optional cargo feature that is off by default. It is not built yet. The
-interface a rule would ask it through is in the
+The engine is [ty](https://github.com/astral-sh/ty), behind an optional cargo
+feature that is off by default. A build with it closes the groups marked
+*covered with ty* below; the rest stays open, and
+[What ty does not close](#what-ty-does-not-close) says why. The interface a
+rule asks it through is in the
 [type inference query](../decisions/type-inference-query.md) note.
+
+## Covered with ty
+
+A build with the `ty` feature (see [Rules answered by ty](ty-rules.md)):
+
+* Answers ten rules that do not exist without it: `E1136`, `E1137`, `E1138`,
+  `E1102`, `E1133`, `E0633`, `E1135`, `E1130`, `E1131` and `E1101`. The last
+  is only for `self` and `cls`.
+* Completes `C0103` for a name that stands for a class, and `W0201` for the
+  receiver `self.X()` when a class attribute rebinds a class of the file.
+* Answers a plugin's `inference` query when the host's own engine cannot.
 
 ## What the missing inference is
 
@@ -109,9 +122,8 @@ A class that is not a plain class statement:
 
 ## What ty does not close
 
-A build with ty answers the operation rules, a class assigned in `C0103` and the
-class an attribute of `self` stands for in `W0201` (see
-[Rules answered by ty](ty-rules.md)), not these: `E1120`, `E1121`, `E1124`,
+A build with ty does not answer these (what it does answer is under
+[Covered with ty](#covered-with-ty)): `E1120`, `E1121`, `E1124`,
 `E0712`, `E0702`, `W0632`, `W0125`, `W0143`, `C1803`, `E0701`. On a
 Django project and on a set of installed packages ty's diagnostics for them
 covered none of the lines only Pylint reports, and added findings Pylint does
@@ -136,6 +148,5 @@ is a known gap, not a bug to chase: record it under its rule in
 [native rules](native-rules.md) and leave it. Anything that does not fall
 under them is a bug.
 
-`E1101` is answered by ty only for `self` and `cls` (see
-[Rules answered by ty](ty-rules.md)); a member of any other object waits for
-inference of values, and Django's for the plugin.
+`E1101` is covered only for `self` and `cls`: a member of any other object
+waits for inference of values, and Django's for the plugin.
