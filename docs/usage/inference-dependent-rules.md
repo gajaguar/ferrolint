@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Rules that wait for type inference
-description: The native rules whose remaining differences from Pylint need real type inference, grouped by what the missing inference is, and the optional ty engine planned to supply it.
+description: The native rules whose remaining differences from Pylint need real type inference, grouped by what the missing inference is, and the optional ty engine that supplies part of it.
 tags: [rules, inference]
 status: draft
 ---

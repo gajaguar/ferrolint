@@ -3,7 +3,10 @@
 ## 2026-10-29
 
 * **Release builds, release-builds.md**: the default wheel stays without `ty`,
-  and says why; a wheel with `ty` is decided at 1.0.0.
+  and says why; a wheel with `ty` is decided at 1.0.0. `ty` is described as an
+  optional extension here and in **Rules answered by ty, ty-rules.md**.
+  **Rules that wait for type inference, inference-dependent-rules.md**: the
+  description no longer says the engine is planned.
 
 ## 2026-10-28
 
