@@ -14,11 +14,12 @@ a value. Without the feature they do not exist: `select` and `ignore` do not
 know them. ty starts only when one of them, `C0103` or a plugin is on, and it
 reads `VIRTUAL_ENV` to find `site-packages`. If it cannot start, `ferrolint`
 prints a warning and the ten rules report nothing; `C0103` and the plugins
-fall back to what the host infers by itself. If it starts without
-`VIRTUAL_ENV`, `ferrolint` warns, because a type from an installed package is
-unknown: the rules report fewer findings and some that are wrong. Set the
-variable to the environment of the project. The published wheels are built
-without the feature (see [Release builds](../toolchain/release-builds.md)).
+fall back to what the host infers by itself. Without `VIRTUAL_ENV` (unset or
+empty) `ferrolint` does not start ty either: a type from an installed package
+would be unknown and the rules would report findings Pylint does not. It prints
+the same warning and the ten rules report nothing. Set the variable to the
+environment of the project. The published wheels are built without the feature
+(see [Release builds](../toolchain/release-builds.md)).
 
 | Rule                                       | Reports                        | Node                                         |
 | :----------------------------------------- | :----------------------------- | :------------------------------------------- |

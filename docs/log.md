@@ -2,9 +2,9 @@
 
 ## 2026-10-28
 
-* **Rules answered by ty, ty-rules.md**: `ferrolint` warns when ty starts
-  without `VIRTUAL_ENV`. **Release builds, release-builds.md**: the wheel stays
-  without `ty` until the rules stay silent without the variable.
+* **Rules answered by ty, ty-rules.md**: without `VIRTUAL_ENV`, ty does not
+  start and the ten rules report nothing. **Release builds,
+  release-builds.md**: the reason the wheel has no `ty` no longer holds.
 
 ## 2026-10-27
 
