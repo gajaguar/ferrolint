@@ -8,6 +8,14 @@ mod support;
 
 use support::Project;
 
+/// A virtualenv with an empty `site-packages`: ty needs one to start.
+fn venv() -> Project {
+    let venv = Project::new();
+    venv.write("pyvenv.cfg", "home = /usr/bin\nversion = 3.14.0\n")
+        .write("lib/python3.14/site-packages/.keep", "");
+    venv
+}
+
 const CODES: &str = "\"E1101\"";
 
 #[test]
@@ -16,7 +24,7 @@ fn the_fixture_matches_pylint() {
     project
         .write("ferrolint.toml", format!("select = [{CODES}]\n"))
         .write("members.py", include_str!("data/ty/members.py"));
-    let run = project.run(&["--no-cache"]);
+    let run = project.run_in(&["--no-cache"], Some(venv().path()));
     let found: Vec<String> = run
         .finding_lines()
         .into_iter()
@@ -112,7 +120,7 @@ fn the_options_match_pylint() {
             "ferrolint.toml",
             format!("select = [{CODES}]\n\n[options]\n{options}\n"),
         );
-        let run = project.run(&["--no-cache"]);
+        let run = project.run_in(&["--no-cache"], Some(venv().path()));
         let found: Vec<String> = run
             .finding_lines()
             .into_iter()
