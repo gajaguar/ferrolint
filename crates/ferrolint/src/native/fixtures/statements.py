@@ -237,4 +237,3 @@ def calls():
     positional(1, 2, c=3)
     positional2(1, a=1)
     positional(1, 2, 3, **{})
-

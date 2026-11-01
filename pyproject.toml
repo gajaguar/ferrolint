@@ -10,8 +10,7 @@ readme = "README.md"
 license-files = ["LICENSE"]
 keywords = ["linter", "pylint", "ruff", "wasm", "plugins"]
 classifiers = [
-  # Beta until 1.0.0, the first release published to PyPI.
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: MacOS",
@@ -36,6 +35,5 @@ locked = true
 # The sdist builds the plugins (the bundle feature), which no crate depends on.
 include = [
   { path = "plugins/**/*", format = "sdist" },
-  { path = "wit/**/*", format = "sdist" },
   { path = "crates/ferrolint-plugin-sdk/**/*", format = "sdist" },
 ]

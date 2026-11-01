@@ -1,7 +1,7 @@
 ---
 type: guide
 title: A plugin outside this repository
-description: How a plugin crate in its own repository depends on the SDK by Git revision, builds to wasm32-wasip2 and loads into ferrolint.
+description: How a plugin crate in its own repository depends on the SDK from crates.io, builds to wasm32-wasip2 and loads into ferrolint.
 tags: [plugins]
 status: stable
 ---
@@ -11,26 +11,24 @@ status: stable
 [Writing a plugin](writing-a-plugin.md) builds the sample inside this
 workspace. A plugin kept in another repository needs three things different.
 
-## Depend on the SDK by revision
+## Depend on the SDK from crates.io
 
 ```toml
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies.ferrolint-plugin-sdk]
-git = "ssh://git@github.com/gajaguar/ferrolint.git"
-rev = "<commit>"
+[dependencies]
+ferrolint-plugin-sdk = "1"
 ```
 
-Pin a `rev`, never a branch: the SDK's version is the version of the
-[`wit/plugin.wit`](../../wit/plugin.wit) contract, and a plugin built against
-one revision loads only in a host that speaks the same contract. The SDK
-reads `../../wit` relative to its own crate, which resolves inside the Git
-checkout, so no change to this repository is needed.
+The SDK's version is the version of the
+[`plugin.wit`](../../crates/ferrolint-plugin-sdk/wit/plugin.wit) contract. A
+plugin built against any 1.x loads in a ferrolint 1.x host of the same or a
+later minor version; a build against 0.x is refused. The contract file ships
+inside the crate, so nothing else is needed.
 
-If Cargo's built-in Git client cannot authenticate over SSH, let it call the
-`git` command: put `net.git-fetch-with-cli = true` in the plugin repository's
-`.cargo/config.toml`.
+To try an unreleased SDK, depend on it by Git revision (`git =` and `rev =`,
+never a branch) instead.
 
 ## Build
 

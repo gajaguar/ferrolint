@@ -59,7 +59,7 @@ pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[allow(clippy::all, clippy::pedantic)]
 pub mod bindings {
     wit_bindgen::generate!({
-        path: "../../wit",
+        path: "wit",
         world: "plugin",
         pub_export_macro: true,
         default_bindings_module: "ferrolint_plugin_sdk::bindings",
@@ -177,7 +177,7 @@ macro_rules! export_checker {
 mod tests {
     #[test]
     fn the_sdk_version_is_the_contract_version() {
-        let wit = include_str!("../../../wit/plugin.wit");
+        let wit = include_str!("../wit/plugin.wit");
         let package = wit
             .lines()
             .find_map(|line| line.strip_prefix("package ferrolint:plugin@"))

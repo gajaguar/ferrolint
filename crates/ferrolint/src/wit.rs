@@ -1,7 +1,7 @@
 //! Host bindings of the `ferrolint:plugin` WIT contract in `wit/`.
 
 wasmtime::component::bindgen!({
-    path: "../../wit",
+    path: "../ferrolint-plugin-sdk/wit",
     world: "plugin",
     imports: { default: trappable },
 });

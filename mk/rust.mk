@@ -16,7 +16,7 @@ PYLINT_W0611 = $(PYLINT) --disable=all --enable=unused-import,unused-variable --
 	--msg-template '{line}:{column}:{msg_id}:{symbol}:{msg}'
 
 LANG_INSTALL_TARGETS += install-rust
-LANG_CHECK_TARGETS   += clippy fmt-check deny
+LANG_CHECK_TARGETS   += clippy fmt-check deny sdk-package
 LANG_FIX_TARGETS     += fmt
 LANG_TEST_TARGETS    += cargo-test pylint-compare-test
 
@@ -38,6 +38,9 @@ fmt-check: ## Check formatting with rustfmt, without writing — accepts FILES="
 
 deny: ## Check dependencies for advisories, licenses and sources with cargo-deny
 	$(CARGO) deny --locked check
+
+sdk-package: ## Package the plugin SDK as crates.io would, to catch a file outside the crate
+	$(CARGO) package --locked -p ferrolint-plugin-sdk --allow-dirty
 
 ty-check: ## Lint, test and check the dependencies with the ty feature on
 	$(CARGO) clippy --locked --all-targets --features ty -- -D warnings

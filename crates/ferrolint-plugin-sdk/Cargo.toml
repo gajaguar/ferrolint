@@ -2,10 +2,14 @@
 name = "ferrolint-plugin-sdk"
 # The SDK's version is the WIT contract's version, not the workspace's: a
 # plugin pins both, and they move together.
-version = "0.4.3"
+version = "1.0.0"
 edition.workspace = true
 description = "Guest-side SDK for ferrolint WASM plugins"
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["linter", "python", "wasm", "plugin", "ferrolint"]
+categories = ["development-tools", "wasm"]
 
 [dependencies]
 wit-bindgen = { workspace = true }

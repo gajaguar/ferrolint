@@ -25,9 +25,9 @@ version = "=0.4.3"
 ```
 
 Pin the SDK exactly: its version is the version of the
-[`wit/plugin.wit`](../../wit/plugin.wit) contract it implements, and a
-test fails when the two drift. A contract change bumps both in the same
-change and updates the sample with them.
+[`plugin.wit`](../../crates/ferrolint-plugin-sdk/wit/plugin.wit) contract it
+implements, and a test fails when the two drift. A contract change bumps both
+in the same change and updates the sample with them.
 
 ## The checker
 
