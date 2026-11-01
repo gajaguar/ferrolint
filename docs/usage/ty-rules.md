@@ -143,6 +143,14 @@ figures above: Core has since gained four lines in Pylint's count.
   `-> bool` that returns a tuple is `E0633` for ty at `a, b = f()`; Pylint
   infers the tuple and is silent. The code is wrong, but it is not what
   Pylint reports.
+  On 15 projects without Django this was every line only ferrolint reported
+  (9 against about 17,000 Pylint findings): four `E0633` at `a, b = f()` with
+  `f` annotated `-> int` that returns a tuple, three `E1137` on
+  `slack_data["channel"] = ...` where `self.format(record)` is a `str`, an
+  `E1133` over an abstract `async def` annotated `AsyncGenerator`, and an
+  `E1102` on `settings_class(...)` annotated `BaseSettings` instead of
+  `type[BaseSettings]`. Each is a real mistake in the annotation. The rules do
+  not try to tell it from a wrong value, which takes the inference ty lacks.
 * Pylint ignores the members it cannot infer, ty does not: `x: dict | None`
   from `deepcopy(...)` is reported by Pylint and not here.
 * Pylint infers a default (`x = None`) that ty sees as `Unknown` or a union,

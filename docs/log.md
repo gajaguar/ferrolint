@@ -2,6 +2,8 @@
 
 ## 2026-11-01
 
+* **Rules answered by ty, ty-rules.md**: the declared-type difference with Pylint
+  lists the nine lines only ferrolint reported on 15 projects.
 * **Rules answered by ty, ty-rules.md**: `E1101` takes `cls.x = ...` in `__new__`
   or `__init_subclass__` as defining `x`, as Pylint does.
 * **Native rules, native-rules.md**: `C1803` (and `E1143` and `E1144`, which
