@@ -64,7 +64,9 @@ carries Pylint's hint (`; maybe 'x'?`), read from `missing-member-hint`,
 `missing-member-hint-distance` and `missing-member-max-choices`.
 
 A class that declares `__slots__` keeps the names it assigns as `self.x = ...`
-as members: ty drops the ones the slots omit and Pylint does not.
+as members: ty drops the ones the slots omit and Pylint does not. So does a
+`cls.x = ...` in `__new__` or `__init_subclass__` (a singleton's `cls.instance`):
+ty reads only a classmethod as defining a class attribute.
 
 Measured against Pylint run with `--enable=no-member` (a Django codebase whose
 own `.pylintrc` disables it, and a set of installed packages): the codebase

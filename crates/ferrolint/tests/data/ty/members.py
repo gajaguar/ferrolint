@@ -62,3 +62,14 @@ class Slotted:
 
     def reads(self):
         return self.assigned, self.never
+
+
+class Singleton:
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = super().__new__(cls)
+        return cls.instance
+
+    @classmethod
+    def reads(cls):
+        return cls.instance, cls.never
