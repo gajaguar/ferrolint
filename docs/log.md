@@ -1,5 +1,14 @@
 # Directory Update Log
 
+## 2026-11-01
+
+* **Native rules, native-rules.md**: `E1111` and `E1128` also judge a
+  function of another module of the project that the file imports by name.
+  A `pylint:` pragma may follow other text in its comment
+  (`# ruff: ignore[x] pylint: disable=y`), as in Pylint. A
+  `from .m import *` of a compiled module in `extension-pkg-allow-list` no
+  longer makes `E0611` report the names it brings.
+
 ## 2026-10-29
 
 * **Release builds, release-builds.md**: the default wheel stays without `ty`,
