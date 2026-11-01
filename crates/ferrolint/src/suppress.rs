@@ -146,8 +146,19 @@ fn is_code_char(c: char) -> bool {
 /// The text after a comment segment's `pylint:` marker. Pylint's tokenizer
 /// skips what it does not know, so `pylint:: disable=` works.
 fn pylint_payload(segment: &str) -> Option<&str> {
-    directive(segment, "pylint:")
-        .map(|payload| payload.trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
+    // Pylint accepts text before the marker (`# ruff: ignore[x] pylint: disable=y`), but not
+    // inside a word (`mypylint:`).
+    let lower = segment.to_ascii_lowercase();
+    let at = lower
+        .match_indices("pylint:")
+        .map(|(at, _)| at)
+        .find(|&at| {
+            !segment[..at]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        })?;
+    Some(segment[at + "pylint:".len()..].trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
 }
 
 /// Every `pylint: key=value` option of a comment, `;` separating several, as
@@ -412,6 +423,18 @@ impl Suppressions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pylint_pragma_may_follow_other_text_in_its_comment() {
+        assert_eq!(
+            disabled_codes("# ruff: ignore[x] pylint: disable=unused-import"),
+            ["unused-import"]
+        );
+        assert_eq!(
+            disabled_codes("# mypylint: disable=unused-import"),
+            Vec::<&str>::new()
+        );
+    }
 
     #[test]
     fn own_line_is_true_only_for_a_comment_alone_on_its_line() {

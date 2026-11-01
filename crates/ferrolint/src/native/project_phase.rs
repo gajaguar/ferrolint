@@ -788,7 +788,7 @@ mod tests {
         let project = Project::for_run(
             vec![root.to_path_buf()],
             linted,
-            Extensions::default(),
+            opts.extensions.clone(),
             Some((library, Vec::new())),
         );
         let prepared = prepare_all(&units);
@@ -920,6 +920,24 @@ mod tests {
             found.iter().map(|f| f.3.as_str()).collect::<Vec<_>>(),
             ["No name 'nope' in module 'ext'"]
         );
+    }
+
+    #[test]
+    fn a_star_import_of_an_allowed_extension_leaves_the_names_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            &[
+                ("stdlib/sys.py", ""),
+                ("stdlib/orjson/__init__.py", "from .orjson import *\n"),
+                ("stdlib/orjson/orjson.cpython-314-darwin.so", ""),
+                ("pkg/__init__.py", ""),
+                ("pkg/a.py", "from orjson import JSONDecodeError\n"),
+            ],
+        );
+        let found = |options: &[(&str, &str)]| run(dir.path(), options).len();
+        assert_eq!(found(&[("extension-pkg-allow-list", "orjson")]), 0);
+        assert_eq!(found(&[]), 1);
     }
 
     #[test]
