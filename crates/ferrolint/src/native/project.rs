@@ -445,6 +445,11 @@ pub struct FunctionRef {
 }
 
 impl FunctionRef {
+    /// The statements of the module that defines the function.
+    pub fn body(&self) -> &[Stmt] {
+        &self.module.parsed.syntax().body
+    }
+
     pub fn func(&self) -> Option<&StmtFunctionDef> {
         find_function(&self.module.parsed.syntax().body, &self.name)
     }
