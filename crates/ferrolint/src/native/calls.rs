@@ -459,18 +459,7 @@ impl<'a> Walk<'a, '_> {
         func: &Expr,
         qualified: &str,
     ) -> Option<FunctionRef> {
-        let mut root = func;
-        while let Expr::Attribute(attribute) = root {
-            root = &attribute.value;
-        }
-        let Expr::Name(name) = root else {
-            return None;
-        };
-        let binding = self.env.binding(name)?;
-        (matches!(binding.kind, BindingKind::Import | BindingKind::FromImport)
-            && self.env.ctx.model.is_sole_binding(binding.id))
-        .then(|| project.function(&project.absolute(qualified)))
-        .flatten()
+        imported_function(self.env, project, func, qualified)
     }
 
     /// The number of positional arguments of a call, a `*name` of a list or tuple
@@ -1121,6 +1110,28 @@ fn constructible<'p>(
                 |class| constructible(env, class, depth + 1, project),
             )
         })
+}
+
+/// The function of another module of the project that `qualified` names, when the file
+/// binds the imported name (`mod` of `mod.f`, or `f`) once, by an import.
+pub(super) fn imported_function(
+    env: &Env<'_>,
+    project: &Project,
+    func: &Expr,
+    qualified: &str,
+) -> Option<FunctionRef> {
+    let mut root = func;
+    while let Expr::Attribute(attribute) = root {
+        root = &attribute.value;
+    }
+    let Expr::Name(name) = root else {
+        return None;
+    };
+    let binding = env.binding(name)?;
+    (matches!(binding.kind, BindingKind::Import | BindingKind::FromImport)
+        && env.ctx.model.is_sole_binding(binding.id))
+    .then(|| project.function(&project.absolute(qualified)))
+    .flatten()
 }
 
 /// The function or method of the file that a call calls, which Pylint
