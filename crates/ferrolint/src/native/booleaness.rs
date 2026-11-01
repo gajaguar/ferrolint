@@ -7,23 +7,29 @@
 //! shortcut: Pylint infers the type of the compared or subscripted value.
 //! Here a value has a type only when it is written as a list, tuple, dict,
 //! set, string or bytes literal, is a call of the builtin `list`, `tuple`,
-//! `dict`, `set` or `str`, or is a name whose every binding is a plain or
-//! annotated assignment (or an element of a tuple unpacking) to one of
-//! those, all of the same type. Anything else stays silent; upgrade with an
-//! inference of values.
+//! `dict`, `set` or `str`, is a call of a function whose returns have one
+//! such type (see [`super::returns`]), or is a name whose every binding is a
+//! plain or annotated assignment (or an element of a tuple unpacking, of a
+//! literal or of such a call) to one of those, all of the same type.
+//! Anything else stays silent; upgrade with an inference of values.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
+use ruff_python_ast::HasNodeIndex;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{
-    CmpOp, Comprehension, Expr, ExprCall, ExprCompare, ExprContext, ExprDict, ExprSet,
-    ExprSubscript, Number, Stmt, UnaryOp,
+    CmpOp, Comprehension, Expr, ExprCall, ExprCompare, ExprContext, ExprDict, ExprList, ExprSet,
+    ExprSubscript, ExprTuple, Number, Stmt, UnaryOp,
 };
 
 use super::astring::as_string;
+use super::calls::{function_called, imported_function};
 use super::classes::Env;
 use super::inferred::assigned_values;
+use super::project::Project;
+use super::returns::return_kind;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
@@ -78,6 +84,8 @@ impl Checker for Booleaness {
         Walk {
             env: Env::new(ctx),
             assigned: assigned_values(body),
+            unpacked: unpacked_calls(body),
+            project: OnceCell::new(),
             on,
             boolean: false,
             out,
@@ -88,7 +96,7 @@ impl Checker for Booleaness {
 
 /// What a value is known to be.
 #[derive(Clone, Copy, PartialEq)]
-enum Kind {
+pub(super) enum Kind {
     List,
     Tuple,
     Dict,
@@ -101,10 +109,40 @@ struct Walk<'a, 'o> {
     env: Env<'a>,
     /// The value of each name written as an assignment target, by node id.
     assigned: HashMap<u32, &'a Expr>,
+    /// The call and the position of each name that a call's tuple is unpacked into.
+    unpacked: HashMap<u32, (&'a ExprCall, usize)>,
+    project: OnceCell<Project>,
     on: Vec<&'a str>,
     /// Whether the expression visited next is used for its truth.
     boolean: bool,
     out: &'o mut Vec<Diagnostic>,
+}
+
+/// The call, and the place in its tuple, for each name of `a, b = f()`, by node id.
+fn unpacked_calls(body: &[Stmt]) -> HashMap<u32, (&ExprCall, usize)> {
+    struct Unpacked<'a>(HashMap<u32, (&'a ExprCall, usize)>);
+    impl<'a> Visitor<'a> for Unpacked<'a> {
+        fn visit_stmt(&mut self, stmt: &'a Stmt) {
+            if let Stmt::Assign(assign) = stmt
+                && let [Expr::Tuple(ExprTuple { elts, .. }) | Expr::List(ExprList { elts, .. })] =
+                    &*assign.targets
+                && let Expr::Call(call) = &*assign.value
+                && elts.iter().all(Expr::is_name_expr)
+            {
+                for (at, elt) in elts.iter().enumerate() {
+                    if let Expr::Name(name) = elt
+                        && let Some(id) = name.node_index().load().as_u32()
+                    {
+                        self.0.insert(id, (call, at));
+                    }
+                }
+            }
+            visitor::walk_stmt(self, stmt);
+        }
+    }
+    let mut found = Unpacked(HashMap::new());
+    found.visit_body(body);
+    found.0
 }
 
 /// Whether `expr` is the number 0 (`0`, `0.0` or `0j`, not `False`).
@@ -170,14 +208,20 @@ impl<'a> Walk<'a, '_> {
             Expr::Set(_) => Some(Kind::Set),
             Expr::StringLiteral(_) => Some(Kind::Str),
             Expr::BytesLiteral(_) => Some(Kind::Bytes),
-            Expr::Call(call) => match self.env.qualified(&call.func)?.as_str() {
-                "list" => Some(Kind::List),
-                "tuple" => Some(Kind::Tuple),
-                "dict" => Some(Kind::Dict),
-                "set" => Some(Kind::Set),
-                "str" => Some(Kind::Str),
-                _ => None,
-            },
+            Expr::Call(call) => {
+                let builtin = self
+                    .env
+                    .qualified(&call.func)
+                    .and_then(|q| match q.as_str() {
+                        "list" => Some(Kind::List),
+                        "tuple" => Some(Kind::Tuple),
+                        "dict" => Some(Kind::Dict),
+                        "set" => Some(Kind::Set),
+                        "str" => Some(Kind::Str),
+                        _ => None,
+                    });
+                builtin.or_else(|| self.returned(call, None))
+            }
             Expr::Name(name) if depth > 0 => {
                 // Pylint infers every binding of the name and needs one type.
                 let mut kinds = self
@@ -189,13 +233,35 @@ impl<'a> Walk<'a, '_> {
                     .map(|b| {
                         matches!(b.kind, BindingKind::Assignment | BindingKind::Annotation)
                             .then_some(())
-                            .and_then(|()| self.kind(self.assigned.get(&b.node?)?, depth - 1))
+                            .and_then(|()| {
+                                let node = b.node?;
+                                if let Some(value) = self.assigned.get(&node) {
+                                    return self.kind(value, depth - 1);
+                                }
+                                let (call, at) = self.unpacked.get(&node)?;
+                                self.returned(call, Some(*at))
+                            })
                     });
                 let first = kinds.next()??;
                 kinds.all(|k| k == Some(first)).then_some(first)
             }
             _ => None,
         }
+    }
+
+    /// What the function `call` calls gives back (the `element`th item of its tuple), when
+    /// it is a function of the file or one imported by name from the project.
+    fn returned(&self, call: &ExprCall, element: Option<usize>) -> Option<Kind> {
+        if let Some(func) = function_called(&self.env, &[], call) {
+            return return_kind(func, &self.env.ctx.parsed.syntax().body, element);
+        }
+        let ctx = self.env.ctx;
+        let qualified = self.env.qualified(&call.func).filter(|q| q.contains('.'))?;
+        let project = self
+            .project
+            .get_or_init(|| Project::new(ctx.path, ctx.module, ctx.roots));
+        let function = imported_function(&self.env, project, &call.func, &qualified)?;
+        return_kind(function.func()?, function.body(), element)
     }
 
     fn unhashable(&self, expr: &'a Expr) -> bool {
@@ -454,6 +520,37 @@ mod tests {
                 assert_eq!(render(source, &[], ALL), expected.trim_end());
             }
         };
+    }
+
+    #[test]
+    fn a_call_of_a_function_of_the_file_has_the_kind_of_its_returns() {
+        // Pylint also reports `rebound`, `param` and `aug`, which follow the flow
+        // and the arguments; this stays silent on them.
+        let source = include_str!("fixtures/booleaness_returns.py");
+        assert_eq!(
+            render(source, &[], &["C1803"])
+                .lines()
+                .map(|l| l.split(':').next().unwrap().to_owned())
+                .collect::<Vec<_>>(),
+            ["56", "58", "60", "63"]
+        );
+    }
+
+    #[test]
+    fn a_call_of_a_function_of_another_module_has_the_kind_of_its_returns() {
+        use crate::native::classes::render_at;
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("funcs.py"),
+            "def pair():\n    return list(), dict()\n\n\ndef empty():\n    return ()\n\n\ndef odd(a):\n    return [] if a else 1\n",
+        )
+        .unwrap();
+        let source = "from pkg import funcs\nfrom pkg.funcs import empty, odd, pair\n\na, b = pair()\nx = (empty() == (), funcs.empty() == (), odd(1) == [], a == [], b == {})\n";
+        let found = render_at(source, &package.join("use.py"), "pkg.use", &[], &["C1803"]);
+        assert_eq!(found.lines().count(), 4, "{found}");
     }
 
     fixture!(comparison);

@@ -2,6 +2,10 @@
 
 ## 2026-11-01
 
+* **Native rules, native-rules.md**: `C1803` (and `E1143` and `E1144`, which
+  read the same types) takes the type of a call of a function of the file or
+  imported by name from the project from the function's `return` statements,
+  and of a name a tuple unpacking binds to a call.
 * **Native rules, native-rules.md**: `E1111` and `E1128` also judge a
   function of another module of the project that the file imports by name.
   A `pylint:` pragma may follow other text in its comment
