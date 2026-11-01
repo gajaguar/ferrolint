@@ -1,12 +1,10 @@
 {
   // Paths excluded from markdown linting: third-party deps and generated/vendored
-  // tooling artifacts that are not authored in this repo, and the local
-  // .scratchpad/ notes, which git ignores through the global ignore file.
+  // tooling artifacts that are not authored in this repo.
   "ignores": [
     "node_modules/",
     ".venv/",
     ".git/",
-    ".claude/skills/",
-    ".scratchpad/"
+    ".claude/skills/"
   ]
 }
