@@ -2,6 +2,12 @@
 
 ## 2026-11-01
 
+* **Release builds, release-builds.md**: the SDK publishes to crates.io from the
+  Release (the `crates` job), and `publish` no longer skips a `v0.*` tag.
+* **A plugin outside this repository, out-of-tree-plugin.md**: depends on
+  `ferrolint-plugin-sdk = "1"` from crates.io instead of a Git revision.
+* **Plugin contract, plugin-contract.md**: contract 1.0.0 freezes it and
+  refuses plugins built against 0.x; `wit/` moved into the SDK crate.
 * **Rules answered by ty, ty-rules.md**: the declared-type difference with Pylint
   lists the nine lines only ferrolint reported on 15 projects.
 * **Rules answered by ty, ty-rules.md**: `E1101` takes `cls.x = ...` in `__new__`

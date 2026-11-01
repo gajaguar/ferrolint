@@ -52,13 +52,14 @@ Once a pull request is open, the agent MUST:
   [`docs/conventions/versioning.md`](docs/conventions/versioning.md) defines;
   it is the only place those rules live.
 
-## Publishing to PyPI
+## Publishing to PyPI and crates.io
 
-- Publish nothing before 1.0.0: the `publish` job skips a `v0.*` tag. From
-  1.0.0, publish only when asked: create the GitHub Release from the `vX.Y.Z`
-  tag, and approve the `pypi` environment's deployment, only on request.
+- Publish only when asked: create the GitHub Release from the `vX.Y.Z` tag,
+  and approve the `pypi` and `crates-io` environments' deployments, only on
+  request. The Release ships the wheels and the sdist to PyPI and
+  `ferrolint-plugin-sdk` to crates.io.
 - Follow [`docs/toolchain/release-builds.md`](docs/toolchain/release-builds.md)
-  for the wheels, the sdist and the one-time PyPI setup.
+  for the wheels, the sdist, the SDK crate and the one-time setup.
 
 ## Documentation
 

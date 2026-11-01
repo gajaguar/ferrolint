@@ -3,11 +3,8 @@
 Thanks for considering a contribution. Bug reports, feature ideas,
 documentation fixes, code, and plugins are all welcome.
 
-**Status: ferrolint is a scaffold.** The linter, the plugin contract and the
-plugin SDK are not implemented yet, so most contributions today are planning
-and documentation; see the requirements under
-[`docs/requirements/`](docs/requirements/) and the decisions under
-[`docs/decisions/`] once they land.
+The requirements live under [`docs/requirements/`](docs/requirements/) and the
+decisions under [`docs/decisions/`](docs/decisions/).
 
 ## Ways to contribute
 

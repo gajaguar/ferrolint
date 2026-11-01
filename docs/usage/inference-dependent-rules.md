@@ -117,7 +117,7 @@ A class that is not a plain class statement:
 
 * `W0223` 4 [11]: `class A(BaseHTTPResponse)`, where the base comes from an
   installed package whose abstract methods are inferred.
-* `E0701` 3: `except StatusAuthnFailed:` after a class of an installed
+* `E0701` 3: `except ConnectionFailed:` after a class of an installed
   package that is its ancestor.
 
 ## What ty does not close

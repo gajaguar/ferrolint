@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 license.workspace = true
+publish = false
 
 [features]
 # Build the repository plugins into the binary: what a source install (pip,

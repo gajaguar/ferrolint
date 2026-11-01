@@ -30,8 +30,8 @@ A run
 discovers the Python files under its targets, honouring `.gitignore` and the
 configured excludes, parses them in parallel with Ruff's parser, and runs
 the host's own rules plus every configured WASM plugin against the
-[`wit/plugin.wit`](wit/plugin.wit) contract, each in an empty sandbox with
-per-file fuel and time caps. Plugins are written in Rust against
+[`plugin.wit`](crates/ferrolint-plugin-sdk/wit/plugin.wit) contract, each in
+an empty sandbox with per-file fuel and time caps. Plugins are written in Rust against
 `ferrolint-plugin-sdk`; the sample in
 [`plugins/unused-import`](plugins/unused-import/src/lib.rs) ports Pylint's
 `unused-import` (W0611) and matches its findings on the fixtures (see
@@ -49,6 +49,15 @@ checks 167 s; `make bench` measures it.
 The requirements and the design decisions live in the `docs/` OKF bundle:
 [docs/requirements/index.md](docs/requirements/index.md) and
 [docs/decisions/](docs/decisions/).
+
+## Install
+
+```bash
+pip install ferrolint        # or: uv tool install ferrolint
+```
+
+Wheels exist for Linux (x86_64, aarch64) and macOS (aarch64). Write plugins
+with [`ferrolint-plugin-sdk`](https://crates.io/crates/ferrolint-plugin-sdk).
 
 ## Usage
 

@@ -70,6 +70,13 @@ in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
 nothing of them.
 
+Contract 1.0.0 freezes the contract: from here on a minor version only adds
+functions and interfaces, and a host of 1.x loads a plugin built against any
+earlier 1.y. The `@since` markers of the 0.x series are gone, since 1.0.0 is
+the base. The component linker treats 1.0.0 as a different major from 0.4.x,
+so a host of 1.0.0 refuses a plugin built against SDK 0.x: rebuild it with
+`ferrolint-plugin-sdk = "1"`.
+
 Contract 0.4.3 adds `modules.all-names` to the `modules` interface and 0.4.2
 added `modules.overridden-parameters`: each only adds a function, so a host of
 0.4.3 still loads a plugin built against 0.4.2 or 0.4.1.

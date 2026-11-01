@@ -1,4 +1,4 @@
-package ferrolint:plugin@0.4.3;
+package ferrolint:plugin@1.0.0;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -261,7 +261,6 @@ interface semantic {
 /// effort: a plugin should stay silent on an unresolved answer. A host of
 /// 0.2.1 still loads a plugin built against 0.2.0, which imports nothing
 /// of this interface.
-@since(version = 0.2.1)
 interface inference {
     /// Where an inferred type comes from.
     variant origin {
@@ -301,7 +300,6 @@ interface inference {
 /// Comment ranges of the current file, for checkers that read comments
 /// (markers, directives) rather than the AST. A host of 0.3.1 still loads
 /// a plugin built against 0.3.0, which imports nothing of this interface.
-@since(version = 0.3.1)
 interface comments {
     use types.{range};
 
@@ -311,7 +309,6 @@ interface comments {
     comment-ranges: func() -> list<range>;
 
     /// A comment with where it sits.
-    @since(version = 0.4.0)
     record comment {
         range: range,
         /// True when only whitespace precedes the comment on its line.
@@ -319,13 +316,11 @@ interface comments {
     }
 
     /// The file's comments, in source order, like `comment-ranges`.
-    @since(version = 0.4.0)
     comment-list: func() -> list<comment>;
 }
 
 /// The options the configuration gives the calling plugin alone, unlike
 /// the `options` of the `file` record, which every plugin receives.
-@since(version = 0.3.1)
 interface settings {
     /// The pairs of the plugin's own `options` table in its `[[plugins]]`
     /// entry, sorted by key, as written; empty when it has none, and
@@ -335,7 +330,6 @@ interface settings {
 
 /// What the host knows of the other files of the project. A host of 0.4.1
 /// still loads a plugin built against 0.4.0, which imports nothing of it.
-@since(version = 0.4.1)
 interface modules {
     /// The names the `from m import *` at the `alias` node binds, in the
     /// module's order. None when the host cannot tell: `m` is not a file
@@ -351,7 +345,6 @@ interface modules {
     /// a class, no ancestor defines it, or the host cannot tell: a base is
     /// not a class of the project, the standard library or the installed
     /// packages.
-    @since(version = 0.4.2)
     overridden-parameters: func(method: u32) -> option<list<string>>;
 
     /// The names that the file's module-level `__all__` makes Pylint take
@@ -360,7 +353,6 @@ interface modules {
     /// before, or as `m.__all__` of a module of the project. Empty when the
     /// file has none, or its value is not a list or a tuple for astroid
     /// (`sorted(...)`, a set). None when the host cannot tell.
-    @since(version = 0.4.3)
     all-names: func() -> option<list<string>>;
 }
 
@@ -379,13 +371,9 @@ interface checker {
 /// World contract for a ferrolint plugin.
 world plugin {
     import semantic;
-    @since(version = 0.2.1)
     import inference;
-    @since(version = 0.3.1)
     import comments;
-    @since(version = 0.3.1)
     import settings;
-    @since(version = 0.4.1)
     import modules;
     export checker;
 }

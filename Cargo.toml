@@ -7,6 +7,7 @@ version = "0.36.2"
 edition = "2024"
 description = "Extensible Python linter in Rust that runs custom rules as WASM plugins next to Ruff"
 license = "MIT"
+repository = "https://github.com/gajaguar/ferrolint"
 
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
