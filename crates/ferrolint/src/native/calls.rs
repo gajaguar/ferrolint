@@ -6,7 +6,7 @@
 //! too-many-function-args, `E1123` unexpected-keyword-arg, `E1124`
 //! redundant-keyword-arg and `E1125` missing-kwoa; and `E1111`
 //! assignment-from-no-return and `E1128` assignment-from-none for a function
-//! of the file.
+//! of the file or of another module of the project.
 //!
 //! shortcut: Pylint infers what a call calls. Here a callee is a name bound
 //! once to an undecorated function of this file, `self.method` of the
@@ -158,12 +158,12 @@ impl Checker for Calls {
             rule(
                 NO_RETURN,
                 "assignment-from-no-return",
-                "The result of a call to a function of the file that returns nothing, assigned.",
+                "The result of a call to a function of the project that returns nothing, assigned.",
             ),
             rule(
                 NONE_RETURNED,
                 "assignment-from-none",
-                "The result of a call to a function of the file that returns only `None`, assigned.",
+                "The result of a call to a function of the project that returns only `None`, assigned.",
             ),
             rule(
                 MISSING,
@@ -796,9 +796,24 @@ impl<'a> Walk<'a, '_> {
         }
         let found = match function_called(self.env, &self.classes, call) {
             Some(func) => self.judge(assign, call, func),
-            None => self.inherited(assign, call),
+            None => self
+                .inherited(assign, call)
+                .or_else(|| self.judge_imported(assign, call)),
         };
         self.out.extend(found);
+    }
+
+    /// `x = f()` where `f` is a function of another module of the project, imported by a name.
+    fn judge_imported(&self, assign: &StmtAssign, call: &ExprCall) -> Option<Diagnostic> {
+        if self.callee(call).is_some() {
+            return None;
+        }
+        let qualified = self.env.qualified(&call.func).filter(|q| q.contains('.'))?;
+        let project = self.project.get_or_init(|| {
+            Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
+        });
+        let function = self.imported_function(project, &call.func, &qualified)?;
+        self.judge(assign, call, function.func()?)
     }
 
     /// `x = self.f()` or `x = super().f()` where an ancestor of another
@@ -1320,6 +1335,32 @@ mod tests {
         assert_eq!(
             found,
             "6:E1111:Assigning result of a function call, but 'put' returns None\n7:E1111:Assigning result of a function call, but 'put' returns None\n9:E1128:Assigning result of a function call, where the function returns None",
+            "{found}"
+        );
+    }
+
+    #[test]
+    fn a_function_of_another_module_that_returns_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("pkg");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("__init__.py"), "").unwrap();
+        std::fs::write(
+            package.join("funcs.py"),
+            "def check(a):\n    if not a:\n        raise ValueError\n\n\ndef quiet(a):\n    if not a:\n        return\n    print(a)\n\n\ndef value(a):\n    return a\n",
+        )
+        .unwrap();
+        let source = "from pkg import funcs\nfrom pkg.funcs import check, quiet, value\n\na = check(1)\nb = quiet(1)\nc = value(1)\nd = funcs.check(1)\n";
+        let found = render_at(
+            source,
+            &package.join("use.py"),
+            "pkg.use",
+            &[],
+            &["E1111", "E1128"],
+        );
+        assert_eq!(
+            found,
+            "4:E1111:Assigning result of a function call, but 'check' returns None\n5:E1128:Assigning result of a function call, where the function returns None\n7:E1111:Assigning result of a function call, but 'check' returns None",
             "{found}"
         );
     }

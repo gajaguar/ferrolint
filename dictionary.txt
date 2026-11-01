@@ -43,6 +43,7 @@ musllinux
 cpio
 dotrc
 mymethods
+mypylint
 nanj
 nnan
 pypa
@@ -73,6 +74,7 @@ smol
 thinh
 tian
 tolineno
+tolower
 toptal
 truong
 unbypassable

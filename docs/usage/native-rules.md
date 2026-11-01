@@ -1272,7 +1272,8 @@ Known divergences:
   `select.error` and `socket.error` are `OSError`, and `socket.timeout` is
   `TimeoutError`. `bad-except-order` (`E0701`) reads the same names now.
 * `E1111` `assignment-from-no-return` and `E1128` `assignment-from-none`:
-  `x = f()` where `f` is a function of the file with no `return`, or with
+  `x = f()` where `f` is a function of the file, or of another module of the
+  project that the file imports by name, with no `return`, or with
   `return` statements that all return nothing or `None`. Like Pylint it
   leaves out a decorated function, an `async` one, a generator, one whose body
   is a lone `raise` or ends in a `raise` with no `return`, and one whose first
@@ -1306,7 +1307,8 @@ Known divergences from Pylint, where Pylint infers a class or a callee:
   class counts the builtin and local bases it can read as its ancestors.
 * `E1111` and `E1128` take the callee that `W1114` resolves (see Batch B and
   Batch R), a constructor aside: a name bound once to a function of the file
-  or `self.method` of the enclosing class, also one that a base class of the
+  or imported from another module of the project, or `self.method` of the
+  enclosing class, also one that a base class of the
   project, of the standard library or of an installed package defines (the
   bases must all be known, and a `.pyi` base is left out). A method called as
   `Class.method(x)`, a name that the function binds again further down, a
