@@ -27,7 +27,7 @@ fn project(name: &str) -> Project {
 /// The findings of a run as `path:line:code:message`, sorted. A duplicate
 /// is one entry: its first line and its `==module:[a:b]` lines, joined by
 /// `|`, without the copied lines, which Pylint takes from either file.
-fn findings(project: &Project, args: &[&str]) -> Vec<String> {
+fn anchored(project: &Project, args: &[&str]) -> Vec<String> {
     let run = project.run(args);
     assert!(run.code <= 1, "{run:?}");
     let mut found: Vec<String> = Vec::new();
@@ -43,6 +43,29 @@ fn findings(project: &Project, args: &[&str]) -> Vec<String> {
             let (code, message) = rest.split_once(") ").unwrap();
             let code = code.split_whitespace().nth(1).unwrap();
             found.push(format!("{path}:{row}:{code}:{message}"));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// `anchored` with the file of a cyclic or duplicate-code finding as
+/// `<anchor>`: Pylint, and so ferrolint, hangs those on the file the directory
+/// listing yields last, which differs between file systems.
+fn findings(project: &Project, args: &[&str]) -> Vec<String> {
+    let mut found = anchored(project, args);
+    for line in &mut found {
+        let (path, rest) = line.split_once(':').unwrap();
+        if rest
+            .split(':')
+            .nth(1)
+            .is_some_and(|code| matches!(code, "R0401" | "R0801"))
+        {
+            assert!(
+                Path::new(path).extension().is_some_and(|ext| ext == "py"),
+                "{line}"
+            );
+            *line = format!("<anchor>:{rest}");
         }
     }
     found.sort();
@@ -168,7 +191,7 @@ fn a_cached_run_follows_the_anchor_of_the_arguments() {
     }
     // R0801 sits on the file checked last, which is the last argument.
     let anchor = |order: &[&str]| {
-        let found = findings(&project, order);
+        let found = anchored(&project, order);
         let found = found.iter().find(|f| f.contains("R0801")).unwrap();
         found.split(':').next().unwrap().to_owned()
     };
@@ -185,7 +208,7 @@ fn a_cached_run_follows_the_anchor_of_a_cycle() {
     project.write("y.py", "import x\n");
     // R0401 sits on the file checked last, which is the last argument.
     let anchor = |order: &[&str]| {
-        let found = findings(&project, order);
+        let found = anchored(&project, order);
         let found = found.iter().find(|f| f.contains("R0401")).unwrap();
         found.split(':').next().unwrap().to_owned()
     };
