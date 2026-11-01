@@ -14,8 +14,9 @@ import re
 import sys
 import tokenize
 
-PRAGMA = re.compile(r"#\s*pylint:")
-PLAIN = re.compile(r"\s*#\s*pylint:.*")
+# Pylint's own pattern: any text may sit between the "#" and "pylint:", as in "# ruff: ignore[x] pylint: disable=y".
+PRAGMA = re.compile(r"#.*?\bpylint:")
+PLAIN = re.compile(r"\s*#.*?\bpylint:.*")
 
 
 def strip(path):
