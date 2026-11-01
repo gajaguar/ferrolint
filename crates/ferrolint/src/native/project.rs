@@ -1123,10 +1123,13 @@ impl Project {
                 Late::Star(origin) => {
                     // A source that does not parse brings names that cannot be told: `*` stands for them.
                     let told = self.public_at(&origin, depth + 1, out).is_some();
+                    // An extension Pylint loads has names we cannot list either.
                     if !told
-                        && self
-                            .spec(&origin)
-                            .is_some_and(|s| matches!(s.kind, Kind::Source { .. }))
+                        && self.spec(&origin).is_some_and(|s| match s.kind {
+                            Kind::Source { .. } => true,
+                            Kind::Extension => self.loads_extension(&origin),
+                            _ => false,
+                        })
                     {
                         out.push("*".into());
                     }
