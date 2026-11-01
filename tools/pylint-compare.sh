@@ -103,8 +103,21 @@ set +e
 if [ -n "${BIN:-}" ] && [ -n "${STRIP:-}" ]; then
 	# A bundled binary reads the copy's own .pylintrc, options included,
 	# the way a project runs it; only py-version, which Pylint takes from its
-	# interpreter, is added.
-	[ -z "${PY_VERSION:-}" ] || printf '\n[MASTER]\npy-version=%s\n' "$PY_VERSION" >>.pylintrc
+	# interpreter, is added. Never a second [MASTER]: Pylint rejects the file and
+	# falls back to its defaults, and a new .pylintrc would hide the project's
+	# [tool.pylint] in pyproject.toml.
+	if [ -n "${PY_VERSION:-}" ]; then
+		if [ -f .pylintrc ] && grep -qiE '^[[:space:]]*py-version[[:space:]]*=' .pylintrc; then
+			: # the project's own py-version wins
+		elif [ -f .pylintrc ] && grep -qiE '^[[:space:]]*\[(MASTER|MAIN)\]' .pylintrc; then
+			awk -v v="$PY_VERSION" '{ print } !done && tolower($0) ~ /^[ \t]*\[(master|main)\]/ { print "py-version=" v; done = 1 }' \
+				.pylintrc >.pylintrc.new && mv .pylintrc.new .pylintrc
+		elif [ -f .pylintrc ] || ! grep -q '^\[tool\.pylint' pyproject.toml 2>/dev/null; then
+			printf '\n[MASTER]\npy-version=%s\n' "$PY_VERSION" >>.pylintrc
+		else
+			echo "pylint-compare: PY_VERSION ignored: pyproject.toml configures Pylint and a new .pylintrc would hide it" >&2
+		fi
+	fi
 	"$bin" --no-cache . >"$work/ferrolint.out"
 else
 	"$bin" --no-cache --config "$config" . >"$work/ferrolint.out"
