@@ -2,6 +2,8 @@
 
 ## 2026-11-01
 
+* **Rules answered by ty, ty-rules.md**: `E1101` takes `cls.x = ...` in `__new__`
+  or `__init_subclass__` as defining `x`, as Pylint does.
 * **Native rules, native-rules.md**: `C1803` (and `E1143` and `E1144`, which
   read the same types) takes the type of a call of a function of the file or
   imported by name from the project from the function's `return` statements,

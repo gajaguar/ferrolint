@@ -322,29 +322,55 @@ impl Scan<'_, '_> {
     }
 }
 
-/// The names a class with `__slots__` assigns on `self`. ty ignores them where
-/// the slots omit them, and Pylint reads them as members.
+/// The names the class defines where ty does not look: `self.x = ...` in a class with
+/// `__slots__` (ty ignores them where the slots omit them) and `cls.x = ...` in `__new__` or
+/// `__init_subclass__` (ty reads only a classmethod). Pylint reads both as members.
 fn slotted(class: &StmtClassDef) -> HashSet<String> {
     let declares = class.body.iter().any(|stmt| {
         matches!(stmt, Stmt::Assign(a) if a.targets.iter().any(
             |t| matches!(t, Expr::Name(n) if n.id.as_str() == "__slots__")))
     });
-    let mut names = Assigned(HashSet::new());
+    let mut names = HashSet::new();
     if declares {
-        names.visit_body(&class.body);
+        let mut slots = Assigned::new("self");
+        slots.visit_body(&class.body);
+        names.extend(slots.names);
     }
-    names.0
+    for stmt in &class.body {
+        if let Stmt::FunctionDef(func) = stmt
+            && matches!(func.name.as_str(), "__new__" | "__init_subclass__")
+            && let Some(first) = func.parameters.args.first()
+        {
+            let mut stored = Assigned::new(first.parameter.name.as_str());
+            stored.visit_body(&func.body);
+            names.extend(stored.names);
+        }
+    }
+    names
 }
 
-struct Assigned(HashSet<String>);
+/// The attributes assigned on one receiver name.
+struct Assigned<'r> {
+    receiver: &'r str,
+    names: HashSet<String>,
+}
 
-impl<'a> SourceOrderVisitor<'a> for Assigned {
+impl<'r> Assigned<'r> {
+    fn new(receiver: &'r str) -> Self {
+        Self {
+            receiver,
+            names: HashSet::new(),
+        }
+    }
+}
+
+impl<'a> SourceOrderVisitor<'a> for Assigned<'_> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         if let Expr::Attribute(attr) = expr
             && attr.ctx == ExprContext::Store
-            && matches!(&*attr.value, Expr::Name(n) if n.id.as_str() == "self")
+            && matches!(&*attr.value, Expr::Name(n) if n.id.as_str() == self.receiver)
         {
-            self.0.insert(attr.attr.to_string());
+            self.names.insert(attr.attr.to_string());
         }
         source_order::walk_expr(self, expr);
     }
