@@ -823,7 +823,14 @@ Known divergences:
   value on either side. The message suggests `not x`, or for `!=` `x` in a
   truth test (`if`, `while`, `assert`, a conditional expression, `not`, a
   comprehension filter, `bool(...)`, `any`/`all` of a generator, `filter` of a
-  lambda, and `and`/`or` inside them) and `bool(x)` elsewhere.
+  lambda, and `and`/`or` inside them) and `bool(x)` elsewhere. The value may
+  be a call of a function of the file, or one imported by name from the
+  project, whose every `return` gives a list, tuple, dict, set or string (a
+  `defaultdict`, `OrderedDict` or `Counter` included), or a name bound to one
+  of those, or an item of the tuple such a call returns and a tuple unpacking
+  names. Pylint also follows the flow to a name rebound, the arguments of the
+  call, an augmented assignment, a method and an attribute (`obj.items`);
+  those are not read.
 * `C1804` `use-implicit-booleaness-not-comparison-to-string` and `C1805`
   `use-implicit-booleaness-not-comparison-to-zero`: `==`, `!=`, `is` or
   `is not` against `""` or against `0`, `0.0` or `0j` (not `False`). Pylint
