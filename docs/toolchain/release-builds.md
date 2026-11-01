@@ -118,6 +118,10 @@ One-time setup, before the first publish:
 * On GitHub, create the `pypi` and `crates-io` environments for the
   repository.
 
+The targets are pinned in `mise.toml` with the toolchain, so
+`make release-build TARGET=x86_64-unknown-linux-musl` works locally once
+`musl-tools` is installed.
+
 ## Publishing the SDK to crates.io
 
 Only `ferrolint-plugin-sdk` is published; `ferrolint` depends on Ruff and ty by
@@ -127,16 +131,14 @@ that `cargo package` can build it; `make sdk-package` runs in `make check` to
 keep it so.
 
 The `crates` job of the release workflow runs on the same Release as `publish`,
-in the `crates-io` environment, and publishes the SDK with a short-lived token
-from crates.io Trusted Publishing. It skips the version crates.io already has,
-so a Release that does not change the SDK does nothing there.
+in the `crates-io` environment, and publishes the SDK with the environment
+secret `CARGO_REGISTRY_TOKEN`, a crates.io API token. It skips the version
+crates.io already has, so a Release that does not change the SDK does nothing
+there.
 
-The first publish is by hand, because crates.io only lets an existing crate have
-a trusted publisher: run `cargo publish -p ferrolint-plugin-sdk` with an API
-token, then add the trusted publisher (owner `gajaguar`, repository
-`ferrolint`, workflow `release.yml`, environment `crates-io`) under the crate's
-settings and revoke the token.
-
-The targets are pinned in `mise.toml` with the toolchain, so
-`make release-build TARGET=x86_64-unknown-linux-musl` works locally once
-`musl-tools` is installed.
+Scope the token to the `publish-update` permission and to the
+`ferrolint-plugin-sdk` crate once the crate exists: the first publish (by hand
+or by this job) needs `publish-new`, and the crate does not exist before it.
+crates.io Trusted Publishing, which replaces the secret with a short-lived
+token, only appears in a crate's settings after its first publish; switch to it
+then with `rust-lang/crates-io-auth-action` and `id-token: write`.
