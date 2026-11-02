@@ -714,7 +714,10 @@ impl Linter<'_> {
             }
         };
         let mut diagnostics = entry.host;
-        without_dropped(&mut diagnostics, &entry.drops, &setup.host, &wanted);
+        let shas = wanted
+            .iter()
+            .map(|&position| setup.host.plugins[position].sha256.as_str());
+        without_dropped(&mut diagnostics, &dropped_positions(&entry.drops, shas));
         for &position in &wanted {
             if let Some(reported) = entry.plugins.get(&setup.host.plugins[position].sha256) {
                 diagnostics.extend(reported.iter().cloned());
@@ -1196,20 +1199,21 @@ fn suppressions_of(
     Ok(aborts)
 }
 
-/// Remove from `diagnostics`, the host's own findings, those that the
-/// `wanted` plugins' stored answers drop.
-fn without_dropped(
-    diagnostics: &mut Vec<Diagnostic>,
+/// The positions of the host's findings that the plugins `shas` drop, from
+/// their stored answers.
+fn dropped_positions<'a>(
     drops: &BTreeMap<String, Vec<u32>>,
-    host: &Host,
-    wanted: &[usize],
-) {
-    let dropped: BTreeSet<u32> = wanted
-        .iter()
-        .filter_map(|&position| drops.get(&host.plugins[position].sha256))
+    shas: impl Iterator<Item = &'a str>,
+) -> BTreeSet<u32> {
+    shas.filter_map(|sha| drops.get(sha))
         .flatten()
         .copied()
-        .collect();
+        .collect()
+}
+
+/// Remove from `diagnostics`, the host's own findings, those at the
+/// `dropped` positions.
+fn without_dropped(diagnostics: &mut Vec<Diagnostic>, dropped: &BTreeSet<u32>) {
     if dropped.is_empty() {
         return;
     }
@@ -1265,7 +1269,13 @@ mod tests {
 
     use ferrolint_core::{RuleInfo, Severity};
 
-    use super::{Config, module_name, registry_for};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use ferrolint_core::{Diagnostic, Position, Range};
+
+    use super::{
+        Config, contribute, dropped_positions, module_name, registry_for, without_dropped,
+    };
     use crate::selection::Selection;
 
     /// A plugin rule that takes a docparams msg-id, as `pylint-gajaguar` does.
@@ -1339,5 +1349,80 @@ mod tests {
         assert_eq!(module_name(&src.join("pkg/sub/mod.py")), "pkg.sub.mod");
         assert_eq!(module_name(&src.join("pkg/__init__.py")), "pkg");
         assert_eq!(module_name(&src.join("top.py")), "top");
+    }
+
+    fn options(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn contribute_appends_after_the_configured_value() {
+        let mut given = options(&[("good-names", "a,b")]);
+        contribute(&mut given, "good-names", &["x".into(), "y".into()]);
+        assert_eq!(given, options(&[("good-names", "a,b,x,y")]));
+    }
+
+    #[test]
+    fn contribute_keeps_the_default_good_names() {
+        let mut given = Vec::new();
+        contribute(&mut given, "good-names", &["x".into()]);
+        assert_eq!(given, options(&[("good-names", "i,j,k,ex,Run,_,x")]));
+    }
+
+    #[test]
+    fn contribute_adds_a_new_option_and_keeps_the_options_sorted() {
+        let mut given = options(&[("max-args", "3"), ("zeta", "1")]);
+        contribute(&mut given, "docstring-min-length", &["5".into()]);
+        let names: Vec<&str> = given.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(names, ["docstring-min-length", "max-args", "zeta"]);
+        assert_eq!(given[0].1, "5");
+    }
+
+    fn finding(code: &str) -> Diagnostic {
+        let at = Position {
+            offset: 0,
+            line: 1,
+            column: 1,
+        };
+        Diagnostic {
+            code: code.into(),
+            message: String::new(),
+            range: Range { start: at, end: at },
+            severity: Severity::Warning,
+            fix: None,
+        }
+    }
+
+    fn codes(diagnostics: &[Diagnostic]) -> Vec<&str> {
+        diagnostics.iter().map(|d| d.code.as_str()).collect()
+    }
+
+    #[test]
+    fn findings_at_the_dropped_positions_go() {
+        let mut found: Vec<Diagnostic> = ["A", "B", "C", "D"].map(finding).into();
+        without_dropped(&mut found, &BTreeSet::from([1, 3, 9]));
+        assert_eq!(codes(&found), ["A", "C"]);
+    }
+
+    #[test]
+    fn no_dropped_position_leaves_the_findings() {
+        let mut found: Vec<Diagnostic> = ["A", "B"].map(finding).into();
+        without_dropped(&mut found, &BTreeSet::new());
+        assert_eq!(codes(&found), ["A", "B"]);
+    }
+
+    #[test]
+    fn the_drops_of_the_wanted_plugins_are_joined() {
+        let drops = BTreeMap::from([
+            ("one".to_owned(), vec![0, 2]),
+            ("two".to_owned(), vec![2, 5]),
+            ("three".to_owned(), vec![7]),
+        ]);
+        let got = dropped_positions(&drops, ["one", "two", "absent"].into_iter());
+        assert_eq!(got, BTreeSet::from([0, 2, 5]));
+        assert!(dropped_positions(&drops, std::iter::empty()).is_empty());
     }
 }
