@@ -84,6 +84,9 @@ smoke: ## Smoke-test the binary BIN: version, help, config validation, exit code
 bench: ## Run the release benchmarks (AC-26, AC-27): a million lines, ten plugins, against Pylint
 	$(CARGO) test --locked --release --test acceptance -- --ignored --nocapture --test-threads=1 ac_26 ac_27
 
+bench-scaling: ## Time cold and warm runs over 50 to 400 files with criterion, to see how a run grows
+	$(CARGO) bench --locked -p ferrolint --bench scaling
+
 sample-fixtures: ## Record Pylint's W0611 findings for each sample plugin fixture in its .txt sibling
 	@for file in $$(find $(SAMPLE_FIXTURES) -name '*.py' | sort); do \
 		{ $(PYLINT_W0611) "$$file" || test $$? -lt 32; } | { grep ':W0611:' || true; } | sort -t: -k1,1n -k2,2n \
@@ -100,4 +103,4 @@ pylint-deprecated: ## Dump Pylint's deprecation tables into src/pylint_deprecate
 	$(PYTHON) tools/pylint-deprecated.py > crates/ferrolint/src/pylint_deprecated.rs
 
 # `plugins` is also a directory, so without this make calls the target up to date.
-.PHONY: install-rust clippy fmt fmt-check deny ty-check release-tag cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
+.PHONY: install-rust clippy fmt fmt-check deny ty-check release-tag cargo-test build plugins release-build wheel sdist smoke bench bench-scaling sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
