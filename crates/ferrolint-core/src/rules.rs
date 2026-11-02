@@ -147,14 +147,15 @@ impl Registry {
         Ok(registry)
     }
 
-    /// The Pylint aliases that resolve to `code`, msg-id first.
+    /// The Pylint aliases that resolve to `code`, msg-id first; the code itself
+    /// is not one, so a plugin whose code is the msg-id shows only the symbol.
     pub fn aliases(&self, code: &str) -> Vec<String> {
         self.rules
             .get(code)
             .map(RuleInfo::aliases)
             .unwrap_or_default()
             .into_iter()
-            .filter(|alias| self.resolve(alias) == Some(code))
+            .filter(|alias| alias != code && self.resolve(alias) == Some(code))
             .collect()
     }
 
