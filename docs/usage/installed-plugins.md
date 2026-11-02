@@ -37,7 +37,8 @@ The contract 1.1.0 lets a plugin act on the host as well as report (see
 
 * `contributions` appends values to a host option. `good-names` keeps the
   default `i,j,k,ex,Run,_` and adds the plugin's names after it.
-* `augment.suppress` drops host findings of a file, by position.
+* `augment.suppress` drops host findings of a file, by position. It gets the
+  file's AST besides its source.
 * `project.check-project` sees all the files of the run, each with its AST;
   a file that does not parse is left out. Its findings are cached with the
   project phase, keyed by the plugin's SHA-256 and options.

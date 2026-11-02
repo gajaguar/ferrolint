@@ -397,12 +397,13 @@ impl Host {
 
 impl Host {
     /// The positions of `findings`, the host's own in `file`, that the plugin
-    /// drops. A fresh instance with no parsed file behind it, so the plugin
-    /// decides from the findings and the source alone.
+    /// drops. A fresh instance with no semantic model behind it, so the plugin
+    /// decides from the findings, the source and the AST alone.
     pub fn suppress(
         &self,
         plugin: usize,
         file: &File,
+        ast: &wit::Ast,
         findings: &[Diagnostic],
     ) -> std::result::Result<Vec<u32>, Outcome> {
         let loaded = &self.plugins[plugin];
@@ -416,6 +417,7 @@ impl Host {
                 instance.plugin.ferrolint_plugin_augment().call_suppress(
                     &mut instance.store,
                     file,
+                    ast,
                     findings,
                 )
             })

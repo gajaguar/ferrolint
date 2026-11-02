@@ -834,12 +834,16 @@ impl Linter<'_> {
                 source: source.clone(),
                 options: setup.options.clone(),
             };
-            aborts.extend(suppressions_of(
-                host,
-                &wit_file,
-                &wanted_for(host, wanted),
-                &mut entry,
-            )?);
+            let suppressing = wanted_for(host, wanted);
+            if !suppressing.is_empty() {
+                let packed = ast::flatten(&source, &index, parsed.syntax()).pack();
+                aborts.extend(suppressions_of(
+                    host,
+                    (&wit_file, &packed),
+                    &suppressing,
+                    &mut entry,
+                )?);
+            }
         }
         Ok((entry, aborts))
     }
@@ -1171,7 +1175,7 @@ fn wanted_for(host: &Host, wanted: &[usize]) -> Vec<usize> {
 /// drop, unless the entry already holds its answer; the aborts, if any.
 fn suppressions_of(
     host: &Host,
-    file: &wit::File,
+    (file, packed): (&wit::File, &wit::Ast),
     suppressing: &[usize],
     entry: &mut Entry,
 ) -> Result<Vec<Diagnostic>> {
@@ -1187,7 +1191,7 @@ fn suppressions_of(
     let findings: Vec<wit::Diagnostic> = entry.host.iter().map(to_wit).collect();
     for position in pending {
         let plugin = &host.plugins[position];
-        match host.suppress(position, file, &findings) {
+        match host.suppress(position, file, packed, &findings) {
             Ok(positions) => {
                 entry.drops.insert(plugin.sha256.clone(), positions);
             }

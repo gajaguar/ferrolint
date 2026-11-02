@@ -25,7 +25,7 @@ impl Checker for Augment {
             .project_wide()
     }
 
-    fn suppress(_file: &File, findings: &[RawDiagnostic]) -> Vec<u32> {
+    fn suppress(_file: &File, _nodes: &[Node<'_>], findings: &[RawDiagnostic]) -> Vec<u32> {
         findings
             .iter()
             .enumerate()

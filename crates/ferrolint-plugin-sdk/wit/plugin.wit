@@ -377,12 +377,13 @@ interface checker {
 
 /// What a plugin changes in the host's own findings and settings (1.1.0).
 interface augment {
-    use types.{diagnostic, file};
+    use types.{ast, diagnostic, file};
 
     /// The findings of the host's own rules in `file`, in the order the
     /// host gives them: the positions of those to drop. The plugin's
-    /// findings never pass through it.
-    suppress: func(file: file, findings: list<diagnostic>) -> list<u32>;
+    /// findings never pass through it. `ast` is the file's, packed as
+    /// `checker.check` gets it; the semantic queries answer nothing here.
+    suppress: func(file: file, ast: ast, findings: list<diagnostic>) -> list<u32>;
 }
 
 /// A check over the files of the project together (1.1.0).

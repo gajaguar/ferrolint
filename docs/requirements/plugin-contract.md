@@ -73,7 +73,8 @@ nothing of them.
 Contract 1.1.0 adds the `augment` and `project` exports and three fields to
 `plugin-info`: `contributions` (values a plugin adds to a host option, such as
 `good-names`), `suppresses` and `checks-project`. `augment.suppress` returns
-the positions of the host's own findings in a file that the plugin drops;
+the positions of the host's own findings in a file that the plugin drops,
+given the file's packed AST;
 `project.check-project` receives all the files of the run, each with its
 packed AST (a file that does not parse is left out), and returns findings
 with the path they are about; a `# pylint: disable` in that file silences

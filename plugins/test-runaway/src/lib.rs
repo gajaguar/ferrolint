@@ -59,6 +59,7 @@ impl Guest for Runaway {
 impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::augment::Guest for Runaway {
     fn suppress(
         _file: ferrolint_plugin_sdk::File,
+        _ast: ferrolint_plugin_sdk::Ast,
         _findings: Vec<ferrolint_plugin_sdk::RawDiagnostic>,
     ) -> Vec<u32> {
         Vec::new()

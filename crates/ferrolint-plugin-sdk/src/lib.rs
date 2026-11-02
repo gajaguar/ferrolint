@@ -87,7 +87,7 @@ pub trait Checker: Default {
 
     /// The positions of the host's own findings in `file` to drop (1.1.0).
     /// Called only for a plugin whose [`Info`] says [`Info::suppressing`].
-    fn suppress(_file: &File, _findings: &[RawDiagnostic]) -> Vec<u32> {
+    fn suppress(_file: &File, _nodes: &[Node<'_>], _findings: &[RawDiagnostic]) -> Vec<u32> {
         Vec::new()
     }
 
@@ -194,9 +194,14 @@ macro_rules! export_checker {
             impl $crate::bindings::exports::ferrolint::plugin::augment::Guest for Export {
                 fn suppress(
                     file: $crate::File,
+                    ast: $crate::Ast,
                     findings: ::std::vec::Vec<$crate::RawDiagnostic>,
                 ) -> ::std::vec::Vec<u32> {
-                    <$checker as $crate::Checker>::suppress(&file, &findings)
+                    <$checker as $crate::Checker>::suppress(
+                        &file,
+                        &$crate::Node::decode(&ast),
+                        &findings,
+                    )
                 }
             }
 
