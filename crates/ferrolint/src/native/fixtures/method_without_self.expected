@@ -1,0 +1,11 @@
+6:E0213:Method 'a' should have "self" as first argument
+9:E0213:Method 'b' should have "self" as first argument
+12:E0213:Method 'c' should have "self" as first argument
+18:E0213:Method 'e' should have "self" as first argument
+21:E0213:Method 'f' should have "self" as first argument
+45:E0213:Method 'j' should have "self" as first argument
+49:E0213:Method 'k' should have "self" as first argument
+52:E0213:Method 'm' should have "self" as first argument
+59:E0213:Method 'o' should have "self" as first argument
+63:E0213:Method 'p' should have "self" as first argument
+68:E0213:Method 'r' should have "self" as first argument
