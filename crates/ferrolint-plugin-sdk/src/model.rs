@@ -180,6 +180,9 @@ pub struct Info {
     pub name: String,
     pub version: String,
     pub rules: Vec<Rule>,
+    pub contributions: Vec<(String, Vec<String>)>,
+    pub suppresses: bool,
+    pub checks_project: bool,
 }
 
 impl Info {
@@ -188,7 +191,34 @@ impl Info {
             name: name.into(),
             version: version.into(),
             rules: Vec::new(),
+            contributions: Vec::new(),
+            suppresses: false,
+            checks_project: false,
         }
+    }
+
+    /// Add values to a host option, such as `good-names` (1.1.0).
+    #[must_use]
+    pub fn contribute(mut self, option: &str, values: &[&str]) -> Self {
+        let values = values.iter().map(|value| (*value).to_owned()).collect();
+        self.contributions.push((option.to_owned(), values));
+        self
+    }
+
+    /// Say that [`Checker::suppress`](crate::Checker::suppress) has to be
+    /// called (1.1.0).
+    #[must_use]
+    pub fn suppressing(mut self) -> Self {
+        self.suppresses = true;
+        self
+    }
+
+    /// Say that [`Checker::check_project`](crate::Checker::check_project)
+    /// has to be called (1.1.0).
+    #[must_use]
+    pub fn project_wide(mut self) -> Self {
+        self.checks_project = true;
+        self
     }
 
     /// Add a rule.
@@ -203,6 +233,9 @@ impl Info {
             name: self.name,
             version: self.version,
             rules: self.rules.into_iter().map(Rule::into_raw).collect(),
+            contributions: self.contributions,
+            suppresses: self.suppresses,
+            checks_project: self.checks_project,
         }
     }
 }

@@ -416,12 +416,12 @@ fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_th
     );
 }
 
-/// The unused-import component with every `@1.0.0` interface name spelled
+/// The unused-import component with every `@1.1.0` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
 fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, current) = (b"ferrolint:plugin/", b"@1.0.0");
+    let (prefix, current) = (b"ferrolint:plugin/", b"@1.1.0");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -454,11 +454,124 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 
 #[test]
 fn a_plugin_built_against_an_older_contract_is_refused() {
-    // 1.0.0 is another major from the 0.x series, so it refuses every
-    // build against it.
+    // 1.1.0 is another major from the 0.x series, so it refuses every
+    // build against them.
     for version in [*b"@0.2.1", *b"@0.3.1", *b"@0.4.3"] {
         let run = lint_with(&respelled_plugin(version));
         assert_eq!(run.code, 2, "{run:?}");
         assert!(run.stderr.contains("ferrolint:plugin"), "{run:?}");
     }
+}
+
+/// The report lines of `case.py` linted with the augment test plugin.
+fn augmented(source: &str) -> Vec<String> {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-augment", "augment.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("case.py", source);
+    let run = project.run(&["--no-cache"]);
+    assert!(run.code <= 1, "{run:?}");
+    run.finding_lines().into_iter().map(str::to_owned).collect()
+}
+
+#[test]
+fn a_plugin_drops_the_host_findings_it_names() {
+    let source = "Foo = 1\nBar = 2\n";
+    // Without the plugin the host names both constants.
+    let project = Project::new();
+    project.write("case.py", source);
+    let plain = project.run(&["--no-cache"]).finding_lines().join("\n");
+    assert!(
+        plain.contains("\"Foo\"") && plain.contains("\"Bar\""),
+        "{plain}"
+    );
+    // The plugin drops the one that mentions `Foo`.
+    let found = augmented(source).join("\n");
+    assert!(!found.contains("\"Foo\""), "{found}");
+    assert!(found.contains("\"Bar\""), "{found}");
+}
+
+#[test]
+fn a_plugin_extends_good_names_after_the_default() {
+    // `pk` is the plugin's name, `i` is Pylint's default, `foo` is no one's.
+    let found = augmented("pk = 1\ni = 2\nfoo = 3\n").join("\n");
+    assert!(!found.contains("\"pk\""), "{found}");
+    assert!(!found.contains("\"i\""), "{found}");
+    assert!(found.contains("\"foo\""), "{found}");
+}
+
+#[test]
+fn a_plugin_checks_the_files_of_the_project_together() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-augment", "augment.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", "A = 1\n")
+        .write("b.py", "B = 2\n");
+    let cold = project.run(&[]);
+    let report = cold.finding_lines().join("\n");
+    assert!(
+        report.contains("AUG001") && report.contains("2 files"),
+        "{report}"
+    );
+    // A second run replays it from the cache without compiling the plugin.
+    let warm = project.run(&["--stats"]);
+    assert_eq!(warm.finding_lines(), cold.finding_lines(), "{warm:?}");
+    assert!(warm.stderr.contains("compiles=0"), "{warm:?}");
+}
+
+#[test]
+fn an_installed_plugin_loads_when_load_plugins_names_it() {
+    let project = Project::new();
+    let site = project.join("venv/lib/python3.12/site-packages");
+    let info = site.join("ferrolint_augment-1.0.0.dist-info");
+    std::fs::create_dir_all(&info).unwrap();
+    std::fs::create_dir_all(site.join("ferrolint_augment")).unwrap();
+    std::fs::write(
+        info.join("entry_points.txt"),
+        "[ferrolint.plugins]\npylint_augment = ferrolint_augment\n",
+    )
+    .unwrap();
+    std::fs::write(
+        site.join("ferrolint_augment/plugin.wasm"),
+        support::plugin_bytes("ferrolint-test-augment"),
+    )
+    .unwrap();
+    project.write("case.py", "Foo = 1\nBar = 2\n");
+    let venv = project.join("venv");
+    // Installed but not named: nothing loads, so both constants are reported.
+    let idle = project
+        .run_in(&["--no-cache"], Some(&venv))
+        .finding_lines()
+        .join("\n");
+    assert!(
+        idle.contains("\"Foo\"") && idle.contains("\"Bar\""),
+        "{idle}"
+    );
+    // Named in `load-plugins`: the plugin drops `Foo`.
+    project.write("pylintrc", "[MASTER]\nload-plugins=pylint_augment\n");
+    let named = project
+        .run_in(&["--no-cache"], Some(&venv))
+        .finding_lines()
+        .join("\n");
+    assert!(
+        !named.contains("\"Foo\"") && named.contains("\"Bar\""),
+        "{named}"
+    );
+    // A plugin that only exists as an entry point is not a missing module.
+    assert!(!named.contains("E0013"), "{named}");
+    // ... while a module that exists nowhere still is.
+    project.write(
+        "pylintrc",
+        "[MASTER]\nload-plugins=pylint_augment,nowhere_at_all\n",
+    );
+    let missing = project
+        .run_in(&["--no-cache"], Some(&venv))
+        .finding_lines()
+        .join("\n");
+    assert!(
+        missing.contains("E0013") && missing.contains("nowhere_at_all"),
+        "{missing}"
+    );
 }

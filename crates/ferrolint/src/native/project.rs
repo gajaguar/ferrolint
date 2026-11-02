@@ -1743,17 +1743,27 @@ impl Project {
 pub fn environment() -> Option<(PathBuf, Vec<PathBuf>)> {
     let env = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from)?;
     let library = stdlib(&env)?;
+    Some((library, packages_of(&env)))
+}
+
+/// The `site-packages` directories of the environment that `VIRTUAL_ENV`
+/// names, which need no standard library behind them.
+pub fn site_packages() -> Vec<PathBuf> {
+    std::env::var_os("VIRTUAL_ENV")
+        .map(|env| packages_of(Path::new(&env)))
+        .unwrap_or_default()
+}
+
+fn packages_of(env: &Path) -> Vec<PathBuf> {
     // `lib/pythonX.Y/site-packages` on Unix, `Lib/site-packages` on Windows.
     let unix = std::fs::read_dir(env.join("lib"))
         .into_iter()
         .flatten()
         .flatten()
         .map(|entry| entry.path().join("site-packages"));
-    let packages = unix
-        .chain([env.join("Lib").join("site-packages")])
+    unix.chain([env.join("Lib").join("site-packages")])
         .filter(|dir| dir.is_dir())
-        .collect();
-    Some((library, packages))
+        .collect()
 }
 
 /// The directories the `.pth` files of a `site-packages` directory add to

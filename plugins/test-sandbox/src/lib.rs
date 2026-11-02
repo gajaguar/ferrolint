@@ -27,6 +27,9 @@ impl Guest for Sandbox {
         PluginInfo {
             name: "sandbox".into(),
             version: env!("CARGO_PKG_VERSION").into(),
+            contributions: Vec::new(),
+            suppresses: false,
+            checks_project: false,
             rules: vec![Rule {
                 code: "SBX001".into(),
                 name: "sandbox-attempt".into(),
@@ -87,6 +90,25 @@ impl Guest for Sandbox {
             fix: None,
         })
         .collect()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::augment::Guest for Sandbox {
+    fn suppress(
+        _file: ferrolint_plugin_sdk::File,
+        _findings: Vec<ferrolint_plugin_sdk::RawDiagnostic>,
+    ) -> Vec<u32> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::project::Guest for Sandbox {
+    fn check_project(
+        _files: Vec<ferrolint_plugin_sdk::File>,
+    ) -> Vec<(String, ferrolint_plugin_sdk::RawDiagnostic)> {
+        Vec::new()
     }
 }
 

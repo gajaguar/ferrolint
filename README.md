@@ -142,7 +142,7 @@ ferrolint-plugin-sdk = "1"
 ```
 
 The SDK's version is the version of the plugin contract: a plugin built
-against any 1.x loads in a ferrolint 1.x host. The sample
+against 1.1 or later loads in a ferrolint 1.x host. The sample
 [`unused-import`][sample] ports Pylint's `W0611` and matches its findings on
 the fixtures. [Writing a plugin][writing] builds it step by step, and
 [A plugin outside this repository][out-of-tree] covers a plugin kept in its

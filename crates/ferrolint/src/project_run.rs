@@ -19,12 +19,14 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::cache::{self, Cache, ProjectEntry};
-use crate::engine::hex;
+use crate::engine::{aborted, hex};
+use crate::host::{Host, Outcome};
 use crate::native::Project;
 use crate::native::project_phase::{
     self, CYCLIC, DUPLICATE, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
 };
 use crate::selection::Selection;
+use crate::wit;
 
 /// What the phase needs of the run.
 pub struct Params<'a> {
@@ -36,6 +38,8 @@ pub struct Params<'a> {
     pub options: &'a [(String, String)],
     pub py_version: Option<(u32, u32)>,
     pub cache: Option<&'a Cache>,
+    /// The plugins, for those that check the project together.
+    pub host: Option<&'a Host>,
     /// In diff mode, whether a file changed: the phase runs over every file
     /// and only the findings that concern a changed one are kept.
     pub changed: Option<&'a (dyn Fn(&Path) -> bool + Sync)>,
@@ -93,7 +97,24 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let cyclic = params.selection.is_enabled(CYCLIC);
     let opts = Opts::new(params.options);
     let duplicates = params.selection.is_enabled(DUPLICATE) && opts.duplicates.min > 0;
-    if !imports && !cyclic && !duplicates {
+    let plugins: Vec<usize> = params
+        .host
+        .map(|host| {
+            host.plugins
+                .iter()
+                .enumerate()
+                .filter(|(_, plugin)| {
+                    plugin.checks_project
+                        && plugin
+                            .rules
+                            .iter()
+                            .any(|rule| params.selection.is_enabled(&rule.code))
+                })
+                .map(|(position, _)| position)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !imports && !cyclic && !duplicates && plugins.is_empty() {
         return (Vec::new(), Vec::new());
     }
     let units = units(params, files, &opts, &enabled);
@@ -114,6 +135,12 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         let mut parts = vec!["project".to_owned(), format!("{:?}", params.py_version)];
         parts.push(format!("{:?}", params.options));
         parts.push(format!("{cyclic}{duplicates}"));
+        // A project plugin's verdict depends on its binary and its own options.
+        for &position in &plugins {
+            if let Some(plugin) = params.host.map(|host| &host.plugins[position]) {
+                parts.push(format!("{}{:?}", plugin.sha256, plugin.options));
+            }
+        }
         parts.push(anchor.map(|u| u.display.clone()).unwrap_or_default());
         // The roots decide how an absolute import resolves, whatever the names.
         parts.push(format!("{:?}", roots(params.cwd, params.arguments, &opts)));
@@ -190,7 +217,14 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
                 .map(|d| (last.display.clone(), d)),
         );
     }
-    if let Some((cache, key)) = params.cache.zip(key.as_deref()) {
+    let mut complete = true;
+    if let Some(host) = params.host.filter(|_| !plugins.is_empty()) {
+        let (found, whole) = plugin_findings(params, host, &plugins, &units, &enabled);
+        out.extend(found);
+        complete = whole;
+    }
+    // An aborted plugin's output is not stored, so the next run retries it.
+    if let Some((cache, key)) = params.cache.zip(key.as_deref()).filter(|_| complete) {
         let stamps = touched
             .into_iter()
             .map(|path| (path.to_string_lossy().into_owned(), stamp_of(&path)))
@@ -204,6 +238,81 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         );
     }
     (out, units)
+}
+
+/// What the plugins that check the project together report over all the
+/// files, and whether every one of them finished.
+fn plugin_findings(
+    params: &Params<'_>,
+    host: &Host,
+    plugins: &[usize],
+    units: &[Unit],
+    enabled: &[BTreeSet<String>],
+) -> (Raw, bool) {
+    let files: Vec<wit::File> = units
+        .iter()
+        .filter_map(|unit| {
+            Some(wit::File {
+                path: unit.display.clone(),
+                module: unit.module.clone(),
+                source: fs::read_to_string(&unit.path).ok()?,
+                options: params.options.to_vec(),
+            })
+        })
+        .collect();
+    let anchor = units
+        .first()
+        .map(|unit| unit.display.clone())
+        .unwrap_or_default();
+    let (mut out, mut whole) = (Vec::new(), true);
+    for &position in plugins {
+        let plugin = &host.plugins[position];
+        match host.check_project(position, &files) {
+            Ok(found) => {
+                for (path, diagnostic) in found {
+                    if !plugin.rules.iter().any(|rule| rule.code == diagnostic.code) {
+                        let reason = format!("reported the undeclared code {:?}", diagnostic.code);
+                        out.push((anchor.clone(), aborted(plugin, &reason)));
+                        whole = false;
+                        continue;
+                    }
+                    let on = units
+                        .iter()
+                        .position(|unit| unit.display == path)
+                        .is_some_and(|at| enabled[at].contains(&diagnostic.code));
+                    if on {
+                        out.push((path, core(diagnostic)));
+                    }
+                }
+            }
+            Err(Outcome::Aborted(reason) | Outcome::Broken(reason)) => {
+                out.push((anchor.clone(), aborted(plugin, &reason)));
+                whole = false;
+            }
+            Err(Outcome::Diagnostics(_)) => {}
+        }
+    }
+    (out, whole)
+}
+
+/// A plugin's finding as the report's, without a fix: the project phase
+/// reads no file again to check a replacement against.
+fn core(diagnostic: wit::Diagnostic) -> ferrolint_core::Diagnostic {
+    let position = |at: wit::Position| ferrolint_core::Position {
+        offset: at.offset,
+        line: at.line,
+        column: at.column,
+    };
+    ferrolint_core::Diagnostic {
+        code: diagnostic.code,
+        message: diagnostic.message,
+        range: ferrolint_core::Range {
+            start: position(diagnostic.range.start),
+            end: position(diagnostic.range.end),
+        },
+        severity: crate::host::severity(diagnostic.severity),
+        fix: None,
+    }
 }
 
 /// The file Pylint checks last, where it attaches R0801 and R0401: the one

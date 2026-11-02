@@ -23,8 +23,8 @@ ferrolint-plugin-sdk = "1"
 
 The SDK's version is the version of the
 [`plugin.wit`](../../crates/ferrolint-plugin-sdk/wit/plugin.wit) contract. A
-plugin built against any 1.x loads in a ferrolint 1.x host of the same or a
-later minor version; a build against 0.x is refused. The contract file ships
+plugin built against 1.1 or later loads in a ferrolint 1.x host of the same or a
+later minor version; a build against 0.x or 1.0 is refused. The contract file ships
 inside the crate, so nothing else is needed.
 
 To try an unreleased SDK, depend on it by Git revision (`git =` and `rev =`,

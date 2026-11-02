@@ -18,7 +18,7 @@ use crate::suppress::Span;
 pub const DIR: &str = ".ferrolint-cache";
 
 /// Bumped when an entry's layout or meaning changes.
-const LAYOUT: &str = "v3";
+const LAYOUT: &str = "v4";
 
 /// What a file's entry stores: everything a replay needs without parsing.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -30,6 +30,9 @@ pub struct Entry {
     pub suppressions: Vec<Span>,
     /// Each plugin's diagnostics, by the plugin binary's SHA-256.
     pub plugins: BTreeMap<String, Vec<Diagnostic>>,
+    /// The positions in `host` that each suppressing plugin drops, by the
+    /// plugin binary's SHA-256.
+    pub drops: BTreeMap<String, Vec<u32>>,
     /// The file does not parse, so no plugin runs on it.
     pub unparsable: bool,
     /// Each path (a directory or a file) the native rules read to resolve an import, and what
@@ -51,6 +54,9 @@ pub struct ProjectEntry {
 pub struct PluginMeta {
     pub name: String,
     pub rules: Vec<RuleInfo>,
+    pub contributions: Vec<(String, Vec<String>)>,
+    pub suppresses: bool,
+    pub checks_project: bool,
 }
 
 /// A stored value with a checksum of its own body; a value that fails the

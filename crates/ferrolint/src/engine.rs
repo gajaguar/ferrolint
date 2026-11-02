@@ -2,7 +2,7 @@
 //! them in parallel (or replay them from the cache) and gather the findings
 //! into one deterministic order.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -193,6 +193,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
         selection,
         py_version,
         options: rule_options,
+        host,
         ..
     } = setup
         .into_inner()
@@ -226,6 +227,7 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
             options: &rule_options,
             py_version,
             cache: cache.as_ref(),
+            host: Some(&host),
             changed: changed.is_some().then_some(&is_changed),
         },
         &names,
@@ -319,7 +321,10 @@ impl Setup {
             .collect();
         let registry = registry_for(plugin_rules, config)?;
         let selection = Selection::new(&registry, config)?;
-        let options: Vec<(String, String)> = config.options.clone().into_iter().collect();
+        let mut options: Vec<(String, String)> = config.options.clone().into_iter().collect();
+        for (option, values) in host.plugins.iter().flat_map(|p| &p.contributions) {
+            contribute(&mut options, option, values);
+        }
         let opts = project_phase::Opts::new(&options);
         #[cfg(feature = "ty")]
         let types = type_engine(&selection, cwd, !host.plugins.is_empty());
@@ -336,6 +341,31 @@ impl Setup {
             types,
         })
     }
+}
+
+/// Add `values` to the host option `name`: after what the configuration
+/// gives it, or after Pylint's default when it gives none.
+///
+/// shortcut: only `good-names` has a default here; a plugin that extends
+/// another list option replaces its default, add the option's default then.
+fn contribute(options: &mut Vec<(String, String)>, name: &str, values: &[String]) {
+    let added = values.join(",");
+    if let Some((_, value)) = options.iter_mut().find(|(key, _)| key == name) {
+        *value = format!("{value},{added}");
+        return;
+    }
+    let base = if name == "good-names" {
+        native::GOOD_NAMES
+    } else {
+        ""
+    };
+    let joined = if base.is_empty() {
+        added
+    } else {
+        format!("{base},{added}")
+    };
+    options.push((name.to_owned(), joined));
+    options.sort();
 }
 
 /// Start ty when an enabled rule needs it, and say so when it cannot.
@@ -404,7 +434,8 @@ fn registry_for(plugin_rules: Vec<RuleInfo>, config: &Config) -> Result<Registry
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
 
 /// The bundled plugins, then the configured ones, each checked against its
-/// pinned SHA-256 before any file is linted.
+/// pinned SHA-256 before any file is linted, then the installed ones that
+/// `load-plugins` names (see [`crate::installed`]).
 fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
     let bundled = BUNDLED.iter().map(|(name, bytes)| PluginSource {
         path: Path::new("<bundled>").join(name),
@@ -435,7 +466,18 @@ fn read_plugins(config: &Config) -> Result<Vec<PluginSource>> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(bundled.chain(configured).collect())
+    let mut plugins: Vec<PluginSource> = bundled.chain(configured).collect();
+    let load = config
+        .options
+        .get("load-plugins")
+        .map_or("", String::as_str);
+    for plugin in crate::installed::read(load, &crate::native::site_packages()) {
+        // The same component pinned in the configuration loads once.
+        if !plugins.iter().any(|loaded| loaded.sha256 == plugin.sha256) {
+            plugins.push(plugin);
+        }
+    }
+    Ok(plugins)
 }
 
 /// The path with its directory's symlinks resolved and its own name kept,
@@ -645,9 +687,9 @@ impl Linter<'_> {
         let complete = stored.as_ref().is_some_and(|entry| {
             entry.unparsable
                 || wanted.iter().all(|&position| {
-                    entry
-                        .plugins
-                        .contains_key(&setup.host.plugins[position].sha256)
+                    let plugin = &setup.host.plugins[position];
+                    entry.plugins.contains_key(&plugin.sha256)
+                        && (!plugin.suppresses || entry.drops.contains_key(&plugin.sha256))
                 })
         });
         let (entry, aborts) = match stored {
@@ -672,6 +714,7 @@ impl Linter<'_> {
             }
         };
         let mut diagnostics = entry.host;
+        without_dropped(&mut diagnostics, &entry.drops, &setup.host, &wanted);
         for &position in &wanted {
             if let Some(reported) = entry.plugins.get(&setup.host.plugins[position].sha256) {
                 diagnostics.extend(reported.iter().cloned());
@@ -707,6 +750,9 @@ impl Linter<'_> {
         // Keep only the outputs of the plugins this run loads.
         entry
             .plugins
+            .retain(|sha256, _| host.plugins.iter().any(|plugin| plugin.sha256 == *sha256));
+        entry
+            .drops
             .retain(|sha256, _| host.plugins.iter().any(|plugin| plugin.sha256 == *sha256));
         let Prepared::Source {
             source,
@@ -777,6 +823,20 @@ impl Linter<'_> {
                     Err(abort) => aborts.push(abort),
                 }
             }
+        }
+        if parsed.has_no_syntax_errors() {
+            let wit_file = wit::File {
+                path: file.display.to_owned(),
+                module: file.module.to_owned(),
+                source: source.clone(),
+                options: setup.options.clone(),
+            };
+            aborts.extend(suppressions_of(
+                host,
+                &wit_file,
+                &wanted_for(host, wanted),
+                &mut entry,
+            )?);
         }
         Ok((entry, aborts))
     }
@@ -1095,7 +1155,96 @@ fn boundary(source: &str, offset: u32) -> u32 {
     u32::try_from(offset).unwrap_or(u32::MAX)
 }
 
-fn aborted(plugin: &LoadedPlugin, reason: &str) -> Diagnostic {
+/// The plugins among `wanted` that drop host findings.
+fn wanted_for(host: &Host, wanted: &[usize]) -> Vec<usize> {
+    wanted
+        .iter()
+        .copied()
+        .filter(|&position| host.plugins[position].suppresses)
+        .collect()
+}
+
+/// Ask each plugin in `suppressing` which of the entry's host findings to
+/// drop, unless the entry already holds its answer; the aborts, if any.
+fn suppressions_of(
+    host: &Host,
+    file: &wit::File,
+    suppressing: &[usize],
+    entry: &mut Entry,
+) -> Result<Vec<Diagnostic>> {
+    let mut aborts = Vec::new();
+    let pending: Vec<usize> = suppressing
+        .iter()
+        .copied()
+        .filter(|&position| !entry.drops.contains_key(&host.plugins[position].sha256))
+        .collect();
+    if pending.is_empty() {
+        return Ok(aborts);
+    }
+    let findings: Vec<wit::Diagnostic> = entry.host.iter().map(to_wit).collect();
+    for position in pending {
+        let plugin = &host.plugins[position];
+        match host.suppress(position, file, &findings) {
+            Ok(positions) => {
+                entry.drops.insert(plugin.sha256.clone(), positions);
+            }
+            Err(Outcome::Broken(reason)) => return Err(Error::plugin(reason)),
+            Err(Outcome::Aborted(reason)) => aborts.push(aborted(plugin, &reason)),
+            Err(Outcome::Diagnostics(_)) => {}
+        }
+    }
+    Ok(aborts)
+}
+
+/// Remove from `diagnostics`, the host's own findings, those that the
+/// `wanted` plugins' stored answers drop.
+fn without_dropped(
+    diagnostics: &mut Vec<Diagnostic>,
+    drops: &BTreeMap<String, Vec<u32>>,
+    host: &Host,
+    wanted: &[usize],
+) {
+    let dropped: BTreeSet<u32> = wanted
+        .iter()
+        .filter_map(|&position| drops.get(&host.plugins[position].sha256))
+        .flatten()
+        .copied()
+        .collect();
+    if dropped.is_empty() {
+        return;
+    }
+    let mut at = 0_u32;
+    diagnostics.retain(|_| {
+        at += 1;
+        !dropped.contains(&(at - 1))
+    });
+}
+
+/// A host finding as the contract's `diagnostic`, without its fix: a
+/// plugin decides what to drop from the code, the message and the range.
+fn to_wit(diagnostic: &Diagnostic) -> wit::Diagnostic {
+    let position = |at: ferrolint_core::Position| wit::Position {
+        offset: at.offset,
+        line: at.line,
+        column: at.column,
+    };
+    wit::Diagnostic {
+        code: diagnostic.code.clone(),
+        message: diagnostic.message.clone(),
+        range: wit::Range {
+            start: position(diagnostic.range.start),
+            end: position(diagnostic.range.end),
+        },
+        severity: match diagnostic.severity {
+            Severity::Error => wit::Severity::Error,
+            Severity::Warning => wit::Severity::Warning,
+            Severity::Info => wit::Severity::Info,
+        },
+        fix: None,
+    }
+}
+
+pub(crate) fn aborted(plugin: &LoadedPlugin, reason: &str) -> Diagnostic {
     let start = ferrolint_core::Position {
         offset: 0,
         line: 1,

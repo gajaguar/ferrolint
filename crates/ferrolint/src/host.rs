@@ -233,6 +233,12 @@ pub struct PluginSource {
 pub struct LoadedPlugin {
     pub name: String,
     pub rules: Vec<RuleInfo>,
+    /// Values it adds to host options, by option name.
+    pub contributions: Vec<(String, Vec<String>)>,
+    /// Whether the engine has to ask it which host findings to drop.
+    pub suppresses: bool,
+    /// Whether the project phase has to run its `check-project`.
+    pub checks_project: bool,
     pub sha256: String,
     /// The options its `[[plugins]]` entry gives it.
     pub options: Vec<(String, String)>,
@@ -290,6 +296,9 @@ impl Host {
                             return Ok(LoadedPlugin {
                                 name: meta.name,
                                 rules: meta.rules,
+                                contributions: meta.contributions,
+                                suppresses: meta.suppresses,
+                                checks_project: meta.checks_project,
                                 sha256: source.sha256.clone(),
                                 options: source.options.clone(),
                                 source,
@@ -302,6 +311,9 @@ impl Host {
                             let meta = PluginMeta {
                                 name: plugin.name.clone(),
                                 rules: plugin.rules.clone(),
+                                contributions: plugin.contributions.clone(),
+                                suppresses: plugin.suppresses,
+                                checks_project: plugin.checks_project,
                             };
                             cache.store_plugin(&plugin.sha256, &meta);
                         }
@@ -383,6 +395,62 @@ impl Host {
     }
 }
 
+impl Host {
+    /// The positions of `findings`, the host's own in `file`, that the plugin
+    /// drops. A fresh instance with no parsed file behind it, so the plugin
+    /// decides from the findings and the source alone.
+    pub fn suppress(
+        &self,
+        plugin: usize,
+        file: &File,
+        findings: &[Diagnostic],
+    ) -> std::result::Result<Vec<u32>, Outcome> {
+        let loaded = &self.plugins[plugin];
+        let pre = self.pre(loaded).map_err(Outcome::Broken)?;
+        self.ticker
+            .get_or_init(|| Ticker::start(self.engine.clone()));
+        let mut instance =
+            instantiate(&self.engine, pre).map_err(|e| Outcome::Aborted(describe(&e)))?;
+        arm(&mut instance.store)
+            .and_then(|()| {
+                instance.plugin.ferrolint_plugin_augment().call_suppress(
+                    &mut instance.store,
+                    file,
+                    findings,
+                )
+            })
+            .map_err(|err| Outcome::Aborted(describe(&err)))
+    }
+
+    /// The plugin's findings over all `files` together, each with the path
+    /// of the file it is about.
+    pub fn check_project(
+        &self,
+        plugin: usize,
+        files: &[File],
+    ) -> std::result::Result<Vec<(String, Diagnostic)>, Outcome> {
+        let loaded = &self.plugins[plugin];
+        let pre = self.pre(loaded).map_err(Outcome::Broken)?;
+        self.ticker
+            .get_or_init(|| Ticker::start(self.engine.clone()));
+        let mut instance =
+            instantiate(&self.engine, pre).map_err(|e| Outcome::Aborted(describe(&e)))?;
+        instance
+            .store
+            .data_mut()
+            .options
+            .clone_from(&loaded.options);
+        arm(&mut instance.store)
+            .and_then(|()| {
+                instance
+                    .plugin
+                    .ferrolint_plugin_project()
+                    .call_check_project(&mut instance.store, files)
+            })
+            .map_err(|err| Outcome::Aborted(describe(&err)))
+    }
+}
+
 impl Drop for Host {
     fn drop(&mut self) {
         if let Some(ticker) = self.ticker.take() {
@@ -461,6 +529,9 @@ fn load_one(engine: &Engine, linker: &Linker<State>, source: PluginSource) -> Re
     Ok(LoadedPlugin {
         name: info.name,
         rules,
+        contributions: info.contributions,
+        suppresses: info.suppresses,
+        checks_project: info.checks_project,
         sha256: source.sha256.clone(),
         options: source.options.clone(),
         source,

@@ -16,6 +16,9 @@ impl Guest for Runaway {
         PluginInfo {
             name: "runaway".into(),
             version: env!("CARGO_PKG_VERSION").into(),
+            contributions: Vec::new(),
+            suppresses: false,
+            checks_project: false,
             rules: vec![Rule {
                 code: "RUN001".into(),
                 name: "checked".into(),
@@ -49,6 +52,25 @@ impl Guest for Runaway {
             severity: Severity::Info,
             fix: None,
         }]
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::augment::Guest for Runaway {
+    fn suppress(
+        _file: ferrolint_plugin_sdk::File,
+        _findings: Vec<ferrolint_plugin_sdk::RawDiagnostic>,
+    ) -> Vec<u32> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::project::Guest for Runaway {
+    fn check_project(
+        _files: Vec<ferrolint_plugin_sdk::File>,
+    ) -> Vec<(String, ferrolint_plugin_sdk::RawDiagnostic)> {
+        Vec::new()
     }
 }
 

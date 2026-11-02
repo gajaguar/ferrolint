@@ -21,6 +21,9 @@ from `ferrolint --help` alone.
   `wasm32-wasip2`, loading by SHA-256, and parity fixtures against Pylint.
 * [A plugin outside this repository](out-of-tree-plugin.md) - depending on the
   SDK by revision, building and loading from another repository.
+* [Plugins installed with pip](installed-plugins.md) - the
+  `ferrolint.plugins` entry point, `load-plugins` and what a plugin changes in
+  the host.
 * [Result cache](result-cache.md) - what `.ferrolint-cache/` stores and
   what invalidates it.
 * [Diff mode](diff-mode.md) - the files `--diff-base` lints.

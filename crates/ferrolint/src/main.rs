@@ -13,6 +13,7 @@ mod engine;
 mod error;
 mod host;
 mod infer;
+mod installed;
 mod native;
 mod pragma;
 mod project_run;

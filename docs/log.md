@@ -2,6 +2,13 @@
 
 ## 2026-11-01
 
+* **Plugins installed with pip, installed-plugins.md**: the `ferrolint.plugins`
+  entry point, `load-plugins` activation and the 1.1.0 hooks a plugin has on the
+  host.
+* **Plugin contract, plugin-contract.md**: contract 1.1.0 adds the `augment` and
+  `project` exports and refuses plugins built against 1.0.0.
+* **A plugin outside this repository, out-of-tree-plugin.md**: a plugin must
+  build against 1.1 or later.
 * **Release builds, release-builds.md**: the SDK publishes to crates.io from the
   Release (the `crates` job), and `publish` no longer skips a `v0.*` tag.
 * **A plugin outside this repository, out-of-tree-plugin.md**: depends on
