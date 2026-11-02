@@ -25,15 +25,15 @@ toml = { version = "1.1", features = ["preserve_order"] }
 wasmtime = { version = "=50.0.1", default-features = false, features = ["cranelift", "component-model", "parallel-compilation", "pooling-allocator", "runtime", "std"] }
 wasmtime-wasi = "=50.0.1"
 wit-bindgen = "0.63"
-ruff_python_parser = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ruff_python_ast = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ruff_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ruff_python_stdlib = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ruff_text_size = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ruff_db = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1", features = ["os"] }
-ty_project = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ty_python_core = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
-ty_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.1" }
+ruff_python_parser = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ruff_python_ast = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ruff_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ruff_python_stdlib = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ruff_text_size = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ruff_db = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3", features = ["os"] }
+ty_project = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ty_python_core = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
+ty_python_semantic = { git = "https://github.com/astral-sh/ruff.git", tag = "0.17.3" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
