@@ -44,7 +44,12 @@ pub fn read(load_plugins: &str, packages: &[PathBuf]) -> Vec<PluginSource> {
             };
             let path = dir.join(&package).join(COMPONENT);
             let Ok(bytes) = fs::read(&path) else { continue };
-            if found.iter().any(|(taken, _)| *taken == name) {
+            // The same component under two names (a package that replaces two
+            // Pylint modules) loads once: its rules would register twice.
+            if found
+                .iter()
+                .any(|(taken, source)| *taken == name || source.path == path)
+            {
                 continue;
             }
             let sha256 = hex(&Sha256::digest(&bytes));
@@ -145,6 +150,22 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].bytes, b"wasm");
         assert_eq!(found[0].sha256, hex(&Sha256::digest(b"wasm")));
+    }
+
+    #[test]
+    fn one_component_named_twice_loads_once() {
+        let dir = site("pylint_django", "ferrolint_django", b"wasm");
+        let info = dir.path().join("ferrolint_django-1.0.0.dist-info");
+        fs::write(
+            info.join("entry_points.txt"),
+            format!("[{GROUP}]\npylint_django = ferrolint_django\npylint_django.checkers.migrations = ferrolint_django\n"),
+        )
+        .unwrap();
+        let found = read(
+            "pylint_django, pylint_django.checkers.migrations",
+            &[dir.path().into()],
+        );
+        assert_eq!(found.len(), 1);
     }
 
     #[test]
