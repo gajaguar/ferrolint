@@ -89,21 +89,28 @@ fn entry_points(dir: &Path) -> Vec<(String, String)> {
         .collect();
     infos.sort();
     for info in infos {
-        let Ok(text) = fs::read_to_string(info.join("entry_points.txt")) else {
-            continue;
-        };
-        let mut inside = false;
-        for line in text.lines().map(str::trim) {
-            if let Some(section) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-                inside = section == GROUP;
-            } else if inside
-                && !line.starts_with('#')
-                && let Some((module, package)) = line.split_once('=')
-            {
-                // `package:attr` is the standard spelling; only the package counts.
-                let package = package.split(':').next().unwrap_or_default().trim();
-                out.push((module.trim().to_owned(), package.to_owned()));
-            }
+        if let Ok(text) = fs::read_to_string(info.join("entry_points.txt")) {
+            out.extend(parse_entry_points(&text));
+        }
+    }
+    out
+}
+
+/// The `module = package` pairs of the `ferrolint.plugins` section of one
+/// `entry_points.txt`.
+fn parse_entry_points(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in text.lines().map(str::trim) {
+        if let Some(section) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            inside = section == GROUP;
+        } else if inside
+            && !line.starts_with('#')
+            && let Some((module, package)) = line.split_once('=')
+        {
+            // `package:attr` is the standard spelling; only the package counts.
+            let package = package.split(':').next().unwrap_or_default().trim();
+            out.push((module.trim().to_owned(), package.to_owned()));
         }
     }
     out
@@ -153,5 +160,40 @@ mod tests {
         fs::remove_file(dir.path().join("ferrolint_django").join(COMPONENT)).unwrap();
         assert!(read("pylint_django", &[dir.path().into()]).is_empty());
         assert!(read("pylint_django", &[]).is_empty());
+    }
+
+    fn want(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn only_the_plugins_section_is_read() {
+        let text =
+            "[console_scripts]\nx = y:z\n\n[ferrolint.plugins]\nmod = pkg\n\n[other]\nq = r\n";
+        assert_eq!(parse_entry_points(text), want(&[("mod", "pkg")]));
+    }
+
+    #[test]
+    fn comments_blank_lines_and_attr_are_handled() {
+        let text = "[ferrolint.plugins]\n# no = no\n\n  a = pkg_a:attr \nb=pkg_b\nnot a pair\n";
+        assert_eq!(
+            parse_entry_points(text),
+            want(&[("a", "pkg_a"), ("b", "pkg_b")])
+        );
+    }
+
+    #[test]
+    fn a_file_without_the_section_gives_nothing() {
+        assert_eq!(parse_entry_points("[console_scripts]\nx = y\n"), want(&[]));
+        assert_eq!(parse_entry_points(""), want(&[]));
+    }
+
+    #[test]
+    fn a_section_reopened_later_adds_its_lines() {
+        let text = "[ferrolint.plugins]\na = p\n[x]\nb = q\n[ferrolint.plugins]\nc = r\n";
+        assert_eq!(parse_entry_points(text), want(&[("a", "p"), ("c", "r")]));
     }
 }
