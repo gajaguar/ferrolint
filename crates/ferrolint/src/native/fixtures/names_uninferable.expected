@@ -1,0 +1,6 @@
+15:C0103:Constant name "lit_plain" doesn't conform to UPPER_CASE naming style
+16:C0103:Constant name "lit_format" doesn't conform to UPPER_CASE naming style
+17:C0103:Constant name "lit_number" doesn't conform to UPPER_CASE naming style
+18:C0103:Constant name "env_name" doesn't conform to UPPER_CASE naming style
+23:C0103:Constant name "backend" doesn't conform to UPPER_CASE naming style
+32:C0103:Variable name "TUPLE_AUG" doesn't conform to snake_case naming style
