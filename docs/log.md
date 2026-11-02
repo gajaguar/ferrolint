@@ -2,6 +2,8 @@
 
 ## 2026-11-01
 
+* **Clippy lints, clippy-lints.md**: `cognitive_complexity` joins the warned
+  lints, at clippy's default threshold.
 * **Plugins installed with pip, installed-plugins.md**: the `ferrolint.plugins`
   entry point, `load-plugins` activation and the 1.1.0 hooks a plugin has on the
   host.
