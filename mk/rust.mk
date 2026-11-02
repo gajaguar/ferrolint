@@ -1,5 +1,6 @@
 CARGO := cargo
 CARGO_DENY_VERSION := 0.20.2
+PACKAGE_VERSION = $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n1)
 # The crates that build for the plugin target: every workspace member but
 # the host-only linter and its core types.
 WASM_TARGET := wasm32-wasip2
@@ -47,6 +48,13 @@ ty-check: ## Lint, test and check the dependencies with the ty feature on
 	$(CARGO) test --locked --features ty
 	$(CARGO) deny --locked --features ty check
 
+release-tag: ## Tag the base branch as v<package.version> from Cargo.toml and push it, once clean and at origin/main
+	git fetch origin main
+	@git diff --quiet HEAD && test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" \
+		|| { echo "release-tag: working tree dirty or HEAD not at origin/main" >&2; exit 1; }
+	git tag -s v$(PACKAGE_VERSION) -m "v$(PACKAGE_VERSION)"
+	git push origin v$(PACKAGE_VERSION)
+
 cargo-test: ## Run the test suite with cargo test
 	$(CARGO) test --locked
 
@@ -92,4 +100,4 @@ pylint-deprecated: ## Dump Pylint's deprecation tables into src/pylint_deprecate
 	$(PYTHON) tools/pylint-deprecated.py > crates/ferrolint/src/pylint_deprecated.rs
 
 # `plugins` is also a directory, so without this make calls the target up to date.
-.PHONY: install-rust clippy fmt fmt-check deny ty-check cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated
+.PHONY: install-rust clippy fmt fmt-check deny ty-check release-tag cargo-test build plugins release-build wheel sdist smoke bench sample-fixtures pylint-compare pylint-compare-test pylint-deprecated

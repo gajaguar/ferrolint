@@ -14,6 +14,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
       - uses: jdx/mise-action@v5
       - run: pnpm install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Only main saves: dependabot PRs would fill the repository's cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - id: deny
         uses: actions/cache@v6
         with:
