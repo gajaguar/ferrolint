@@ -12,7 +12,7 @@
 //! order; only the file the message sits on follows Pylint's walk.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 
 use ferrolint_core::LineIndex;
 use ruff_python_ast::visitor::{self, Visitor};
@@ -220,14 +220,37 @@ fn strip(
     out
 }
 
+/// A hasher for keys that already are hashes (the windows' sums) or small
+/// integers: a multiply spreads them, where `SipHash` would cost most of a run.
+#[derive(Default)]
+struct Spread(u64);
+
+impl Hasher for Spread {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 = (self.0 ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+
+type Fast<K, V> = HashMap<K, V, BuildHasherDefault<Spread>>;
+
 /// The hashes of a file's windows of `min` lines, and each window's span.
 struct Windows {
-    by_hash: HashMap<u64, Vec<usize>>,
+    by_hash: Fast<u64, Vec<usize>>,
     spans: Vec<(u32, u32)>,
 }
 
 fn windows(set: &LineSet, min: usize) -> Windows {
-    let mut by_hash: HashMap<u64, Vec<usize>> = HashMap::new();
+    let mut by_hash: Fast<u64, Vec<usize>> = Fast::default();
     let mut spans = Vec::new();
     let lines = &set.stripped;
     if lines.len() < min {
@@ -289,6 +312,11 @@ type Span = (u32, u32);
 /// A file (by position) and the run of lines in it.
 type Chunk = (usize, u32, u32);
 
+/// A pair of window indices as one key.
+fn diagonal((i, j): (usize, usize)) -> u64 {
+    ((i as u64) << 32) | j as u64
+}
+
 /// What two files have in common (`_find_common`): the count of lines and
 /// the two spans of each run that is long enough.
 fn common(
@@ -307,7 +335,7 @@ fn common(
     hashes.sort_by_key(|hash| a.by_hash[hash][0]);
     // The runs in the order they were found, and where each one is.
     let mut runs: Vec<Option<Run>> = Vec::new();
-    let mut slot: HashMap<(usize, usize), usize> = HashMap::new();
+    let mut slot: Fast<u64, usize> = Fast::default();
     let mut keys: Vec<(usize, usize)> = Vec::new();
     for hash in hashes {
         let (first, second) = (&a.by_hash[&hash], &b.by_hash[&hash]);
@@ -320,7 +348,7 @@ fn common(
                 .collect()
         };
         for (i, j) in pairs {
-            slot.insert((i, j), runs.len());
+            slot.insert(diagonal((i, j)), runs.len());
             keys.push((i, j));
             runs.push(Some(Run {
                 first: a.spans[i],
@@ -333,10 +361,12 @@ fn common(
     // before it.
     for key in &keys {
         let mut next = (key.0 + 1, key.1 + 1);
-        let Some(&head) = slot.get(key) else { continue };
-        while let Some(&at) = slot.get(&next) {
+        let Some(&head) = slot.get(&diagonal(*key)) else {
+            continue;
+        };
+        while let Some(&at) = slot.get(&diagonal(next)) {
             let Some(tail) = runs[at].take() else { break };
-            slot.remove(&next);
+            slot.remove(&diagonal(next));
             if let Some(run) = runs[head].as_mut() {
                 run.first.1 = tail.first.1;
                 run.second.1 = tail.second.1;
@@ -348,7 +378,7 @@ fn common(
     let mut found = Vec::new();
     for (key, run) in keys.iter().zip(&runs) {
         let Some(run) = run else { continue };
-        if !slot.contains_key(key) {
+        if !slot.contains_key(&diagonal(*key)) {
             continue;
         }
         let same = texts(one, key.0, run.lines)
@@ -371,7 +401,7 @@ pub fn report(sets: &[LineSet], min: usize) -> Vec<String> {
     }
     let windows: Vec<Windows> = sets.iter().map(|set| windows(set, min)).collect();
     // Only the pairs of files that share a window are compared, in Pylint's order.
-    let mut owners: HashMap<u64, Vec<usize>> = HashMap::new();
+    let mut owners: Fast<u64, Vec<usize>> = Fast::default();
     for (at, w) in windows.iter().enumerate() {
         for hash in w.by_hash.keys() {
             owners.entry(*hash).or_default().push(at);
@@ -387,19 +417,20 @@ pub fn report(sets: &[LineSet], min: usize) -> Vec<String> {
     }
     // Per count of lines, the groups in the order found; a pair that shares
     // a chunk with a group before it is dropped, as Pylint does.
-    let mut by_count: Vec<(usize, Vec<[Chunk; 2]>)> = Vec::new();
+    let mut by_count: Vec<(usize, Vec<[Chunk; 2]>, HashSet<Chunk>)> = Vec::new();
     for &(i, j) in &pairs {
         for (count, first, second) in common(&sets[i], &sets[j], &windows[i], &windows[j], min) {
             let chunks = [(i, first.0, first.1), (j, second.0, second.1)];
             let at = by_count
                 .iter()
-                .position(|(n, _)| *n == count)
+                .position(|(n, ..)| *n == count)
                 .unwrap_or_else(|| {
-                    by_count.push((count, Vec::new()));
+                    by_count.push((count, Vec::new(), HashSet::new()));
                     by_count.len() - 1
                 });
-            let groups = &mut by_count[at].1;
-            if !groups.iter().any(|g| g.iter().any(|c| chunks.contains(c))) {
+            let (_, groups, claimed) = &mut by_count[at];
+            if !chunks.iter().any(|c| claimed.contains(c)) {
+                claimed.extend(chunks);
                 groups.push(chunks);
             }
         }
@@ -407,7 +438,7 @@ pub fn report(sets: &[LineSet], min: usize) -> Vec<String> {
     // `sorted(reverse=True)` keeps the order of equal counts.
     let mut sims: Vec<(usize, [Chunk; 2])> = by_count
         .into_iter()
-        .flat_map(|(count, groups)| groups.into_iter().map(move |g| (count, g)))
+        .flat_map(|(count, groups, _)| groups.into_iter().map(move |g| (count, g)))
         .collect();
     sims.sort_by_key(|sim| std::cmp::Reverse(sim.0));
     sims.into_iter()
@@ -462,6 +493,22 @@ mod tests {
                 "Similar lines in 2 files\n==a:[5:10]\n==b:[4:10]\n    total = 0\n    for value in values:\n        total += value\n        total -= 1\n    return total"
             ]
         );
+    }
+
+    #[test]
+    fn a_chunk_already_in_a_group_drops_the_later_pairs() {
+        let settings = Settings::new(&[]);
+        let body = "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\n";
+        let sets: Vec<LineSet> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|name| set(name, body, &settings))
+            .collect();
+        // (a, b) takes both chunks, so (a, c), (a, d), (b, c) and (b, d) are
+        // dropped; (c, d) shares none with a group and stays.
+        let groups = report(&sets, 4);
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].contains("==a:[0:6]") && groups[0].contains("==b:[0:6]"));
+        assert!(groups[1].contains("==c:[0:6]") && groups[1].contains("==d:[0:6]"));
     }
 
     #[test]

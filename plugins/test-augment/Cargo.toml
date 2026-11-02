@@ -1,0 +1,16 @@
+[package]
+name = "ferrolint-test-augment"
+version.workspace = true
+edition.workspace = true
+description = "Test plugin that drops host findings, adds to good-names and checks the project together"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ferrolint-plugin-sdk = { path = "../../crates/ferrolint-plugin-sdk", version = "=1.1.0" }
+
+[lints]
+workspace = true

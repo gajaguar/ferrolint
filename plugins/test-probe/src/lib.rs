@@ -95,6 +95,9 @@ impl Guest for Probe {
         PluginInfo {
             name: "probe".into(),
             version: env!("CARGO_PKG_VERSION").into(),
+            contributions: Vec::new(),
+            suppresses: false,
+            checks_project: false,
             rules: vec![
                 rule("PRB001", "A visitor event.", Severity::Info),
                 rule("PRB002", "What a name resolves to.", Severity::Info),
@@ -199,6 +202,26 @@ impl Guest for Probe {
             }
         }
         diagnostics
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::augment::Guest for Probe {
+    fn suppress(
+        _file: ferrolint_plugin_sdk::File,
+        _ast: ferrolint_plugin_sdk::Ast,
+        _findings: Vec<ferrolint_plugin_sdk::RawDiagnostic>,
+    ) -> Vec<u32> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::project::Guest for Probe {
+    fn check_project(
+        _files: Vec<(ferrolint_plugin_sdk::File, ferrolint_plugin_sdk::Ast)>,
+    ) -> Vec<(String, ferrolint_plugin_sdk::RawDiagnostic)> {
+        Vec::new()
     }
 }
 

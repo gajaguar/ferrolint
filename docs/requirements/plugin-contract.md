@@ -70,6 +70,20 @@ in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
 nothing of them.
 
+Contract 1.1.0 adds the `augment` and `project` exports and three fields to
+`plugin-info`: `contributions` (values a plugin adds to a host option, such as
+`good-names`), `suppresses` and `checks-project`. `augment.suppress` returns
+the positions of the host's own findings in a file that the plugin drops,
+given the file's packed AST;
+`project.check-project` receives all the files of the run, each with its
+packed AST (a file that does not parse is left out), and returns findings
+with the path they are about; a `# pylint: disable` in that file silences
+them. The world now requires both exports,
+so a host of 1.1 refuses a plugin built against 1.0.0, which lacks them: rebuild
+it with `ferrolint-plugin-sdk = "1"`. This is the one minor that does more than
+add functions; no plugin outside this repository was built against 1.0.0. The
+SDK's `Checker` gives both methods a default that does nothing.
+
 Contract 1.0.0 freezes the contract: from here on a minor version only adds
 functions and interfaces, and a host of 1.x loads a plugin built against any
 earlier 1.y. The `@since` markers of the 0.x series are gone, since 1.0.0 is

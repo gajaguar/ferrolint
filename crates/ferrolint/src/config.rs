@@ -168,7 +168,11 @@ fn read_pylint(path: &Path) -> Result<Option<Config>> {
         let root = path.parent().unwrap_or(Path::new(""));
         Project::with_packages(&root.join("pylintrc"), "pylintrc", &[])
     });
-    let exists = |module: &str| project.as_ref().is_none_or(|p| p.has_module(module));
+    let packages = crate::native::site_packages();
+    let exists = |module: &str| {
+        project.as_ref().is_none_or(|p| p.has_module(module))
+            || crate::installed::declares(module, &packages)
+    };
     let mut issues = pylint::issues(&entries, ini, exists);
     issues.extend(pylint::plugin_issues(&entries, exists));
     let settings = Settings::from_entries(entries);

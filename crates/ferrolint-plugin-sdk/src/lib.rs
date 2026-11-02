@@ -39,7 +39,7 @@ pub use model::{Diagnostic, Fix, Info, Node, Rule};
 pub use bindings::ferrolint::plugin::inference::{Inferred, Origin};
 pub use bindings::ferrolint::plugin::semantic::{Binding, BindingKind, Scope, ScopeKind};
 pub use bindings::ferrolint::plugin::types::{
-    Ast, ExprContext, File, NodeKind, Position, Range, Severity,
+    Ast, Diagnostic as RawDiagnostic, ExprContext, File, NodeKind, Position, Range, Severity,
 };
 
 /// Everything a checker needs, for a glob import.
@@ -84,6 +84,19 @@ pub trait Checker: Default {
 
     /// Called once per file, after the last node.
     fn end_file(&mut self, _cx: &mut Context<'_>) {}
+
+    /// The positions of the host's own findings in `file` to drop (1.1.0).
+    /// Called only for a plugin whose [`Info`] says [`Info::suppressing`].
+    fn suppress(_file: &File, _nodes: &[Node<'_>], _findings: &[RawDiagnostic]) -> Vec<u32> {
+        Vec::new()
+    }
+
+    /// Check all the files of the run together (1.1.0); each finding comes
+    /// with the path of the file it is about. Called only for a plugin whose
+    /// [`Info`] says [`Info::project_wide`].
+    fn check_project(_files: &[(&File, Vec<Node<'_>>)]) -> Vec<(String, Diagnostic)> {
+        Vec::new()
+    }
 }
 
 /// Run a checker over one file: the visitor events in order, then the
@@ -139,6 +152,19 @@ pub mod __export {
             .map(crate::Diagnostic::into_raw)
             .collect()
     }
+
+    pub fn check_project<C: Checker>(
+        files: &[(File, crate::Ast)],
+    ) -> Vec<(String, raw::Diagnostic)> {
+        let nodes: Vec<(&File, Vec<crate::Node<'_>>)> = files
+            .iter()
+            .map(|(file, ast)| (file, crate::Node::decode(ast)))
+            .collect();
+        C::check_project(&nodes)
+            .into_iter()
+            .map(|(path, diagnostic)| (path, diagnostic.into_raw()))
+            .collect()
+    }
 }
 
 /// Export a [`Checker`] as the plugin's implementation of the contract. On
@@ -162,6 +188,31 @@ macro_rules! export_checker {
                     $crate::bindings::exports::ferrolint::plugin::checker::Diagnostic,
                 > {
                     $crate::__export::check::<$checker>(&file, &ast)
+                }
+            }
+
+            impl $crate::bindings::exports::ferrolint::plugin::augment::Guest for Export {
+                fn suppress(
+                    file: $crate::File,
+                    ast: $crate::Ast,
+                    findings: ::std::vec::Vec<$crate::RawDiagnostic>,
+                ) -> ::std::vec::Vec<u32> {
+                    <$checker as $crate::Checker>::suppress(
+                        &file,
+                        &$crate::Node::decode(&ast),
+                        &findings,
+                    )
+                }
+            }
+
+            impl $crate::bindings::exports::ferrolint::plugin::project::Guest for Export {
+                fn check_project(
+                    files: ::std::vec::Vec<($crate::File, $crate::Ast)>,
+                ) -> ::std::vec::Vec<(
+                    ::std::string::String,
+                    $crate::bindings::exports::ferrolint::plugin::checker::Diagnostic,
+                )> {
+                    $crate::__export::check_project::<$checker>(&files)
                 }
             }
 

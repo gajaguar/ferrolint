@@ -20,6 +20,7 @@ iterating.
 | `clippy::pedantic` (priority -1)      | strict lints that catch real mistakes; each `allow` wins |
 | `unwrap_used`, `expect_used`          | return an error instead of panicking                     |
 | `dbg_macro`, `todo`                   | leftover scaffolding never reaches a commit              |
+| `cognitive_complexity`                | split a function whose score passes 25 (clippy default)  |
 | `must_use_candidate`, `missing_*_doc` | allowed: pedantic noise that adds no safety              |
 
 `clippy.toml` allows `unwrap` and `expect` inside tests, where a panic is the

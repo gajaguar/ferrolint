@@ -1,4 +1,4 @@
-package ferrolint:plugin@1.0.0;
+package ferrolint:plugin@1.1.0;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -55,6 +55,13 @@ interface types {
         name: string,
         version: string,
         rules: list<rule>,
+        /// Values the plugin adds to a host option, by option name:
+        /// `good-names` gets `pk`, `qs` (1.1.0).
+        contributions: list<tuple<string, list<string>>>,
+        /// Whether `augment.suppress` has to be called (1.1.0).
+        suppresses: bool,
+        /// Whether `project.check-project` has to be called (1.1.0).
+        checks-project: bool,
     }
 
     /// The file being linted.
@@ -368,6 +375,29 @@ interface checker {
     check: func(file: file, ast: ast) -> list<diagnostic>;
 }
 
+/// What a plugin changes in the host's own findings and settings (1.1.0).
+interface augment {
+    use types.{ast, diagnostic, file};
+
+    /// The findings of the host's own rules in `file`, in the order the
+    /// host gives them: the positions of those to drop. The plugin's
+    /// findings never pass through it. `ast` is the file's, packed as
+    /// `checker.check` gets it; the semantic queries answer nothing here.
+    suppress: func(file: file, ast: ast, findings: list<diagnostic>) -> list<u32>;
+}
+
+/// A check over the files of the project together (1.1.0).
+interface project {
+    use types.{ast, diagnostic, file};
+
+    /// Check all the files of the run at once, for a rule that compares
+    /// them. Each file comes with its AST, packed as `checker.check` gets
+    /// it; a file that does not parse is left out. Each finding comes with
+    /// the `path` of the file it is about. The semantic queries answer
+    /// nothing here: there is no current file.
+    check-project: func(files: list<tuple<file, ast>>) -> list<tuple<string, diagnostic>>;
+}
+
 /// World contract for a ferrolint plugin.
 world plugin {
     import semantic;
@@ -376,4 +406,6 @@ world plugin {
     import settings;
     import modules;
     export checker;
+    export augment;
+    export project;
 }

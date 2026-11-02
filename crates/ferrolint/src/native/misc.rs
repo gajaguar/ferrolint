@@ -128,10 +128,13 @@ pub(super) struct Names {
     bad_rx: Vec<Regex>,
 }
 
+/// Pylint's default for `good-names`, which a plugin's contribution extends.
+pub const GOOD_NAMES: &str = "i,j,k,ex,Run,_";
+
 impl Names {
     pub(super) fn new(ctx: &Ctx<'_>) -> Self {
         Self {
-            good: csv(ctx, "good-names", "i,j,k,ex,Run,_"),
+            good: csv(ctx, "good-names", GOOD_NAMES),
             good_rx: regexps(ctx.option("good-names-rgxs").unwrap_or_default()),
             bad: csv(ctx, "bad-names", "foo,bar,baz,toto,tutu,tata"),
             bad_rx: regexps(ctx.option("bad-names-rgxs").unwrap_or_default()),

@@ -17,6 +17,7 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip extraction is never called" },
     { id = "RUSTSEC-2026-0368", reason = "zip extraction is never called" },
     { id = "RUSTSEC-2026-0369", reason = "zip extraction is never called" },
+    { id = "RUSTSEC-2026-0429", reason = "zip extraction is never called" },
     { id = "RUSTSEC-2026-0391", reason = "zstd only reads the embedded typeshed" },
     { id = "RUSTSEC-2026-0398", reason = "zstd only reads the embedded typeshed" },
     { id = "RUSTSEC-2026-0403", reason = "zstd only reads the embedded typeshed" },

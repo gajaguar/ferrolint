@@ -174,91 +174,119 @@ type Description = (NodeKind, Option<String>, Option<String>, ExprContext);
 // One arm per node type: splitting the match would only scatter it.
 #[allow(clippy::too_many_lines)]
 fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Description> {
+    statement(flattener, node)
+        .or_else(|| expression(flattener, node))
+        .or_else(|| pattern(node))
+        .or_else(|| other(flattener, node))
+}
+
+fn plain(kind: NodeKind) -> Description {
+    (kind, None, None, ExprContext::None)
+}
+
+fn named(kind: NodeKind, name: &str) -> Description {
+    (kind, Some(name.to_owned()), None, ExprContext::None)
+}
+
+fn detailed(kind: NodeKind, detail: String) -> Description {
+    (kind, None, Some(detail), ExprContext::None)
+}
+
+fn flag(kind: NodeKind, set: bool, what: &str) -> Description {
+    (kind, None, set.then(|| what.to_owned()), ExprContext::None)
+}
+
+/// The description of a statement node.
+fn statement(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Description> {
     use NodeKind as K;
-    let plain = |kind| Some((kind, None, None, ExprContext::None));
-    let named = |kind, name: &str| Some((kind, Some(name.to_owned()), None, ExprContext::None));
-    let detailed = |kind, detail: String| Some((kind, None, Some(detail), ExprContext::None));
-    let flag = |kind, set: bool, what: &str| {
-        Some((kind, None, set.then(|| what.to_owned()), ExprContext::None))
-    };
     match node {
-        AnyNodeRef::ModModule(_) => plain(K::Module),
+        AnyNodeRef::ModModule(_) => Some(plain(K::Module)),
         AnyNodeRef::StmtFunctionDef(def) => Some((
             K::FunctionDef,
             Some(def.name.to_string()),
             def.is_async.then(|| "async".to_owned()),
             ExprContext::None,
         )),
-        AnyNodeRef::StmtClassDef(def) => named(K::ClassDef, &def.name),
-        AnyNodeRef::StmtReturn(_) => plain(K::Return),
-        AnyNodeRef::StmtDelete(_) => plain(K::Delete),
-        AnyNodeRef::StmtTypeAlias(_) => plain(K::TypeAlias),
-        AnyNodeRef::StmtAssign(_) => plain(K::Assign),
+        AnyNodeRef::StmtClassDef(def) => Some(named(K::ClassDef, &def.name)),
+        AnyNodeRef::StmtReturn(_) => Some(plain(K::Return)),
+        AnyNodeRef::StmtDelete(_) => Some(plain(K::Delete)),
+        AnyNodeRef::StmtTypeAlias(_) => Some(plain(K::TypeAlias)),
+        AnyNodeRef::StmtAssign(_) => Some(plain(K::Assign)),
         AnyNodeRef::StmtAugAssign(assign) => {
-            detailed(K::AugAssign, format!("{}=", assign.op.as_str()))
+            Some(detailed(K::AugAssign, format!("{}=", assign.op.as_str())))
         }
-        AnyNodeRef::StmtAnnAssign(_) => plain(K::AnnAssign),
-        AnyNodeRef::StmtFor(stmt) => flag(K::For, stmt.is_async, "async"),
-        AnyNodeRef::StmtWhile(_) => plain(K::While),
-        AnyNodeRef::StmtIf(_) => plain(K::If),
-        AnyNodeRef::StmtWith(stmt) => flag(K::With, stmt.is_async, "async"),
-        AnyNodeRef::StmtMatch(_) => plain(K::Match),
-        AnyNodeRef::StmtRaise(_) => plain(K::Raise),
-        AnyNodeRef::StmtTry(stmt) => flag(K::Try, stmt.is_star, "star"),
-        AnyNodeRef::StmtAssert(_) => plain(K::Assert),
-        AnyNodeRef::StmtImport(_) => plain(K::Import),
+        AnyNodeRef::StmtAnnAssign(_) => Some(plain(K::AnnAssign)),
+        AnyNodeRef::StmtFor(stmt) => Some(flag(K::For, stmt.is_async, "async")),
+        AnyNodeRef::StmtWhile(_) => Some(plain(K::While)),
+        AnyNodeRef::StmtIf(_) => Some(plain(K::If)),
+        AnyNodeRef::StmtWith(stmt) => Some(flag(K::With, stmt.is_async, "async")),
+        AnyNodeRef::StmtMatch(_) => Some(plain(K::Match)),
+        AnyNodeRef::StmtRaise(_) => Some(plain(K::Raise)),
+        AnyNodeRef::StmtTry(stmt) => Some(flag(K::Try, stmt.is_star, "star")),
+        AnyNodeRef::StmtAssert(_) => Some(plain(K::Assert)),
+        AnyNodeRef::StmtImport(_) => Some(plain(K::Import)),
         AnyNodeRef::StmtImportFrom(import) => {
             let module = import.module.as_ref().map_or("", |module| module.as_str());
-            detailed(
+            Some(detailed(
                 K::ImportFrom,
                 format!("{}{module}", ".".repeat(import.level as usize)),
-            )
+            ))
         }
-        AnyNodeRef::StmtGlobal(_) => plain(K::Global),
-        AnyNodeRef::StmtNonlocal(_) => plain(K::Nonlocal),
-        AnyNodeRef::StmtExpr(_) => plain(K::Expr),
+        AnyNodeRef::StmtGlobal(_) => Some(plain(K::Global)),
+        AnyNodeRef::StmtNonlocal(_) => Some(plain(K::Nonlocal)),
+        AnyNodeRef::StmtExpr(_) => Some(plain(K::Expr)),
         // `checks::parse` parses a bare `raise;` as `pass `: the source still says `raise`.
-        AnyNodeRef::StmtPass(pass) => plain(
+        AnyNodeRef::StmtPass(pass) => Some(plain(
             if flattener.source[pass.start().to_usize()..].starts_with("raise") {
                 K::Raise
             } else {
                 K::Pass
             },
-        ),
-        AnyNodeRef::StmtBreak(_) => plain(K::Break),
-        AnyNodeRef::StmtContinue(_) => plain(K::Continue),
-        AnyNodeRef::ExprBoolOp(expr) => detailed(K::BoolOp, expr.op.as_str().to_owned()),
-        AnyNodeRef::ExprNamed(_) => plain(K::Named),
-        AnyNodeRef::ExprBinOp(expr) => detailed(K::BinOp, expr.op.as_str().to_owned()),
-        AnyNodeRef::ExprUnaryOp(expr) => detailed(K::UnaryOp, expr.op.as_str().to_owned()),
-        AnyNodeRef::ExprLambda(_) => plain(K::Lambda),
-        AnyNodeRef::ExprIf(_) => plain(K::IfExp),
-        AnyNodeRef::ExprDict(_) => plain(K::Dict),
-        AnyNodeRef::ExprSet(_) => plain(K::Set),
-        AnyNodeRef::ExprListComp(_) => plain(K::ListComp),
-        AnyNodeRef::ExprSetComp(_) => plain(K::SetComp),
-        AnyNodeRef::ExprDictComp(_) => plain(K::DictComp),
-        AnyNodeRef::ExprGenerator(_) => plain(K::Generator),
-        AnyNodeRef::ExprAwait(_) => plain(K::Await),
-        AnyNodeRef::ExprYield(_) => plain(K::Yield),
-        AnyNodeRef::ExprYieldFrom(_) => plain(K::YieldFrom),
-        AnyNodeRef::ExprCompare(expr) => detailed(
+        )),
+        AnyNodeRef::StmtBreak(_) => Some(plain(K::Break)),
+        AnyNodeRef::StmtContinue(_) => Some(plain(K::Continue)),
+        _ => None,
+    }
+}
+
+/// The description of an expression node.
+fn expression(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Description> {
+    use NodeKind as K;
+    match node {
+        AnyNodeRef::ExprBoolOp(expr) => Some(detailed(K::BoolOp, expr.op.as_str().to_owned())),
+        AnyNodeRef::ExprNamed(_) => Some(plain(K::Named)),
+        AnyNodeRef::ExprBinOp(expr) => Some(detailed(K::BinOp, expr.op.as_str().to_owned())),
+        AnyNodeRef::ExprUnaryOp(expr) => Some(detailed(K::UnaryOp, expr.op.as_str().to_owned())),
+        AnyNodeRef::ExprLambda(_) => Some(plain(K::Lambda)),
+        AnyNodeRef::ExprIf(_) => Some(plain(K::IfExp)),
+        AnyNodeRef::ExprDict(_) => Some(plain(K::Dict)),
+        AnyNodeRef::ExprSet(_) => Some(plain(K::Set)),
+        AnyNodeRef::ExprListComp(_) => Some(plain(K::ListComp)),
+        AnyNodeRef::ExprSetComp(_) => Some(plain(K::SetComp)),
+        AnyNodeRef::ExprDictComp(_) => Some(plain(K::DictComp)),
+        AnyNodeRef::ExprGenerator(_) => Some(plain(K::Generator)),
+        AnyNodeRef::ExprAwait(_) => Some(plain(K::Await)),
+        AnyNodeRef::ExprYield(_) => Some(plain(K::Yield)),
+        AnyNodeRef::ExprYieldFrom(_) => Some(plain(K::YieldFrom)),
+        AnyNodeRef::ExprCompare(expr) => Some(detailed(
             K::Compare,
             expr.ops
                 .iter()
                 .map(ast::CmpOp::as_str)
                 .collect::<Vec<_>>()
                 .join(" "),
-        ),
-        AnyNodeRef::ExprCall(_) => plain(K::Call),
-        AnyNodeRef::ExprFString(_) => plain(K::FString),
-        AnyNodeRef::ExprTString(_) => plain(K::TString),
-        AnyNodeRef::ExprStringLiteral(_) => plain(K::StringLiteral),
-        AnyNodeRef::ExprBytesLiteral(_) => plain(K::BytesLiteral),
-        AnyNodeRef::ExprNumberLiteral(_) => detailed(K::NumberLiteral, flattener.text(node)),
-        AnyNodeRef::ExprBooleanLiteral(_) => detailed(K::BooleanLiteral, flattener.text(node)),
-        AnyNodeRef::ExprNoneLiteral(_) => plain(K::NoneLiteral),
-        AnyNodeRef::ExprEllipsisLiteral(_) => plain(K::EllipsisLiteral),
+        )),
+        AnyNodeRef::ExprCall(_) => Some(plain(K::Call)),
+        AnyNodeRef::ExprFString(_) => Some(plain(K::FString)),
+        AnyNodeRef::ExprTString(_) => Some(plain(K::TString)),
+        AnyNodeRef::ExprStringLiteral(_) => Some(plain(K::StringLiteral)),
+        AnyNodeRef::ExprBytesLiteral(_) => Some(plain(K::BytesLiteral)),
+        AnyNodeRef::ExprNumberLiteral(_) => Some(detailed(K::NumberLiteral, flattener.text(node))),
+        AnyNodeRef::ExprBooleanLiteral(_) => {
+            Some(detailed(K::BooleanLiteral, flattener.text(node)))
+        }
+        AnyNodeRef::ExprNoneLiteral(_) => Some(plain(K::NoneLiteral)),
+        AnyNodeRef::ExprEllipsisLiteral(_) => Some(plain(K::EllipsisLiteral)),
         AnyNodeRef::ExprAttribute(expr) => Some((
             K::Attribute,
             Some(expr.attr.to_string()),
@@ -272,23 +300,25 @@ fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Descripti
         }
         AnyNodeRef::ExprList(expr) => Some((K::List, None, None, context(expr.ctx))),
         AnyNodeRef::ExprTuple(expr) => Some((K::Tuple, None, None, context(expr.ctx))),
-        AnyNodeRef::ExprSlice(_) => plain(K::Slice),
-        AnyNodeRef::ExceptHandlerExceptHandler(handler) => Some((
-            K::ExceptHandler,
-            handler.name.as_ref().map(ToString::to_string),
-            None,
-            ExprContext::None,
-        )),
-        AnyNodeRef::PatternMatchValue(_) => detailed(K::Pattern, "value".into()),
-        AnyNodeRef::PatternMatchSingleton(_) => detailed(K::Pattern, "singleton".into()),
-        AnyNodeRef::PatternMatchSequence(_) => detailed(K::Pattern, "sequence".into()),
+        AnyNodeRef::ExprSlice(_) => Some(plain(K::Slice)),
+        _ => None,
+    }
+}
+
+/// The description of a pattern node.
+fn pattern(node: AnyNodeRef<'_>) -> Option<Description> {
+    use NodeKind as K;
+    match node {
+        AnyNodeRef::PatternMatchValue(_) => Some(detailed(K::Pattern, "value".into())),
+        AnyNodeRef::PatternMatchSingleton(_) => Some(detailed(K::Pattern, "singleton".into())),
+        AnyNodeRef::PatternMatchSequence(_) => Some(detailed(K::Pattern, "sequence".into())),
         AnyNodeRef::PatternMatchMapping(pattern) => Some((
             K::Pattern,
             pattern.rest.as_ref().map(ToString::to_string),
             Some("mapping".into()),
             ExprContext::None,
         )),
-        AnyNodeRef::PatternMatchClass(_) => detailed(K::Pattern, "class".into()),
+        AnyNodeRef::PatternMatchClass(_) => Some(detailed(K::Pattern, "class".into())),
         AnyNodeRef::PatternMatchStar(pattern) => Some((
             K::Pattern,
             pattern.name.as_ref().map(ToString::to_string),
@@ -301,17 +331,31 @@ fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Descripti
             Some("as".into()),
             ExprContext::None,
         )),
-        AnyNodeRef::PatternMatchOr(_) => detailed(K::Pattern, "or".into()),
-        AnyNodeRef::PatternKeyword(keyword) => named(K::Keyword, &keyword.attr),
-        AnyNodeRef::TypeParamTypeVar(param) => named(K::TypeParam, &param.name),
-        AnyNodeRef::TypeParamTypeVarTuple(param) => named(K::TypeParam, &param.name),
-        AnyNodeRef::TypeParamParamSpec(param) => named(K::TypeParam, &param.name),
+        AnyNodeRef::PatternMatchOr(_) => Some(detailed(K::Pattern, "or".into())),
+        _ => None,
+    }
+}
+
+/// The description of the other nodes (clauses, parameters, aliases), and the nodes that have none.
+fn other(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Description> {
+    use NodeKind as K;
+    match node {
+        AnyNodeRef::ExceptHandlerExceptHandler(handler) => Some((
+            K::ExceptHandler,
+            handler.name.as_ref().map(ToString::to_string),
+            None,
+            ExprContext::None,
+        )),
+        AnyNodeRef::PatternKeyword(keyword) => Some(named(K::Keyword, &keyword.attr)),
+        AnyNodeRef::TypeParamTypeVar(param) => Some(named(K::TypeParam, &param.name)),
+        AnyNodeRef::TypeParamTypeVarTuple(param) => Some(named(K::TypeParam, &param.name)),
+        AnyNodeRef::TypeParamParamSpec(param) => Some(named(K::TypeParam, &param.name)),
         AnyNodeRef::Comprehension(comprehension) => {
-            flag(K::Comprehension, comprehension.is_async, "async")
+            Some(flag(K::Comprehension, comprehension.is_async, "async"))
         }
-        AnyNodeRef::Arguments(_) => plain(K::Arguments),
-        AnyNodeRef::Parameters(_) => plain(K::Parameters),
-        AnyNodeRef::Parameter(parameter) => named(K::Parameter, &parameter.name),
+        AnyNodeRef::Arguments(_) => Some(plain(K::Arguments)),
+        AnyNodeRef::Parameters(_) => Some(plain(K::Parameters)),
+        AnyNodeRef::Parameter(parameter) => Some(named(K::Parameter, &parameter.name)),
         AnyNodeRef::Keyword(keyword) => Some((
             K::Keyword,
             keyword.arg.as_ref().map(ToString::to_string),
@@ -324,10 +368,10 @@ fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Descripti
             alias.asname.as_ref().map(ToString::to_string),
             ExprContext::None,
         )),
-        AnyNodeRef::WithItem(_) => plain(K::WithItem),
-        AnyNodeRef::MatchCase(_) => plain(K::MatchCase),
-        AnyNodeRef::Decorator(_) => plain(K::Decorator),
-        AnyNodeRef::ElifElseClause(_) => plain(K::ElifElseClause),
+        AnyNodeRef::WithItem(_) => Some(plain(K::WithItem)),
+        AnyNodeRef::MatchCase(_) => Some(plain(K::MatchCase)),
+        AnyNodeRef::Decorator(_) => Some(plain(K::Decorator)),
+        AnyNodeRef::ElifElseClause(_) => Some(plain(K::ElifElseClause)),
         AnyNodeRef::Identifier(identifier) => matches!(
             flattener.parent_kind(),
             Some(NodeKind::Global | NodeKind::Nonlocal)
@@ -341,19 +385,11 @@ fn describe(flattener: &Flattener<'_>, node: AnyNodeRef<'_>) -> Option<Descripti
             )
         }),
         AnyNodeRef::StmtIpyEscapeCommand(_) | AnyNodeRef::ExprIpyEscapeCommand(_) => {
-            plain(K::Other)
+            Some(plain(K::Other))
         }
-        AnyNodeRef::ModExpression(_)
-        | AnyNodeRef::InterpolatedElement(_)
-        | AnyNodeRef::InterpolatedStringLiteralElement(_)
-        | AnyNodeRef::InterpolatedStringFormatSpec(_)
-        | AnyNodeRef::PatternArguments(_)
-        | AnyNodeRef::ParameterWithDefault(_)
-        | AnyNodeRef::TypeParams(_)
-        | AnyNodeRef::FString(_)
-        | AnyNodeRef::TString(_)
-        | AnyNodeRef::StringLiteral(_)
-        | AnyNodeRef::BytesLiteral(_) => None,
+        // The other nodes (f-string parts, string and bytes literals, type parameter
+        // lists, parameters with defaults) have no description of their own.
+        _ => None,
     }
 }
 
