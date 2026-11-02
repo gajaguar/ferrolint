@@ -86,7 +86,6 @@ pub fn run(params: &Params<'_>, files: &[(PathBuf, String)]) -> Vec<Finding> {
 
 type Raw = Vec<(String, ferrolint_core::Diagnostic)>;
 
-#[allow(clippy::too_many_lines)]
 fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let enabled: Vec<BTreeSet<String>> = files
         .iter()
@@ -98,23 +97,19 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let cyclic = params.selection.is_enabled(CYCLIC);
     let opts = Opts::new(params.options);
     let duplicates = params.selection.is_enabled(DUPLICATE) && opts.duplicates.min > 0;
-    let plugins: Vec<usize> = params
-        .host
-        .map(|host| {
-            host.plugins
-                .iter()
-                .enumerate()
-                .filter(|(_, plugin)| {
-                    plugin.checks_project
-                        && plugin
-                            .rules
-                            .iter()
-                            .any(|rule| params.selection.is_enabled(&rule.code))
-                })
-                .map(|(position, _)| position)
-                .collect()
-        })
-        .unwrap_or_default();
+    let plugins = params.host.map_or_else(Vec::new, |host| {
+        let shapes: Vec<(bool, Vec<&str>)> = host
+            .plugins
+            .iter()
+            .map(|p| {
+                (
+                    p.checks_project,
+                    p.rules.iter().map(|r| r.code.as_str()).collect(),
+                )
+            })
+            .collect();
+        enabled_plugins(&shapes, |code| params.selection.is_enabled(code))
+    });
     if !imports && !cyclic && !duplicates && plugins.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -123,53 +118,26 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let anchor = (duplicates || cyclic)
         .then(|| checked_last(arguments(params.cwd, params.arguments), &units))
         .flatten();
-    let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
     let key = params.cache.map(|cache| {
-        let hashes: Vec<String> = files
-            .par_iter()
-            .map(|(path, _)| {
-                fs::read(path)
-                    .map(|bytes| hex(&Sha256::digest(bytes)))
-                    .unwrap_or_default()
-            })
-            .collect();
-        let mut parts = vec!["project".to_owned(), format!("{:?}", params.py_version)];
-        parts.push(format!("{:?}", params.options));
-        parts.push(format!("{cyclic}{duplicates}"));
-        // A project plugin's verdict depends on its binary and its own options.
-        for &position in &plugins {
-            if let Some(plugin) = params.host.map(|host| &host.plugins[position]) {
-                parts.push(format!("{}{:?}", plugin.sha256, plugin.options));
-            }
-        }
-        parts.push(anchor.map(|u| u.display.clone()).unwrap_or_default());
-        // The roots decide how an absolute import resolves, whatever the names.
-        parts.push(format!("{:?}", roots(params.cwd, params.arguments, &opts)));
-        for name in ["VIRTUAL_ENV", "PYTHONPATH"] {
-            parts.push(std::env::var(name).unwrap_or_default());
-        }
-        for ((unit, hash), set) in units.iter().zip(&hashes).zip(&enabled) {
-            let on: Vec<&str> = project_codes
-                .iter()
-                .copied()
-                .filter(|code| set.contains(*code))
-                .collect();
-            parts.extend([
-                unit.display.clone(),
-                unit.module.clone(),
-                hash.clone(),
-                on.join(","),
-            ]);
-        }
+        let parts = cache_parts(
+            params,
+            files,
+            &KeyRun {
+                opts: &opts,
+                units: &units,
+                enabled: &enabled,
+                plugins: &plugins,
+                cyclic,
+                duplicates,
+                anchor,
+            },
+        );
         let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
         cache.key(&parts)
     });
     if let Some((cache, key)) = params.cache.zip(key.as_deref())
         && let Some(entry) = cache.project(key)
-        && entry
-            .stamps
-            .iter()
-            .all(|(path, stamp)| stamp_of(Path::new(path)) == *stamp)
+        && is_fresh(&entry, stamp_of)
     {
         return (entry.findings, units);
     }
@@ -177,39 +145,15 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
     let mut out: Raw = Vec::new();
     let mut touched = Vec::new();
     if imports || cyclic {
-        let prepared = project_phase::prepare_all(&units);
-        let linted = units
-            .iter()
-            .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
-            .collect();
-        let environment = crate::native::environment();
-        let known = environment.is_some();
-        let project = Project::for_run(
-            roots(params.cwd, params.arguments, &opts),
-            linted,
-            opts.extensions.clone(),
-            environment,
+        let (found, read) = import_findings(
+            params,
+            &opts,
+            &units,
+            &enabled,
+            cyclic.then_some(anchor).flatten(),
         );
-        let found =
-            project_phase::analyse(&units, &prepared, &project, known, &opts, params.registry);
-        for ((unit, diagnostics), set) in units.iter().zip(found.files).zip(&enabled) {
-            out.extend(
-                diagnostics
-                    .into_iter()
-                    .filter(|d| set.contains(&d.code))
-                    .map(|d| (unit.display.clone(), d)),
-            );
-        }
-        // Pylint reports these at the start of the file it checked last.
-        if cyclic && let Some(last) = anchor {
-            out.extend(
-                found
-                    .cycles
-                    .iter()
-                    .map(|cycle| (last.display.clone(), project_phase::cycle_diagnostic(cycle))),
-            );
-        }
-        touched = project.touched();
+        out.extend(found);
+        touched = read;
     }
     if duplicates && let Some(last) = anchor {
         out.extend(
@@ -239,6 +183,94 @@ fn all(params: &Params<'_>, files: &[(PathBuf, String)]) -> (Raw, Vec<Unit>) {
         );
     }
     (out, units)
+}
+
+/// What `all` decided before it keys the cache.
+struct KeyRun<'a> {
+    opts: &'a Opts,
+    units: &'a [Unit],
+    enabled: &'a [BTreeSet<String>],
+    plugins: &'a [usize],
+    cyclic: bool,
+    duplicates: bool,
+    anchor: Option<&'a Unit>,
+}
+
+/// The parts of the cache key of this run: the bytes of every file, the
+/// plugins' binaries, and the environment variables, read here.
+fn cache_parts(params: &Params<'_>, files: &[(PathBuf, String)], run: &KeyRun<'_>) -> Vec<String> {
+    let hashes: Vec<String> = files
+        .par_iter()
+        .map(|(path, _)| {
+            fs::read(path)
+                .map(|bytes| hex(&Sha256::digest(bytes)))
+                .unwrap_or_default()
+        })
+        .collect();
+    let plugin_parts: Vec<String> = run
+        .plugins
+        .iter()
+        .filter_map(|&position| params.host.map(|host| &host.plugins[position]))
+        .map(|plugin| format!("{}{:?}", plugin.sha256, plugin.options))
+        .collect();
+    let env = ["VIRTUAL_ENV", "PYTHONPATH"].map(|name| std::env::var(name).unwrap_or_default());
+    key_parts(&KeyInput {
+        py_version: params.py_version,
+        options: params.options,
+        cyclic: run.cyclic,
+        duplicates: run.duplicates,
+        plugins: &plugin_parts,
+        anchor: run.anchor.map(|u| u.display.as_str()).unwrap_or_default(),
+        roots: &roots(params.cwd, params.arguments, run.opts),
+        env: &env,
+        units: run.units,
+        hashes: &hashes,
+        enabled: run.enabled,
+    })
+}
+
+/// The import and cycle findings of the project phase, and the paths its
+/// resolution read (for the cache stamps).
+fn import_findings(
+    params: &Params<'_>,
+    opts: &Opts,
+    units: &[Unit],
+    enabled: &[BTreeSet<String>],
+    cycles_at: Option<&Unit>,
+) -> (Raw, Vec<PathBuf>) {
+    let mut out: Raw = Vec::new();
+    let prepared = project_phase::prepare_all(units);
+    let linted = units
+        .iter()
+        .map(|u| (u.module.clone(), (u.path.clone(), u.is_package)))
+        .collect();
+    let environment = crate::native::environment();
+    let known = environment.is_some();
+    let project = Project::for_run(
+        roots(params.cwd, params.arguments, opts),
+        linted,
+        opts.extensions.clone(),
+        environment,
+    );
+    let found = project_phase::analyse(units, &prepared, &project, known, opts, params.registry);
+    for ((unit, diagnostics), set) in units.iter().zip(found.files).zip(enabled) {
+        out.extend(
+            diagnostics
+                .into_iter()
+                .filter(|d| set.contains(&d.code))
+                .map(|d| (unit.display.clone(), d)),
+        );
+    }
+    // Pylint reports these at the start of the file it checked last.
+    if let Some(last) = cycles_at {
+        out.extend(
+            found
+                .cycles
+                .iter()
+                .map(|cycle| (last.display.clone(), project_phase::cycle_diagnostic(cycle))),
+        );
+    }
+    (out, project.touched())
 }
 
 /// What the plugins that check the project together report over all the
@@ -271,18 +303,14 @@ fn plugin_findings(
         match host.check_project(position, &files) {
             Ok(found) => {
                 for (path, diagnostic) in found {
-                    if !plugin.rules.iter().any(|rule| rule.code == diagnostic.code) {
-                        let reason = format!("reported the undeclared code {:?}", diagnostic.code);
-                        out.push((anchor.clone(), aborted(plugin, &reason)));
-                        whole = false;
-                        continue;
-                    }
-                    let on = units
-                        .iter()
-                        .position(|unit| unit.display == path)
-                        .is_some_and(|at| enabled[at].contains(&diagnostic.code));
-                    if on {
-                        out.push((path, core(diagnostic)));
+                    match screen(&plugin.rules, units, enabled, &path, diagnostic) {
+                        Screen::Keep(diagnostic) => out.push((path, diagnostic)),
+                        Screen::Undeclared(code) => {
+                            let reason = format!("reported the undeclared code {code:?}");
+                            out.push((anchor.clone(), aborted(plugin, &reason)));
+                            whole = false;
+                        }
+                        Screen::Off => {}
                     }
                 }
             }
@@ -294,6 +322,105 @@ fn plugin_findings(
         }
     }
     (out, whole)
+}
+
+/// What to do with one finding of a project plugin.
+#[derive(Debug)]
+enum Screen {
+    Keep(ferrolint_core::Diagnostic),
+    /// The plugin reported a code it did not declare.
+    Undeclared(String),
+    /// The code is off for the file it names.
+    Off,
+}
+
+/// Keeps the finding of a plugin that declares `rules` only if its code is
+/// declared and enabled for the file `path`.
+fn screen(
+    rules: &[ferrolint_core::RuleInfo],
+    units: &[Unit],
+    enabled: &[BTreeSet<String>],
+    path: &str,
+    diagnostic: wit::Diagnostic,
+) -> Screen {
+    if !rules.iter().any(|rule| rule.code == diagnostic.code) {
+        return Screen::Undeclared(diagnostic.code);
+    }
+    let on = units
+        .iter()
+        .position(|unit| unit.display == path)
+        .is_some_and(|at| enabled[at].contains(&diagnostic.code));
+    if on {
+        Screen::Keep(core(diagnostic))
+    } else {
+        Screen::Off
+    }
+}
+
+/// The positions of the plugins that check the project and have a rule on:
+/// each shape is whether it checks the project and the codes of its rules.
+fn enabled_plugins(shapes: &[(bool, Vec<&str>)], on: impl Fn(&str) -> bool) -> Vec<usize> {
+    (0..shapes.len())
+        .filter(|&at| shapes[at].0 && shapes[at].1.iter().any(|code| on(code)))
+        .collect()
+}
+
+/// What the cache key of the project phase is made of.
+struct KeyInput<'a> {
+    py_version: Option<(u32, u32)>,
+    options: &'a [(String, String)],
+    cyclic: bool,
+    duplicates: bool,
+    /// Each project plugin's binary and options.
+    plugins: &'a [String],
+    /// The display name of the file R0801 and R0401 attach to.
+    anchor: &'a str,
+    roots: &'a [PathBuf],
+    /// `VIRTUAL_ENV` and `PYTHONPATH`.
+    env: &'a [String; 2],
+    units: &'a [Unit],
+    hashes: &'a [String],
+    enabled: &'a [BTreeSet<String>],
+}
+
+/// The strings the key hashes: any change to one changes the key.
+fn key_parts(input: &KeyInput<'_>) -> Vec<String> {
+    let mut parts = vec![
+        "project".to_owned(),
+        format!("{:?}", input.py_version),
+        format!("{:?}", input.options),
+        format!("{}{}", input.cyclic, input.duplicates),
+    ];
+    // A project plugin's verdict depends on its binary and its own options.
+    parts.extend(input.plugins.iter().cloned());
+    // The listing order is not a file's content, so the key must name the anchor.
+    parts.push(input.anchor.to_owned());
+    // The roots decide how an absolute import resolves, whatever the names.
+    parts.push(format!("{:?}", input.roots));
+    parts.extend(input.env.iter().cloned());
+    let project_codes = [IMPORT_ERROR, RELATIVE_BEYOND_TOP, NO_NAME, DUPLICATE];
+    for ((unit, hash), set) in input.units.iter().zip(input.hashes).zip(input.enabled) {
+        let on: Vec<&str> = project_codes
+            .iter()
+            .copied()
+            .filter(|code| set.contains(*code))
+            .collect();
+        parts.extend([
+            unit.display.clone(),
+            unit.module.clone(),
+            hash.clone(),
+            on.join(","),
+        ]);
+    }
+    parts
+}
+
+/// Whether every path of the entry still looks as it did when stored.
+fn is_fresh(entry: &ProjectEntry, stamp_of: impl Fn(&Path) -> String) -> bool {
+    entry
+        .stamps
+        .iter()
+        .all(|(path, stamp)| stamp_of(Path::new(path)) == *stamp)
 }
 
 /// A plugin's finding as the report's, without a fix: the project phase
@@ -518,5 +645,161 @@ mod tests {
         // A file argument is checked where it stands: the last argument wins.
         let files = vec![root.join("z.py"), root.join("sub/a.py")];
         assert_eq!(checked_last(files, &units).unwrap().display, "sub/a.py");
+    }
+
+    fn unit(name: &str) -> Unit {
+        Unit {
+            path: PathBuf::from(name),
+            display: name.to_owned(),
+            module: name.to_owned(),
+            is_package: false,
+            duplicates: true,
+        }
+    }
+
+    /// The inputs of a key, owned so a test can change one.
+    #[derive(Clone)]
+    struct Base {
+        py_version: Option<(u32, u32)>,
+        options: Vec<(String, String)>,
+        cyclic: bool,
+        duplicates: bool,
+        plugins: Vec<String>,
+        anchor: String,
+        roots: Vec<PathBuf>,
+        env: [String; 2],
+        hashes: Vec<String>,
+        enabled: Vec<BTreeSet<String>>,
+    }
+
+    impl Base {
+        fn new() -> Self {
+            Self {
+                py_version: Some((3, 14)),
+                options: Vec::new(),
+                cyclic: true,
+                duplicates: false,
+                plugins: Vec::new(),
+                anchor: "a.py".into(),
+                roots: vec![PathBuf::from("/r")],
+                env: [String::new(), String::new()],
+                hashes: vec!["h".into()],
+                enabled: vec![BTreeSet::from([IMPORT_ERROR.to_owned()])],
+            }
+        }
+
+        fn parts(&self) -> Vec<String> {
+            key_parts(&KeyInput {
+                py_version: self.py_version,
+                options: &self.options,
+                cyclic: self.cyclic,
+                duplicates: self.duplicates,
+                plugins: &self.plugins,
+                anchor: &self.anchor,
+                roots: &self.roots,
+                env: &self.env,
+                units: &[unit("a.py")],
+                hashes: &self.hashes,
+                enabled: &self.enabled,
+            })
+        }
+    }
+
+    #[test]
+    fn the_key_parts_are_stable_and_change_with_each_input() {
+        let base = Base::new();
+        assert_eq!(base.parts(), Base::new().parts());
+        let changes: [fn(&mut Base); 11] = [
+            |b| b.py_version = Some((3, 13)),
+            |b| b.options = vec![("k".into(), "v".into())],
+            |b| b.cyclic = false,
+            |b| b.duplicates = true,
+            |b| b.plugins = vec!["sha[]".into()],
+            |b| b.anchor = "b.py".into(),
+            |b| b.roots.clear(),
+            |b| b.env[0] = "/venv".into(),
+            |b| b.env[1] = "/pp".into(),
+            |b| b.hashes = vec!["g".into()],
+            |b| b.enabled = vec![BTreeSet::new()],
+        ];
+        for change in changes {
+            let mut other = base.clone();
+            change(&mut other);
+            assert_ne!(other.parts(), base.parts());
+        }
+    }
+
+    #[test]
+    fn a_plugin_is_enabled_when_it_checks_the_project_and_a_rule_is_on() {
+        let shapes = [
+            (true, vec!["X1"]),
+            (false, vec!["X2"]),
+            (true, vec!["X3", "X4"]),
+            (true, vec![]),
+        ];
+        assert_eq!(
+            enabled_plugins(&shapes, |code| code == "X4" || code == "X2"),
+            [2]
+        );
+        assert_eq!(enabled_plugins(&shapes, |_| false), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn an_entry_is_fresh_while_every_stamp_matches() {
+        let entry = ProjectEntry {
+            stamps: vec![("a".into(), "1".into()), ("b".into(), "2".into())],
+            findings: Vec::new(),
+        };
+        let stamp = |known: &'static str| {
+            move |p: &Path| {
+                if p == Path::new("b") {
+                    known.into()
+                } else {
+                    "1".into()
+                }
+            }
+        };
+        assert!(is_fresh(&entry, stamp("2")));
+        assert!(!is_fresh(&entry, stamp("3")));
+    }
+
+    #[test]
+    fn a_plugin_finding_is_kept_only_for_a_declared_code_enabled_for_the_file() {
+        use ferrolint_core::{RuleInfo, Severity};
+        let rule = |code: &str| RuleInfo {
+            code: code.into(),
+            name: code.into(),
+            severity: Severity::Warning,
+            summary: String::new(),
+            pylint_id: None,
+            pylint_symbol: None,
+            plugin: None,
+        };
+        let diagnostic = |code: &str| wit::Diagnostic {
+            code: code.into(),
+            message: "m".into(),
+            range: wit::Range {
+                start: wit::Position {
+                    offset: 0,
+                    line: 1,
+                    column: 1,
+                },
+                end: wit::Position {
+                    offset: 0,
+                    line: 1,
+                    column: 1,
+                },
+            },
+            severity: wit::Severity::Warning,
+            fix: None,
+        };
+        let units = [unit("a.py")];
+        let enabled = [BTreeSet::from(["X1".to_owned()])];
+        let rules = [rule("X1"), rule("X2")];
+        let at = |path, code| screen(&rules, &units, &enabled, path, diagnostic(code));
+        assert!(matches!(at("a.py", "X1"), Screen::Keep(d) if d.code == "X1"));
+        assert!(matches!(at("a.py", "X2"), Screen::Off));
+        assert!(matches!(at("elsewhere.py", "X1"), Screen::Off));
+        assert!(matches!(at("a.py", "Z9"), Screen::Undeclared(code) if code == "Z9"));
     }
 }
