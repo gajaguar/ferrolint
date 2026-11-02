@@ -866,7 +866,7 @@ dependencies = [
  "ruff_python_parser",
  "ruff_python_semantic",
  "ruff_python_stdlib",
- "ruff_text_size",
+ "ruff_text_size 0.0.20",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2366,7 +2366,7 @@ dependencies = [
  "ruff_python_parser",
  "ruff_python_trivia",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "salsa",
  "same-file",
@@ -2389,7 +2389,7 @@ source = "git+https://github.com/astral-sh/ruff.git?tag=0.17.1#4683270c69cbdaf6a
 dependencies = [
  "get-size2",
  "is-macro",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "serde",
 ]
 
@@ -2434,7 +2434,7 @@ dependencies = [
  "rand 0.10.3",
  "ruff_diagnostics",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2462,7 +2462,7 @@ dependencies = [
  "ruff_cache",
  "ruff_python_trivia",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "salsa",
  "serde",
@@ -2479,7 +2479,7 @@ dependencies = [
  "ruff_python_literal",
  "ruff_python_parser",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
 ]
 
 [[package]]
@@ -2489,7 +2489,7 @@ source = "git+https://github.com/astral-sh/ruff.git?tag=0.17.1#4683270c69cbdaf6a
 dependencies = [
  "ruff_python_ast",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
 ]
 
 [[package]]
@@ -2503,7 +2503,7 @@ dependencies = [
  "ruff_python_codegen",
  "ruff_python_trivia",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
 ]
 
 [[package]]
@@ -2531,7 +2531,7 @@ dependencies = [
  "memchr",
  "ruff_python_ast",
  "ruff_python_trivia",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "ruff_unicode_names2",
  "rustc-hash",
  "stacker",
@@ -2554,7 +2554,7 @@ dependencies = [
  "ruff_python_ast",
  "ruff_python_parser",
  "ruff_python_stdlib",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "smallvec",
 ]
@@ -2576,7 +2576,7 @@ dependencies = [
  "itertools 0.15.0",
  "memchr",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "unicode-ident",
  "unicode-normalization",
@@ -2590,7 +2590,7 @@ dependencies = [
  "get-size2",
  "ruff_db",
  "ruff_python_ast",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "serde",
  "toml",
 ]
@@ -2602,7 +2602,7 @@ source = "git+https://github.com/astral-sh/ruff.git?tag=0.17.1#4683270c69cbdaf6a
 dependencies = [
  "get-size2",
  "memchr",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "serde",
 ]
 
@@ -2614,6 +2614,11 @@ dependencies = [
  "get-size2",
  "serde",
 ]
+
+[[package]]
+name = "ruff_text_size"
+version = "0.0.20"
+source = "git+https://github.com/astral-sh/ruff.git?tag=0.17.3#ba65abf8ba7bfbcc059f7fb9712be5ba9cab6abc"
 
 [[package]]
 name = "ruff_unicode_names2"
@@ -3000,7 +3005,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys",
@@ -3229,7 +3234,7 @@ dependencies = [
  "ruff_options_metadata",
  "ruff_python_ast",
  "ruff_ranged_value",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "salsa",
  "serde",
@@ -3265,7 +3270,7 @@ dependencies = [
  "ruff_memory_usage",
  "ruff_python_ast",
  "ruff_python_parser",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "salsa",
  "serde",
@@ -3308,7 +3313,7 @@ dependencies = [
  "ruff_python_stdlib",
  "ruff_python_trivia",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "salsa",
  "serde",
@@ -3338,7 +3343,7 @@ dependencies = [
  "ruff_python_ast",
  "ruff_python_trivia",
  "ruff_source_file",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "strum",
  "strum_macros",
  "tracing",
