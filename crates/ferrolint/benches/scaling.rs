@@ -1,6 +1,8 @@
 //! How a run's time grows with the number of files: a cold run (no cache)
 //! and a warm one (cache filled), over trees of 50 to 400 files. A cold run
-//! should grow linearly; a bend upward is a quadratic step somewhere.
+//! should grow linearly; a bend upward is a quadratic step somewhere. Every
+//! file differs from the others: near-identical files make R0801 compare
+//! each pair, which is quadratic by itself.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -15,7 +17,10 @@ fn module(index: u64) -> String {
     for n in 0..20 {
         let _ = write!(
             source,
-            "def f{index}_{n}(a, b):\n    value = a + b\n    return value\n\n"
+            "def f{index}_{n}(a, b):\n    value = a + {}\n    other = value * {}\n    return other - {}\n\n",
+            index * 1000 + n,
+            index * 7 + n,
+            index * 13 + n,
         );
     }
     source
