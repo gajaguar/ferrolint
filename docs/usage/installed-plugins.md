@@ -38,8 +38,9 @@ The contract 1.1.0 lets a plugin act on the host as well as report (see
 * `contributions` appends values to a host option. `good-names` keeps the
   default `i,j,k,ex,Run,_` and adds the plugin's names after it.
 * `augment.suppress` drops host findings of a file, by position.
-* `project.check-project` sees all the files of the run. Its findings are
-  cached with the project phase, keyed by the plugin's SHA-256 and options.
+* `project.check-project` sees all the files of the run, each with its AST;
+  a file that does not parse is left out. Its findings are cached with the
+  project phase, keyed by the plugin's SHA-256 and options.
 
-A `# pylint: disable` pragma is not applied to the findings of
-`check-project` yet.
+A `# pylint: disable` pragma in a file silences the findings of
+`check-project` about that file.

@@ -68,7 +68,7 @@ impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::augment::Guest 
 #[cfg(target_arch = "wasm32")]
 impl ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::project::Guest for Runaway {
     fn check_project(
-        _files: Vec<ferrolint_plugin_sdk::File>,
+        _files: Vec<(ferrolint_plugin_sdk::File, ferrolint_plugin_sdk::Ast)>,
     ) -> Vec<(String, ferrolint_plugin_sdk::RawDiagnostic)> {
         Vec::new()
     }

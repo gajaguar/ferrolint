@@ -4,7 +4,7 @@
 //!
 //! | Code   | Reports                                      |
 //! | :----- | :------------------------------------------- |
-//! | AUG001 | the number of files, on the first file       |
+//! | AUG001 | the number of files and the first's nodes     |
 
 use ferrolint_plugin_sdk::prelude::*;
 use ferrolint_plugin_sdk::{File, Position, Range, RawDiagnostic};
@@ -34,7 +34,7 @@ impl Checker for Augment {
             .collect()
     }
 
-    fn check_project(files: &[File]) -> Vec<(String, Diagnostic)> {
+    fn check_project(files: &[(&File, Vec<Node<'_>>)]) -> Vec<(String, Diagnostic)> {
         let start = Position {
             offset: 0,
             line: 1,
@@ -42,8 +42,8 @@ impl Checker for Augment {
         };
         files
             .first()
-            .map(|file| {
-                let message = format!("{} files", files.len());
+            .map(|(file, nodes)| {
+                let message = format!("{} files, {} nodes in the first", files.len(), nodes.len());
                 let range = Range { start, end: start };
                 (file.path.clone(), Diagnostic::new("AUG001", message, range))
             })

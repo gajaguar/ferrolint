@@ -94,7 +94,7 @@ pub trait Checker: Default {
     /// Check all the files of the run together (1.1.0); each finding comes
     /// with the path of the file it is about. Called only for a plugin whose
     /// [`Info`] says [`Info::project_wide`].
-    fn check_project(_files: &[File]) -> Vec<(String, Diagnostic)> {
+    fn check_project(_files: &[(&File, Vec<Node<'_>>)]) -> Vec<(String, Diagnostic)> {
         Vec::new()
     }
 }
@@ -153,8 +153,14 @@ pub mod __export {
             .collect()
     }
 
-    pub fn check_project<C: Checker>(files: &[File]) -> Vec<(String, raw::Diagnostic)> {
-        C::check_project(files)
+    pub fn check_project<C: Checker>(
+        files: &[(File, crate::Ast)],
+    ) -> Vec<(String, raw::Diagnostic)> {
+        let nodes: Vec<(&File, Vec<crate::Node<'_>>)> = files
+            .iter()
+            .map(|(file, ast)| (file, crate::Node::decode(ast)))
+            .collect();
+        C::check_project(&nodes)
             .into_iter()
             .map(|(path, diagnostic)| (path, diagnostic.into_raw()))
             .collect()
@@ -196,7 +202,7 @@ macro_rules! export_checker {
 
             impl $crate::bindings::exports::ferrolint::plugin::project::Guest for Export {
                 fn check_project(
-                    files: ::std::vec::Vec<$crate::File>,
+                    files: ::std::vec::Vec<($crate::File, $crate::Ast)>,
                 ) -> ::std::vec::Vec<(
                     ::std::string::String,
                     $crate::bindings::exports::ferrolint::plugin::checker::Diagnostic,

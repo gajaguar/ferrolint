@@ -9,7 +9,7 @@
 //! and file read while resolving imports (a package installed, a module
 //! added or edited anywhere on the search path changes a stamp).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -18,6 +18,7 @@ use ferrolint_core::{Finding, Registry};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
+use crate::ast::flatten;
 use crate::cache::{self, Cache, ProjectEntry};
 use crate::engine::{aborted, hex};
 use crate::host::{Host, Outcome};
@@ -27,6 +28,7 @@ use crate::native::project_phase::{
     self, CYCLIC, DUPLICATE, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
 };
 use crate::selection::Selection;
+use crate::suppress::{self, Suppressions};
 use crate::wit;
 
 /// What the phase needs of the run.
@@ -282,16 +284,31 @@ fn plugin_findings(
     units: &[Unit],
     enabled: &[BTreeSet<String>],
 ) -> (Raw, bool) {
-    let files: Vec<wit::File> = units
-        .iter()
-        .filter_map(|unit| {
-            Some(wit::File {
+    // A file that does not parse is left out, as Pylint checks nothing in it.
+    let loaded: Vec<_> = units
+        .par_iter()
+        .map(|unit| {
+            let file = project_phase::load(&RealDisk, &unit.path)?;
+            let spans = suppress::spelled(&file.source, &file.parsed, &file.index);
+            let flat = flatten(&file.source, &file.index, file.parsed.syntax());
+            let wit_file = wit::File {
                 path: unit.display.clone(),
                 module: unit.module.clone(),
-                source: fs::read_to_string(&unit.path).ok()?,
+                source: file.source,
                 options: params.options.to_vec(),
-            })
+            };
+            Some((
+                (wit_file, flat.pack()),
+                Suppressions::resolve(&spans, params.registry),
+            ))
         })
+        .collect();
+    let files: Vec<(wit::File, wit::Ast)> =
+        loaded.iter().flatten().map(|(f, _)| f.clone()).collect();
+    let suppressions: HashMap<&str, &Suppressions> = loaded
+        .iter()
+        .flatten()
+        .map(|((file, _), s)| (file.path.as_str(), s))
         .collect();
     let anchor = units
         .first()
@@ -304,6 +321,11 @@ fn plugin_findings(
             Ok(found) => {
                 for (path, diagnostic) in found {
                     match screen(&plugin.rules, units, enabled, &path, diagnostic) {
+                        // A `# pylint: disable` in the file the finding is about.
+                        Screen::Keep(diagnostic)
+                            if suppressions
+                                .get(path.as_str())
+                                .is_some_and(|s| s.suppresses(&diagnostic)) => {}
                         Screen::Keep(diagnostic) => out.push((path, diagnostic)),
                         Screen::Undeclared(code) => {
                             let reason = format!("reported the undeclared code {code:?}");

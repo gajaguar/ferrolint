@@ -427,7 +427,7 @@ impl Host {
     pub fn check_project(
         &self,
         plugin: usize,
-        files: &[File],
+        files: &[(File, wit::Ast)],
     ) -> std::result::Result<Vec<(String, Diagnostic)>, Outcome> {
         let loaded = &self.plugins[plugin];
         let pre = self.pre(loaded).map_err(Outcome::Broken)?;

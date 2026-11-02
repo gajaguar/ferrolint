@@ -387,11 +387,14 @@ interface augment {
 
 /// A check over the files of the project together (1.1.0).
 interface project {
-    use types.{diagnostic, file};
+    use types.{ast, diagnostic, file};
 
     /// Check all the files of the run at once, for a rule that compares
-    /// them. Each finding comes with the `path` of the file it is about.
-    check-project: func(files: list<file>) -> list<tuple<string, diagnostic>>;
+    /// them. Each file comes with its AST, packed as `checker.check` gets
+    /// it; a file that does not parse is left out. Each finding comes with
+    /// the `path` of the file it is about. The semantic queries answer
+    /// nothing here: there is no current file.
+    check-project: func(files: list<tuple<file, ast>>) -> list<tuple<string, diagnostic>>;
 }
 
 /// World contract for a ferrolint plugin.

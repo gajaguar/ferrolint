@@ -522,6 +522,31 @@ fn a_plugin_checks_the_files_of_the_project_together() {
 }
 
 #[test]
+fn a_plugin_gets_the_ast_of_each_file_of_the_project() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-augment", "augment.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", "A = 1\n")
+        .write("b.py", "B = 2\n");
+    let report = project.run(&["--no-cache"]).finding_lines().join("\n");
+    // Module, assign, name and number: four nodes.
+    assert!(report.contains("2 files, 4 nodes in the first"), "{report}");
+}
+
+#[test]
+fn a_pragma_silences_a_project_plugin_finding() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-augment", "augment.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", "# pylint: disable=AUG001\nA = 1\n")
+        .write("b.py", "B = 2\n");
+    let report = project.run(&["--no-cache"]).finding_lines().join("\n");
+    assert!(!report.contains("AUG001"), "{report}");
+}
+
+#[test]
 fn an_installed_plugin_loads_when_load_plugins_names_it() {
     let project = Project::new();
     let site = project.join("venv/lib/python3.12/site-packages");
