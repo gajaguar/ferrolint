@@ -13,7 +13,7 @@ repository = "https://github.com/gajaguar/ferrolint"
 clap = { version = "4.5", features = ["derive"] }
 globset = "0.4"
 ignore = "0.4"
-jsonschema = { version = "0.59", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 rayon = "1.12"
 regex = "1"
 roxmltree = "0.21"
