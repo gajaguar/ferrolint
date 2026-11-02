@@ -33,13 +33,15 @@ use ruff_text_size::Ranged;
 use ferrolint_core::LineIndex;
 
 use super::classes::{bases, blocks, locals};
+use super::disk::{Disk, Entry, RealDisk};
+use super::environment::{environment, path_files, pythonpath};
 use super::flow::{no_return, own_returns};
 use super::project_phase::module_name;
 use crate::c_module_names;
 use crate::class_methods;
-use crate::project_run::stamp_of;
 
 pub struct Project {
+    disk: Rc<dyn Disk>,
     /// The directories modules are searched in, nearest first.
     roots: Vec<PathBuf>,
     /// The package of the linted file, for its relative imports.
@@ -177,15 +179,24 @@ impl Project {
     /// The name Pylint gives the module at `path`: from the run's root, so a
     /// directory without `__init__.py` above it is part of the name.
     pub fn named(path: &Path, module: &str, run: &[PathBuf]) -> String {
-        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        module_name(&real, run, true).unwrap_or_else(|| module.to_owned())
+        Self::named_on(&RealDisk, path, module, run)
+    }
+
+    fn named_on(disk: &dyn Disk, path: &Path, module: &str, run: &[PathBuf]) -> String {
+        let real = disk.canonicalize(path);
+        module_name(disk, &real, run, true).unwrap_or_else(|| module.to_owned())
     }
 
     pub fn new(path: &Path, module: &str, run: &[PathBuf]) -> Self {
+        Self::with_disk(Rc::new(RealDisk), path, module, run)
+    }
+
+    /// As [`Project::new`], on `disk`.
+    pub fn with_disk(disk: Rc<dyn Disk>, path: &Path, module: &str, run: &[PathBuf]) -> Self {
         let is_package = path.file_stem().is_some_and(|stem| stem == "__init__");
         // Pylint names the module from the run's root, so `.x` is found there
         // even when a directory above has no `__init__.py`.
-        let named = Self::named(path, module, run);
+        let named = Self::named_on(&*disk, path, module, run);
         let module = named.as_str();
         let package = if is_package {
             module.to_owned()
@@ -199,7 +210,7 @@ impl Project {
         // `collections.py` does not hide the standard library's.
         let mut roots: Vec<PathBuf> = path
             .parent()
-            .filter(|dir| !dir.join("__init__.py").is_file())
+            .filter(|dir| !disk.is_file(&dir.join("__init__.py")))
             .map(Path::to_path_buf)
             .into_iter()
             .collect();
@@ -209,7 +220,7 @@ impl Project {
                 .cloned()
                 .collect::<Vec<_>>(),
         );
-        Self::with(roots, package, false)
+        Self::with(disk, roots, package, false)
     }
 
     /// The test root: the directory above the top package of `module`.
@@ -224,8 +235,9 @@ impl Project {
             .collect()
     }
 
-    fn with(roots: Vec<PathBuf>, package: String, strict: bool) -> Self {
+    fn with(disk: Rc<dyn Disk>, roots: Vec<PathBuf>, package: String, strict: bool) -> Self {
         Self {
+            disk,
             roots,
             package,
             modules: RefCell::default(),
@@ -249,12 +261,7 @@ impl Project {
         extensions: Extensions,
         environment: Option<(PathBuf, Vec<PathBuf>)>,
     ) -> Self {
-        roots.extend(
-            std::env::var_os("PYTHONPATH")
-                .iter()
-                .flat_map(std::env::split_paths)
-                .filter(|dir| !dir.as_os_str().is_empty()),
-        );
+        roots.extend(pythonpath());
         let mut stdlib = None;
         if let Some((library, packages)) = environment {
             roots.push(library.clone());
@@ -264,7 +271,7 @@ impl Project {
                 roots.extend(path_files(&dir));
             }
         }
-        let mut project = Self::with(roots, String::new(), true);
+        let mut project = Self::with(Rc::new(RealDisk), roots, String::new(), true);
         project.linted = linted;
         project.stdlib = stdlib;
         project.extensions = extensions;
@@ -350,10 +357,10 @@ impl Project {
         self.roots.iter().find_map(|root| {
             let file = root.join(&relative).with_extension("py");
             let init = root.join(&relative).join("__init__.py");
-            if file.is_file() && self.exact_case(&file) {
+            if self.disk.is_file(&file) && self.exact_case(&file) {
                 Some((file, false))
             } else {
-                (init.is_file() && init.parent().is_some_and(|dir| self.exact_case(dir)))
+                (self.disk.is_file(&init) && init.parent().is_some_and(|dir| self.exact_case(dir)))
                     .then_some((init, true))
             }
         })
@@ -366,7 +373,7 @@ impl Project {
             return None;
         }
         self.touch(file.clone());
-        read_module(&file, name, is_package)
+        read_module(&*self.disk, &file, name, is_package)
     }
 
     /// What `module.name` stands for when the module binds `name` by `name = X`, also under `if`
@@ -497,7 +504,7 @@ impl Project {
         }
         // The path is in the stamp: a package may replace the module file.
         let stamp = self.locate(module).map_or_else(String::new, |(file, _)| {
-            format!("{}:{}", file.display(), stamp_of(&file))
+            format!("{}:{}", file.display(), self.disk.stamp(&file))
         });
         let key = (self.roots.clone(), qualified.to_owned());
         if let Some((known, answer)) = ANSWERS.lock().ok()?.get(&key)
@@ -619,15 +626,18 @@ impl Project {
         // The worker lists a directory once: a file builds a dozen projects.
         // shortcut: a directory that changes during the run is read as it
         // was at first; a run lasts seconds, the next one lists it again.
+        let shared = self.disk.shared();
         let listing = LISTED
-            .with(|listed| listed.borrow().get(dir).cloned())
+            .with(|listed| listed.borrow().get(dir).cloned().filter(|_| shared))
             .unwrap_or_else(|| {
-                let listing = Rc::new(list(dir));
-                LISTED.with(|listed| {
-                    listed
-                        .borrow_mut()
-                        .insert(dir.to_path_buf(), listing.clone())
-                });
+                let listing = Rc::new(list(&*self.disk, dir));
+                if shared {
+                    LISTED.with(|listed| {
+                        listed
+                            .borrow_mut()
+                            .insert(dir.to_path_buf(), listing.clone())
+                    });
+                }
                 listing
             });
         self.listings
@@ -835,6 +845,10 @@ impl Project {
         self.touched.borrow_mut().insert(path);
     }
 
+    pub fn disk(&self) -> &dyn Disk {
+        &*self.disk
+    }
+
     pub fn touched(&self) -> Vec<PathBuf> {
         self.touched.borrow().iter().cloned().collect()
     }
@@ -845,6 +859,7 @@ impl Project {
 /// `relative_to_absolute_name` computes it, quirks included; `None` when it
 /// climbs above the top.
 pub fn relative_name(
+    disk: &dyn Disk,
     module: &str,
     file: &Path,
     is_package: bool,
@@ -868,10 +883,8 @@ pub fn relative_name(
             level -= 1;
             cut(level)
         } else if file.parent().is_some_and(|dir| {
-            !dir.join("__init__.py").exists()
-                && dir
-                    .join(import_name.split('.').next().unwrap_or_default())
-                    .exists()
+            !disk.exists(&dir.join("__init__.py"))
+                && disk.exists(&dir.join(import_name.split('.').next().unwrap_or_default()))
         }) {
             level -= 1;
             String::new()
@@ -1599,18 +1612,9 @@ fn find_class<'m>(body: &'m [Stmt], name: &str) -> Option<&'m StmtClassDef> {
 }
 
 /// What the directory `dir` holds, read from disk.
-fn list(dir: &Path) -> Listing {
+fn list(disk: &dyn Disk, dir: &Path) -> Listing {
     let mut listing = Listing::default();
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        // `file_type` comes with the entry; only a link needs a `stat`.
-        let is_dir = entry.file_type().is_ok_and(|kind| {
-            if kind.is_symlink() {
-                entry.path().is_dir()
-            } else {
-                kind.is_dir()
-            }
-        });
+    for Entry { name, is_dir } in disk.read_dir(dir) {
         if !is_dir
             && Path::new(&name)
                 .extension()
@@ -1625,7 +1629,7 @@ fn list(dir: &Path) -> Listing {
     let probe = listing.entries.keys().find(|n| n.to_uppercase() != **n);
     if probe.is_some_and(|n| {
         let upper = n.to_uppercase();
-        !listing.entries.contains_key(&upper) && dir.join(upper).exists()
+        !listing.entries.contains_key(&upper) && disk.exists(&dir.join(upper))
     }) {
         listing.folded = listing
             .entries
@@ -1664,8 +1668,11 @@ pub fn take_reads() -> Vec<PathBuf> {
 /// is on the source, not on the count of modules.
 const KEPT: u64 = 4 << 20;
 
-fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> {
-    let stamp = stamp_of(file);
+fn read_module(disk: &dyn Disk, file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> {
+    if !disk.shared() {
+        return parse_module(disk, file, name, is_package).map(Rc::new);
+    }
+    let stamp = disk.stamp(file);
     let key = (file.to_path_buf(), name.to_owned());
     let hit = PARSED.with(|kept| {
         kept.borrow()
@@ -1676,10 +1683,10 @@ fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> 
     if let Some(module) = hit {
         return module;
     }
-    let module = parse_module(file, name, is_package).map(Rc::new);
+    let module = parse_module(disk, file, name, is_package).map(Rc::new);
     PARSED.with(|kept| {
         let mut kept = kept.borrow_mut();
-        let size = std::fs::metadata(file).map_or(0, |meta| meta.len());
+        let size = disk.file_len(file);
         if WEIGHT.get() + size > KEPT {
             kept.clear();
             WEIGHT.set(0);
@@ -1690,8 +1697,8 @@ fn read_module(file: &Path, name: &str, is_package: bool) -> Option<Rc<Module>> 
     module
 }
 
-fn parse_module(file: &Path, name: &str, is_package: bool) -> Option<Module> {
-    let source = std::fs::read_to_string(file).ok()?;
+fn parse_module(disk: &dyn Disk, file: &Path, name: &str, is_package: bool) -> Option<Module> {
+    let source = disk.read_to_string(file)?;
     let parsed = crate::checks::parse(&source, ParseOptions::from(PySourceType::Python));
     if !parsed.errors().is_empty() {
         return None;
@@ -1736,96 +1743,6 @@ impl Project {
         };
         self.listing(dir).compiled.contains(stem)
     }
-}
-
-/// The standard library and the `site-packages` directories of the
-/// environment that `VIRTUAL_ENV` names.
-pub fn environment() -> Option<(PathBuf, Vec<PathBuf>)> {
-    let env = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from)?;
-    let library = stdlib(&env)?;
-    Some((library, packages_of(&env)))
-}
-
-/// The `site-packages` directories of the environment that `VIRTUAL_ENV`
-/// names, which need no standard library behind them.
-pub fn site_packages() -> Vec<PathBuf> {
-    std::env::var_os("VIRTUAL_ENV")
-        .map(|env| packages_of(Path::new(&env)))
-        .unwrap_or_default()
-}
-
-fn packages_of(env: &Path) -> Vec<PathBuf> {
-    // `lib/pythonX.Y/site-packages` on Unix, `Lib/site-packages` on Windows.
-    let unix = std::fs::read_dir(env.join("lib"))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path().join("site-packages"));
-    unix.chain([env.join("Lib").join("site-packages")])
-        .filter(|dir| dir.is_dir())
-        .collect()
-}
-
-/// The directories the `.pth` files of a `site-packages` directory add to
-/// the search path, in file order (`site.addpackage`).
-pub fn path_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().is_some_and(|e| e == "pth")
-                && !path
-                    .file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with('.'))
-        })
-        .collect();
-    files.sort();
-    files
-        .iter()
-        .filter_map(|file| std::fs::read_to_string(file).ok())
-        .flat_map(|text| {
-            text.lines()
-                .map(str::trim)
-                .filter(|line| {
-                    !line.is_empty() && !line.starts_with('#') && !line.starts_with("import")
-                })
-                .map(|line| dir.join(line))
-                .collect::<Vec<_>>()
-        })
-        .filter(|path| path.is_dir())
-        .collect()
-}
-
-/// The standard library of the interpreter that made the environment
-/// `env`, read from its `pyvenv.cfg`.
-fn stdlib(env: &Path) -> Option<PathBuf> {
-    let config = std::fs::read_to_string(env.join("pyvenv.cfg")).ok()?;
-    let home = config.lines().find_map(|line| {
-        let (key, value) = line.split_once('=')?;
-        (key.trim() == "base-prefix" || key.trim() == "home").then(|| value.trim().to_owned())
-    })?;
-    let home = PathBuf::from(home);
-    // `home` names the `bin` directory; `base-prefix` the one above it.
-    let prefix = if home.ends_with("bin") {
-        home.parent()?.to_path_buf()
-    } else {
-        home
-    };
-    let version = config.lines().find_map(|line| {
-        let (key, value) = line.split_once('=')?;
-        (key.trim() == "version" || key.trim() == "version_info").then(|| value.trim().to_owned())
-    })?;
-    let minor: Vec<&str> = version.split('.').take(2).collect();
-    [
-        prefix
-            .join("lib")
-            .join(format!("python{}", minor.join("."))),
-        prefix.join("Lib"),
-    ]
-    .into_iter()
-    .find(|dir| dir.join("os.py").is_file())
 }
 
 fn collect_imports(
@@ -1881,31 +1798,64 @@ fn collect_imports(
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+    use std::rc::Rc;
+
     use super::Project;
+    use crate::native::disk::MemDisk;
+
+    fn memory(files: &[(&str, &str)], file: &str, module: &str) -> Project {
+        Project::with_disk(
+            Rc::new(MemDisk::with(files)),
+            Path::new(file),
+            module,
+            &[PathBuf::from("/r")],
+        )
+    }
 
     #[test]
     fn a_function_annotated_no_return_is_found_again_from_another_file() {
-        let root = tempfile::tempdir().unwrap();
-        let write = |path: &str, text: &str| {
-            let path = root.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        };
-        write(
-            "lib/stop.py",
-            "def die() -> NoReturn:\n    raise SystemExit\n\n\ndef ok():\n    pass\n",
-        );
-        write("lib/a.py", "");
-        write("lib/b.py", "");
+        let files = [
+            (
+                "/r/lib/stop.py",
+                "def die() -> NoReturn:\n    raise SystemExit\n\n\ndef ok():\n    pass\n",
+            ),
+            ("/r/lib/a.py", ""),
+            ("/r/lib/b.py", ""),
+        ];
         for file in ["a", "b"] {
-            let project = Project::new(
-                &root.path().join(format!("lib/{file}.py")),
-                "lib.x",
-                &[root.path().to_path_buf()],
-            );
+            let project = memory(&files, &format!("/r/lib/{file}.py"), "lib.x");
             assert_eq!(project.never_returns("lib.stop.die"), Some(false));
             assert_eq!(project.never_returns("lib.stop.ok"), None);
         }
+    }
+
+    #[test]
+    fn a_module_is_found_under_the_roots_and_only_in_its_exact_case() {
+        let project = memory(
+            &[
+                ("/r/lib/a.py", ""),
+                ("/r/lib/pkg/__init__.py", ""),
+                ("/r/lib/iterTools.py", ""),
+            ],
+            "/r/lib/a.py",
+            "lib.a",
+        );
+        assert!(project.has_module("lib.pkg"));
+        assert!(project.has_module("lib.iterTools"));
+        assert!(!project.has_module("lib.itertools"));
+        assert!(!project.has_module("lib.missing"));
+    }
+
+    #[test]
+    fn a_module_that_does_not_parse_is_not_read() {
+        let project = memory(
+            &[("/r/lib/a.py", ""), ("/r/lib/bad.py", "def (:\n")],
+            "/r/lib/a.py",
+            "lib.a",
+        );
+        assert!(project.has_module("lib.bad"));
+        assert_eq!(project.never_returns("lib.bad.f"), None);
     }
 
     #[test]

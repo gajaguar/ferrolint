@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use ruff_python_parser::ParseOptions;
 
+use super::disk::{Disk, RealDisk};
 use super::duplicates::{LineSet, Settings};
 use super::imports_scan::{self, Import};
 use super::project::{Attr, Extensions, Project, Spec, relative_name};
@@ -187,9 +188,8 @@ pub struct Loaded {
     pub index: LineIndex,
 }
 
-pub fn load(path: &Path) -> Option<Loaded> {
-    let bytes = std::fs::read(path).ok()?;
-    let source = String::from_utf8(bytes).ok()?;
+pub fn load(disk: &dyn Disk, path: &Path) -> Option<Loaded> {
+    let source = disk.read_to_string(path)?;
     let options = ParseOptions::from(ruff_python_ast::PySourceType::Python)
         .with_target_version(ruff_python_ast::PythonVersion::latest());
     let parsed = crate::checks::parse(&source, options);
@@ -212,8 +212,8 @@ pub fn load(path: &Path) -> Option<Loaded> {
 }
 
 /// Parse a file and read its imports.
-pub fn prepare(path: &Path) -> Option<Prepared> {
-    let loaded = load(path)?;
+pub fn prepare(disk: &dyn Disk, path: &Path) -> Option<Prepared> {
+    let loaded = load(disk, path)?;
     Some(Prepared {
         imports: imports_scan::scan(&loaded.parsed.syntax().body, &loaded.source, &loaded.index),
         spans: suppress::spelled(&loaded.source, &loaded.parsed, &loaded.index),
@@ -222,7 +222,10 @@ pub fn prepare(path: &Path) -> Option<Prepared> {
 
 /// The files read in parallel.
 pub fn prepare_all(units: &[Unit]) -> Vec<Option<Prepared>> {
-    units.par_iter().map(|unit| prepare(&unit.path)).collect()
+    units
+        .par_iter()
+        .map(|unit| prepare(&RealDisk, &unit.path))
+        .collect()
 }
 
 /// Everything the phase found: the diagnostics of each file, by position in
@@ -380,6 +383,7 @@ impl File<'_> {
             return Ok(name.to_owned());
         }
         relative_name(
+            self.project.disk(),
             &self.unit.module,
             &self.unit.path,
             self.unit.is_package,
@@ -412,6 +416,7 @@ impl File<'_> {
             && *level > 0
             && module.is_empty()
             && relative_name(
+                self.project.disk(),
                 &self.unit.module,
                 &self.unit.path,
                 self.unit.is_package,
@@ -467,6 +472,7 @@ impl File<'_> {
                             module.clone()
                         } else {
                             relative_name(
+                                self.project.disk(),
                                 &self.unit.module,
                                 &self.unit.path,
                                 self.unit.is_package,
@@ -632,9 +638,9 @@ impl File<'_> {
 
 /// The root of the modules that an argument names: the directory above its
 /// top package, or the source root that holds it.
-pub fn package_root(argument: &Path, source_roots: &[PathBuf]) -> PathBuf {
-    let real = std::fs::canonicalize(argument).unwrap_or_else(|_| argument.to_path_buf());
-    let dir = if real.is_dir() {
+pub fn package_root(disk: &dyn Disk, argument: &Path, source_roots: &[PathBuf]) -> PathBuf {
+    let real = disk.canonicalize(argument);
+    let dir = if disk.is_dir(&real) {
         real
     } else {
         real.parent().map(Path::to_path_buf).unwrap_or(real)
@@ -645,7 +651,7 @@ pub fn package_root(argument: &Path, source_roots: &[PathBuf]) -> PathBuf {
         }
     }
     let mut dir = dir;
-    while dir.join("__init__.py").exists() {
+    while disk.exists(&dir.join("__init__.py")) {
         match dir.parent() {
             Some(parent) => dir = parent.to_path_buf(),
             None => break,
@@ -656,7 +662,12 @@ pub fn package_root(argument: &Path, source_roots: &[PathBuf]) -> PathBuf {
 
 /// A file's module name relative to `bases`, the first that holds it and
 /// whose directories down to the file are packages (or all are accepted).
-pub fn module_name(path: &Path, bases: &[PathBuf], namespace: bool) -> Option<String> {
+pub fn module_name(
+    disk: &dyn Disk,
+    path: &Path,
+    bases: &[PathBuf],
+    namespace: bool,
+) -> Option<String> {
     for base in bases {
         let Ok(relative) = path.strip_prefix(base) else {
             continue;
@@ -669,7 +680,7 @@ pub fn module_name(path: &Path, bases: &[PathBuf], namespace: bool) -> Option<St
         let mut dir = base.clone();
         let packages = parts.iter().all(|part| {
             dir.push(part);
-            dir.join("__init__.py").exists()
+            disk.exists(&dir.join("__init__.py"))
         });
         if !packages && !namespace {
             continue;
@@ -703,7 +714,7 @@ pub fn duplicates(units: &[Unit], opts: &Opts, registry: &Registry) -> Vec<Diagn
         .par_iter()
         .filter(|unit| unit.duplicates)
         .filter_map(|unit| {
-            let loaded = load(&unit.path)?;
+            let loaded = load(&RealDisk, &unit.path)?;
             let spans = suppress::spelled(&loaded.source, &loaded.parsed, &loaded.index);
             let suppressions = Suppressions::resolve(&spans, registry);
             let disabled = |line: u32| {
@@ -745,6 +756,7 @@ pub fn cycle_diagnostic(cycle: &str) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::disk::MemDisk;
     use crate::selection::Selection;
 
     fn write(root: &Path, files: &[(&str, &str)]) {
@@ -770,7 +782,7 @@ mod tests {
                     .unwrap()
                     .to_string_lossy()
                     .into_owned(),
-                module: module_name(path, &[root.to_path_buf()], true).unwrap(),
+                module: module_name(&RealDisk, path, &[root.to_path_buf()], true).unwrap(),
                 is_package: path.file_name().is_some_and(|n| n == "__init__.py"),
                 duplicates: true,
             })
@@ -819,6 +831,63 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn a_module_is_named_from_the_packages_down_to_its_file() {
+        let disk = MemDisk::with(&[
+            ("/r/pkg/__init__.py", ""),
+            ("/r/pkg/sub/__init__.py", ""),
+            ("/r/pkg/sub/mod.py", ""),
+            ("/r/loose/x.py", ""),
+        ]);
+        let bases = [PathBuf::from("/r")];
+        let name = |file: &str, namespace| module_name(&disk, Path::new(file), &bases, namespace);
+        assert_eq!(
+            name("/r/pkg/sub/mod.py", false).as_deref(),
+            Some("pkg.sub.mod")
+        );
+        assert_eq!(
+            name("/r/pkg/sub/__init__.py", false).as_deref(),
+            Some("pkg.sub")
+        );
+        assert_eq!(name("/r/loose/x.py", false), None);
+        assert_eq!(name("/r/loose/x.py", true).as_deref(), Some("loose.x"));
+        assert_eq!(name("/elsewhere/y.py", true), None);
+    }
+
+    #[test]
+    fn the_root_of_an_argument_is_above_its_top_package() {
+        let disk = MemDisk::with(&[("/r/pkg/__init__.py", ""), ("/r/pkg/m.py", "")]);
+        let root = |arg: &str, sources: &[&str]| {
+            let sources: Vec<PathBuf> = sources.iter().map(PathBuf::from).collect();
+            package_root(&disk, Path::new(arg), &sources)
+        };
+        assert_eq!(root("/r/pkg/m.py", &[]), PathBuf::from("/r"));
+        assert_eq!(root("/r/pkg", &[]), PathBuf::from("/r"));
+        assert_eq!(
+            root("/r/pkg/m.py", &["/src", "/r/pkg"]),
+            PathBuf::from("/r/pkg")
+        );
+    }
+
+    #[test]
+    fn a_relative_name_counts_the_dots_from_the_package() {
+        let disk = MemDisk::default();
+        let name = |module, package, import, level| {
+            relative_name(
+                &disk,
+                module,
+                Path::new("/r/a/b.py"),
+                package,
+                import,
+                level,
+            )
+        };
+        assert_eq!(name("a.b", false, "c", 1).as_deref(), Some("a.c"));
+        assert_eq!(name("a", true, "c", 1).as_deref(), Some("a.c"));
+        assert_eq!(name("a.b", false, "", 1).as_deref(), Some("a"));
+        assert_eq!(name("b", false, "c", 2), None);
     }
 
     fn codes(found: &[(String, u32, String, String)]) -> Vec<String> {

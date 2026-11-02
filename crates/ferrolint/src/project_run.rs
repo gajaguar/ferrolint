@@ -22,6 +22,7 @@ use crate::cache::{self, Cache, ProjectEntry};
 use crate::engine::{aborted, hex};
 use crate::host::{Host, Outcome};
 use crate::native::Project;
+use crate::native::disk::RealDisk;
 use crate::native::project_phase::{
     self, CYCLIC, DUPLICATE, IMPORT_ERROR, NO_NAME, Opts, RELATIVE_BEYOND_TOP, Unit,
 };
@@ -366,7 +367,7 @@ pub fn roots(cwd: &Path, paths: &[PathBuf], opts: &Opts) -> Vec<PathBuf> {
     let sources = source_roots(cwd, opts);
     let mut roots: Vec<PathBuf> = Vec::new();
     for argument in arguments(cwd, paths) {
-        let root = project_phase::package_root(&argument, &sources);
+        let root = project_phase::package_root(&RealDisk, &argument, &sources);
         if !roots.contains(&root) {
             roots.push(root);
         }
@@ -407,7 +408,7 @@ fn units(
         .into_iter()
         .map(|argument| {
             let real = fs::canonicalize(&argument).unwrap_or(argument);
-            let root = project_phase::package_root(&real, &sources);
+            let root = project_phase::package_root(&RealDisk, &real, &sources);
             let namespace = real.is_dir() && !real.join("__init__.py").exists();
             (real, root, namespace)
         })
@@ -432,8 +433,8 @@ fn units(
             );
             bases.push(cwd.clone());
             let namespace = owner.is_some_and(|(_, _, namespace)| *namespace);
-            let module =
-                project_phase::module_name(&real, &bases, namespace).unwrap_or_else(|| {
+            let module = project_phase::module_name(&RealDisk, &real, &bases, namespace)
+                .unwrap_or_else(|| {
                     real.file_stem()
                         .map(|stem| stem.to_string_lossy().into_owned())
                         .unwrap_or_default()
