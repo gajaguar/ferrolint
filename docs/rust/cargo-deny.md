@@ -8,8 +8,8 @@ status: stable
 
 # cargo-deny
 
-`make deny`, part of `make check`, runs `cargo deny --locked check` against
-`deny.toml`: RustSec advisories, the license allow-list, banned crates and
+`make deny`, part of `make check`, runs `cargo deny --locked check -A advisory-not-detected`
+against `deny.toml`: RustSec advisories, the license allow-list, banned crates and
 duplicate versions, and the sources dependencies may come from. Only the
 settings that differ from cargo-deny's default are in `deny.toml`: the
 licenses allowed, and `deny` for an unknown registry or git source.
@@ -22,8 +22,9 @@ too. Four crates get a license exception by name (`colored`, `notify`,
 `option-ext`, `version-ranges`: MPL-2.0 and CC0-1.0), not a global allowance.
 Six advisories on `zip`, `zstd` and `zstd-safe` are ignored with a reason in
 `deny.toml`: they have no patched release, and ty reads only its embedded
-typeshed archive, never extracting one. Without the feature, `cargo deny`
-warns that those entries went unused.
+typeshed archive, never extracting one. Without the feature those entries match
+no crate, so `make deny` passes `-A advisory-not-detected` to keep the
+unused-entry warning out of its output; `deny.toml` has no key for that.
 
 ## Why cargo install
 

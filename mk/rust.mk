@@ -38,7 +38,7 @@ fmt-check: ## Check formatting with rustfmt, without writing — accepts FILES="
 	$(CARGO) fmt --check -- $(FILES)
 
 deny: ## Check dependencies for advisories, licenses and sources with cargo-deny
-	$(CARGO) deny --locked check
+	$(CARGO) deny --locked check -A advisory-not-detected
 
 sdk-package: ## Package the plugin SDK as crates.io would, to catch a file outside the crate
 	$(CARGO) package --locked -p ferrolint-plugin-sdk --allow-dirty
