@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-11-03
+
+* **cargo-deny, cargo-deny.md**: `make deny` allows the
+  `advisory-not-detected` lint, since the `ty` ignores match nothing in the
+  default graph.
+
 ## 2026-11-01
 
 * **Clippy lints, clippy-lints.md**: `cognitive_complexity` joins the warned
