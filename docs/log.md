@@ -2,6 +2,9 @@
 
 ## 2026-11-03
 
+* **Release builds, release-builds.md**: the `crates` job publishes the SDK
+  through crates.io Trusted Publishing instead of an API token, and a missed
+  version is published by starting the workflow by hand.
 * **cargo-deny, cargo-deny.md**: `make deny` allows the
   `advisory-not-detected` lint, since the `ty` ignores match nothing in the
   default graph.
