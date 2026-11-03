@@ -1282,7 +1282,7 @@ mod tests {
     };
     use crate::selection::Selection;
 
-    /// A plugin rule that takes a docparams msg-id, as `pylint-gajaguar` does.
+    /// A plugin rule that takes a docparams msg-id as its code.
     fn gaj006() -> RuleInfo {
         RuleInfo {
             code: "GAJ006".into(),
