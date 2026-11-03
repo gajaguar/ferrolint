@@ -131,14 +131,16 @@ that `cargo package` can build it; `make sdk-package` runs in `make check` to
 keep it so.
 
 The `crates` job of the release workflow runs on the same Release as `publish`,
-in the `crates-io` environment, and publishes the SDK with the environment
-secret `CARGO_REGISTRY_TOKEN`, a crates.io API token. It skips the version
-crates.io already has, so a Release that does not change the SDK does nothing
-there.
+in the `crates-io` environment, and publishes the SDK through crates.io Trusted
+Publishing: `rust-lang/crates-io-auth-action` trades the job's OIDC token
+(`id-token: write`) for a short-lived crates.io token, so no secret is stored.
+It skips the version crates.io already has, so a Release that does not change
+the SDK does nothing there.
 
-Scope the token to the `publish-update` permission and to the
-`ferrolint-plugin-sdk` crate once the crate exists: the first publish (by hand
-or by this job) needs `publish-new`, and the crate does not exist before it.
-crates.io Trusted Publishing, which replaces the secret with a short-lived
-token, only appears in a crate's settings after its first publish; switch to it
-then with `rust-lang/crates-io-auth-action` and `id-token: write`.
+crates.io refuses an API token for a crate that has a trusted publisher
+(`403: ... can only be published using Trusted Publishing`, seen on the v1.1.0
+Release). In the crate's settings on crates.io the publisher is owner
+`gajaguar`, repository `ferrolint`, workflow `release.yml` and environment
+`crates-io`. To publish a version the Release missed, start the `release`
+workflow by hand from the base branch (`gh workflow run release.yml`); only its
+`crates` job publishes anything then.
