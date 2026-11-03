@@ -1,4 +1,4 @@
-//! Class rules: `E0211` no-method-argument, `C0203` bad-mcs-method-argument,
+//! Class rules: `E0211` no-method-argument, `E0213` no-self-argument, `C0203` bad-mcs-method-argument,
 //! `C0204` bad-mcs-classmethod-argument, `W0213` implicit-flag-alias and
 //! `R0904` too-many-public-methods. The helpers at the top also serve the
 //! slots, special-method and call rules.
@@ -16,6 +16,7 @@ use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
 
 const NO_ARGUMENT: &str = "E0211";
+const NO_SELF: &str = "E0213";
 const MCS_METHOD: &str = "C0203";
 const MCS_CLASSMETHOD: &str = "C0204";
 const FLAG_ALIAS: &str = "W0213";
@@ -570,6 +571,25 @@ pub fn is_static(func: &StmtFunctionDef) -> bool {
         .any(|d| is_builtin(d, "staticmethod"))
 }
 
+/// The enum classes of the standard library and of Django's `models`.
+fn is_enum_class(qualified: &str) -> bool {
+    matches!(
+        qualified,
+        "enum.Enum"
+            | "enum.IntEnum"
+            | "enum.StrEnum"
+            | "enum.Flag"
+            | "enum.IntFlag"
+            | "enum.ReprEnum"
+            | "django.db.models.Choices"
+            | "django.db.models.TextChoices"
+            | "django.db.models.IntegerChoices"
+            | "django.db.models.enums.Choices"
+            | "django.db.models.enums.TextChoices"
+            | "django.db.models.enums.IntegerChoices"
+    )
+}
+
 pub fn is_classmethod(func: &StmtFunctionDef) -> bool {
     matches!(
         func.name.as_str(),
@@ -589,6 +609,11 @@ impl Checker for Classes {
                 NO_ARGUMENT,
                 "no-method-argument",
                 "A method with no argument for the bound instance.",
+            ),
+            rule(
+                NO_SELF,
+                "no-self-argument",
+                "A method whose first argument is not `self`.",
             ),
             rule(
                 MCS_METHOD,
@@ -616,6 +641,7 @@ impl Checker for Classes {
     fn check(&self, ctx: &Ctx<'_>, enabled: &BTreeSet<String>, out: &mut Vec<Diagnostic>) {
         let ours = [
             NO_ARGUMENT,
+            NO_SELF,
             MCS_METHOD,
             MCS_CLASSMETHOD,
             FLAG_ALIAS,
@@ -673,7 +699,7 @@ impl<'a> Walk<'a, '_> {
     }
 
     fn class(&mut self, class: &'a StmtClassDef) {
-        if [NO_ARGUMENT, MCS_METHOD, MCS_CLASSMETHOD]
+        if [NO_ARGUMENT, NO_SELF, MCS_METHOD, MCS_CLASSMETHOD]
             .iter()
             .any(|id| self.on(id))
         {
@@ -725,14 +751,25 @@ impl<'a> Walk<'a, '_> {
             }
             return;
         }
-        if !self.is_metaclass(class) {
-            return;
-        }
         let first = p
             .posonlyargs
             .first()
             .or(p.args.first())
             .map(|arg| arg.parameter.name.as_str());
+        if !self.is_metaclass(class) {
+            // A class method's first argument is `bad-classmethod-argument`'s.
+            if self.on(NO_SELF) && !is_classmethod(method) && first != Some("self") {
+                self.out.push(ctx.report_at(
+                    NO_SELF,
+                    Self::name_range(method),
+                    format!(
+                        "Method {} should have \"self\" as first argument",
+                        py_repr(name)
+                    ),
+                ));
+            }
+            return;
+        }
         let (id, key, default, what) = if is_classmethod(method) {
             (
                 MCS_CLASSMETHOD,
@@ -769,11 +806,16 @@ impl<'a> Walk<'a, '_> {
             .unwrap_or(20);
         // Pylint counts the first binding of each name in the class.
         let mut seen = HashSet::new();
-        let count = locals(&class.body)
+        let own = locals(&class.body)
             .into_iter()
             .filter(|(name, _)| seen.insert(name.clone()))
             .filter(|(name, kind)| *kind == Local::Function && !name.starts_with('_'))
             .count();
+        // astroid gives every enum class one public method of its own.
+        let enum_method = bases(class)
+            .iter()
+            .any(|base| self.env.base_is(base, &is_enum_class));
+        let count = own + usize::from(enum_method);
         if count > max {
             self.out.push(ctx.report_at(
                 PUBLIC_METHODS,
@@ -954,6 +996,13 @@ mod tests {
         let source = include_str!("fixtures/method_without_argument.py");
         let expected = include_str!("fixtures/method_without_argument.expected").trim_end();
         assert_eq!(render(source, &[], &["E0211"]), expected);
+    }
+
+    #[test]
+    fn method_without_self() {
+        let source = include_str!("fixtures/method_without_self.py");
+        let expected = include_str!("fixtures/method_without_self.expected").trim_end();
+        assert_eq!(render(source, &[], &["E0213"]), expected);
     }
 
     #[test]

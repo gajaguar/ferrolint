@@ -1110,8 +1110,19 @@ impl<'a> Walk<'a, '_> {
             | Expr::EllipsisLiteral(_)
             | Expr::StringLiteral(_)
             | Expr::BytesLiteral(_)
-            | Expr::NumberLiteral(_)
-            | Expr::FString(_) => Val::Const,
+            | Expr::NumberLiteral(_) => Val::Const,
+            // astroid infers an f-string only when every value it holds is a constant.
+            Expr::FString(f) => {
+                if f.value
+                    .f_strings()
+                    .flat_map(|s| s.elements.interpolations())
+                    .all(|i| self.val(&i.expression, depth + 1) == Val::Const)
+                {
+                    Val::Const
+                } else {
+                    Val::Unknown
+                }
+            }
             Expr::UnaryOp(u)
                 if matches!(
                     u.op,
@@ -1637,9 +1648,11 @@ impl<'a> Walk<'a, '_> {
         let unknown = binds.iter().any(|b| match b.kind {
             Bk::Name | Bk::Foreign => b.value.is_none_or(|v| self.val_at(v) == Val::Unknown),
             Bk::FromImport => true,
-            // astroid cannot infer `+=` of a display that holds a `*starred`.
+            // astroid cannot infer `+=` of a display that holds a `*starred`, nor any
+            // augmented assignment of a set or a dict.
             Bk::Aug => {
                 instance
+                    || matches!(value, Expr::Set(_) | Expr::Dict(_))
                     || b.value.is_some_and(|v| match v {
                         Expr::Tuple(t) => t.elts.iter().any(Expr::is_starred_expr),
                         Expr::List(l) => l.elts.iter().any(Expr::is_starred_expr),
@@ -2152,7 +2165,7 @@ fn is_class_var(annotation: &Expr) -> bool {
 
 /// The attributes of `sys` and `os` that astroid infers to a constant, whatever the platform
 /// (`os.name` is left out: a comparison of it is not inferred).
-const HOST_CONSTS: [&str; 24] = [
+const HOST_CONSTS: [&str; 25] = [
     "sys.maxsize",
     "sys.maxunicode",
     "sys.byteorder",
@@ -2168,6 +2181,7 @@ const HOST_CONSTS: [&str; 24] = [
     "sys.pycache_prefix",
     "sys.dont_write_bytecode",
     "sys.float_repr_style",
+    "os.name",
     "os.sep",
     "os.linesep",
     "os.pathsep",
@@ -2657,6 +2671,7 @@ mod tests {
     fixture!(module_level_names, "names_module", []);
     fixture!(typing_values, "names_typing", []);
     fixture!(inferred_values, "names_values", []);
+    fixture!(uninferable_values, "names_uninferable", []);
     fixture!(flow_around_module_names, "names_flow", []);
     fixture!(function_class_and_comprehension_names, "names_scopes", []);
     fixture!(class_members_and_properties, "names_classes", []);

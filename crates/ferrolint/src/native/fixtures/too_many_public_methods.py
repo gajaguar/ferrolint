@@ -54,3 +54,48 @@ class C:
     class Inner:
         def f(self):
             pass
+
+
+import enum
+from django.db import models
+
+
+class EnumEmpty(enum.Enum):
+    X = 1
+
+
+class EnumOne(enum.Enum):
+    X = 1
+
+    def a(self):
+        pass
+
+
+class EnumTwo(enum.StrEnum):
+    X = "x"
+
+    def a(self):
+        pass
+
+    def b(self):
+        pass
+
+
+class EnumMixin(str, enum.Enum):
+    X = "x"
+
+    def a(self):
+        pass
+
+    def b(self):
+        pass
+
+
+class Choices(models.TextChoices):
+    X = "x"
+
+    def a(self):
+        pass
+
+    def b(self):
+        pass
