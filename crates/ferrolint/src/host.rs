@@ -213,6 +213,27 @@ impl wit::ferrolint::plugin::modules::Host for State {
     }
 }
 
+impl wit::ferrolint::plugin::classes::Host for State {
+    fn class_of(
+        &mut self,
+        _node: u32,
+    ) -> wasmtime::Result<Option<wit::ferrolint::plugin::classes::ClassRef>> {
+        Ok(None)
+    }
+
+    fn ancestors(&mut self, _class: String) -> wasmtime::Result<Option<Vec<String>>> {
+        Ok(None)
+    }
+
+    fn member_owner(
+        &mut self,
+        _class: String,
+        _member: String,
+    ) -> wasmtime::Result<Option<Option<String>>> {
+        Ok(None)
+    }
+}
+
 impl wit::ferrolint::plugin::settings::Host for State {
     fn plugin_options(&mut self) -> wasmtime::Result<Vec<(String, String)>> {
         Ok(self.options.clone())
