@@ -74,7 +74,8 @@ pub fn class_of(
 }
 
 /// What ty infers for the expression at `range`, when the engine above gave up.
-/// shortcut: a class, a function, a method or a module only; ty names no more outside its crate.
+/// shortcut: a class, a function, a method or a module only, as the contract's `inferred.name` allows; the
+/// `classes` queries of contract 1.2 do not ask ty, which named no class the host missed on a Django codebase.
 #[cfg(feature = "ty")]
 pub fn from_ty(
     types: &crate::ty::Types,

@@ -84,6 +84,10 @@ of 1.2 still loads a plugin built against 1.1, which imports nothing of it.
   binds the member; a bare annotation (`x: int`) does not bind it.
 * Both read the classes from disk (the project, the standard library and the
   installed packages), so an unsaved edit of the linted file is not seen.
+* `class-of` does not ask ty. On a Django codebase (3523 files,
+  `django-stubs` installed) the host resolved no `.delay(...)`, `.apply_async(...)`
+  or `bulk_create(...)` receiver and 3 of 575 `.update(...)` receivers to a project
+  class, and ty named none of the others a class (`dict`, `module`, `function`).
 * `class-of` knows a module-level class, a call of one, a builtin or a literal
   of a builtin type, and an imported class; a nested class gives none.
 

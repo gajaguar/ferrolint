@@ -208,8 +208,8 @@ packages (none on a Django codebase) sit in classes whose bases the host
 reads, or whose base ty types as a union or `Unknown`, so naming the class
 through ty closes none. `W0125`, `W0143`, `C1803` and `E0701` are not
 completed either: on the same packages every line only Pylint reports was an
-attribute that ty types as `Unknown` or a union, and outside its crate ty
-exposes no class hierarchy for `E0701`.
+attribute that ty types as `Unknown` or a union, and ferrolint reads no
+class hierarchy from ty for `E0701`: the host builds it itself.
 
 ## Why ty does not share the host's tree
 
