@@ -2,8 +2,8 @@
 
 use std::cell::OnceCell;
 
-use crate::bindings::ferrolint::plugin::semantic;
-use crate::{Binding, Diagnostic, File, Inferred, Node, NodeKind, Origin, Range, Scope};
+use crate::bindings::ferrolint::plugin::{classes, semantic};
+use crate::{Binding, ClassRef, Diagnostic, File, Inferred, Node, NodeKind, Origin, Range, Scope};
 
 /// The scope and binding queries the host answers about the current file.
 /// Plugins use the host's answers; a native test can supply its own.
@@ -51,6 +51,34 @@ pub trait Semantic {
     fn all_names(&self) -> Option<Vec<String>> {
         None
     }
+    /// The class the expression at `node` is, or is an instance of, or none
+    /// when it is not one concrete class. A native test that does not care
+    /// answers that it is not.
+    fn class_of(&self, _node: u32) -> Option<ClassRef> {
+        None
+    }
+    /// The MRO of the class `class` names, the class first, or none when the
+    /// host cannot tell. A native test that does not care answers that it
+    /// cannot.
+    fn ancestors(&self, _class: &str) -> Option<Vec<String>> {
+        None
+    }
+    /// Who binds `member` in the MRO of `class`. A native test that does not
+    /// care answers that it cannot tell.
+    fn member_owner(&self, _class: &str, _member: &str) -> Owner {
+        Owner::Unknown
+    }
+}
+
+/// Who binds a member of a class, by the contract's `classes` interface.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Owner {
+    /// The host cannot tell: the MRO of the class is unknown.
+    Unknown,
+    /// No class of the MRO binds it.
+    Nobody,
+    /// The first class of the MRO that does, by qualified name.
+    Class(String),
 }
 
 /// A comment of the file: its range and its text, `#` included.
@@ -103,6 +131,22 @@ impl Semantic for HostSemantic {
 
     fn all_names(&self) -> Option<Vec<String>> {
         crate::bindings::ferrolint::plugin::modules::all_names()
+    }
+
+    fn class_of(&self, node: u32) -> Option<ClassRef> {
+        classes::class_of(node)
+    }
+
+    fn ancestors(&self, class: &str) -> Option<Vec<String>> {
+        classes::ancestors(class)
+    }
+
+    fn member_owner(&self, class: &str, member: &str) -> Owner {
+        match classes::member_owner(class, member) {
+            None => Owner::Unknown,
+            Some(None) => Owner::Nobody,
+            Some(Some(owner)) => Owner::Class(owner),
+        }
     }
 }
 
@@ -259,6 +303,25 @@ impl<'a> Context<'a> {
         self.semantic.all_names()
     }
 
+    /// The class the expression at `node` is, or is an instance of, by
+    /// qualified name; none unless the host follows it to one concrete class
+    /// (see the contract's `classes` interface).
+    pub fn class_of(&self, node: &Node<'_>) -> Option<ClassRef> {
+        self.semantic.class_of(node.id)
+    }
+
+    /// The MRO of the class `class` names (`app.models.Device`), the class
+    /// first, or none when a base cannot be read. Not [`Context::ancestors`],
+    /// which walks the nodes above a node.
+    pub fn class_ancestors(&self, class: &str) -> Option<Vec<String>> {
+        self.semantic.ancestors(class)
+    }
+
+    /// The first class of the MRO of `class` whose body binds `member`.
+    pub fn member_owner(&self, class: &str, member: &str) -> Owner {
+        self.semantic.member_owner(class, member)
+    }
+
     /// The host's best-effort type of the expression at `node`; check
     /// `resolved` before trusting it.
     pub fn infer(&self, node: &Node<'_>) -> Inferred {
@@ -344,6 +407,16 @@ mod tests {
         fn plugin_options(&self) -> Vec<(String, String)> {
             vec![("markers".into(), "a,b".into())]
         }
+        fn ancestors(&self, class: &str) -> Option<Vec<String>> {
+            (class == "a.C").then(|| vec!["a.C".into(), "a.Base".into()])
+        }
+        fn member_owner(&self, class: &str, _member: &str) -> Owner {
+            if class == "a.C" {
+                Owner::Class("a.Base".into())
+            } else {
+                Owner::Unknown
+            }
+        }
     }
 
     fn file() -> File {
@@ -373,5 +446,15 @@ mod tests {
         assert_eq!(cx.plugin_option("shared"), None);
         assert_eq!(cx.option("shared"), Some("1"));
         assert_eq!(cx.option("markers"), None);
+    }
+
+    #[test]
+    fn the_class_queries_reach_the_host_answers() {
+        let (file, semantic) = (file(), Fake);
+        let cx = Context::new(&file, &[], &semantic);
+        assert_eq!(cx.class_ancestors("a.C").unwrap(), ["a.C", "a.Base"]);
+        assert_eq!(cx.class_ancestors("a.Gone"), None);
+        assert_eq!(cx.member_owner("a.C", "x"), Owner::Class("a.Base".into()));
+        assert_eq!(cx.member_owner("a.Gone", "x"), Owner::Unknown);
     }
 }

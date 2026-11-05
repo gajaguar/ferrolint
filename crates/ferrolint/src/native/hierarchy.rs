@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use ruff_python_ast::{Decorator, Expr, StmtClassDef};
 use ruff_text_size::TextSize;
 
-use super::classes::{Env, bases};
+use super::classes::{Env, Local, bases, locals};
 use super::project::{ClassRef, Project};
 use crate::class_methods;
 use crate::wit::BindingKind;
@@ -265,20 +265,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                         })
                 })
                 .collect(),
-            Class::Remote(remote) => remote
-                .bases(&self.project)
-                .into_iter()
-                .map(|base| match base {
-                    Ok(base) => Entry::Class(Class::Remote(base)),
-                    Err(name) if name == "object" => Entry::Object,
-                    Err(name) if EMPTY_BASES.contains(&name.as_str()) => Entry::Empty,
-                    // A builtin base is not modelled, and is not unknown either.
-                    Err(name) if !name.contains('.') && class_methods::methods(&name).is_some() => {
-                        Entry::Builtin
-                    }
-                    Err(_) => Entry::Unknown,
-                })
-                .collect(),
+            Class::Remote(remote) => remote_entries(&self.project, remote, false),
         }
     }
 
@@ -406,6 +393,96 @@ impl<'a> Hierarchy<'a, '_> {
     }
 }
 
+/// The bases of a class of the project as written, each as the MRO reads it.
+/// With `exact`, a base that names nothing is `Unknown` instead of left out.
+fn remote_entries(project: &Project, remote: &ClassRef, exact: bool) -> Vec<Entry<'static>> {
+    let bases = if exact {
+        remote.bases_exact(project)
+    } else {
+        remote.bases(project)
+    };
+    bases
+        .into_iter()
+        .map(|base| match base {
+            Ok(base) => Entry::Class(Class::Remote(base)),
+            Err(name) if name == "object" => Entry::Object,
+            Err(name) if EMPTY_BASES.contains(&name.as_str()) => Entry::Empty,
+            // A builtin base is not modelled, and is not unknown either.
+            Err(name) if !name.contains('.') && class_methods::methods(&name).is_some() => {
+                Entry::Builtin
+            }
+            Err(_) => Entry::Unknown,
+        })
+        .collect()
+}
+
+/// The MRO of the class `qualified` names (`pkg.module.Class`), the class
+/// first, by qualified name; `object` and the builtin bases are left out.
+/// `None` when the project does not hold the class, a base cannot be read or
+/// the bases cannot be merged.
+///
+/// shortcut: no cache, so a deep hierarchy is merged again on every call;
+/// upgrade by sharing `Hierarchy`'s cache when a plugin asks a lot.
+pub fn ancestors(project: &Project, qualified: &str) -> Option<Vec<String>> {
+    let class = project.class(qualified)?;
+    let mro = remote_mro(project, &class, 0)?;
+    Some(mro.iter().map(Class::key).collect())
+}
+
+/// Who binds a member of a class.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Owner {
+    /// The MRO is unknown, as for [`ancestors`].
+    Unknown,
+    /// No class of the MRO binds it (`object`, which the MRO leaves out, may).
+    Nobody,
+    /// The first class of the MRO that does, by qualified name.
+    Class(String),
+}
+
+/// The first class of the MRO of `qualified` whose body binds `member`. A
+/// bare annotation (`member: int`) binds nothing.
+pub fn member_owner(project: &Project, qualified: &str, member: &str) -> Owner {
+    let Some(mro) = project
+        .class(qualified)
+        .and_then(|class| remote_mro(project, &class, 0))
+    else {
+        return Owner::Unknown;
+    };
+    let binds = |class: &Class<'_>| {
+        class.def().is_some_and(|def| {
+            locals(&def.body)
+                .iter()
+                .any(|(name, kind)| name == member && !matches!(kind, Local::Bare))
+        })
+    };
+    mro.iter()
+        .find(|class| binds(class))
+        .map_or(Owner::Nobody, |class| Owner::Class(class.key()))
+}
+
+fn remote_mro(project: &Project, class: &ClassRef, depth: u8) -> Option<Vec<Class<'static>>> {
+    if depth >= 32 {
+        return None;
+    }
+    let bases = remote_entries(project, class, true)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Entry::Class(Class::Remote(base)) => Some(Some(base)),
+            Entry::Unknown => Some(None),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut seqs = bases
+        .iter()
+        .map(|base| remote_mro(project, base, depth + 1))
+        .collect::<Option<Vec<_>>>()?;
+    seqs.push(bases.into_iter().map(Class::Remote).collect());
+    let mut out = vec![Class::Remote(class.clone())];
+    out.extend(merge(seqs)?);
+    Some(out)
+}
+
 /// Python's MRO merge of the bases' linearizations; `None` when they
 /// disagree, as for `class A(B, B)`.
 fn merge(mut seqs: Vec<Vec<Class<'_>>>) -> Option<Vec<Class<'_>>> {
@@ -433,6 +510,7 @@ fn merge(mut seqs: Vec<Vec<Class<'_>>>) -> Option<Vec<Class<'_>>> {
 #[cfg(test)]
 mod tests {
     use super::super::classes::render_at;
+    use super::Owner;
 
     /// Lints `pkg/main.py` of a project made of `files`.
     fn run(files: &[(&str, &str)], ids: &[&str]) -> String {
@@ -690,5 +768,130 @@ mod tests {
             ),
             "6:W0201:Attribute 'b' defined outside __init__"
         );
+    }
+
+    /// The MRO of `qualified` in a project made of `files`, with `site/` as
+    /// a second root standing for the installed packages.
+    fn mro(files: &[(&str, &str)], qualified: &str) -> Option<Vec<String>> {
+        on(files, |project| super::ancestors(project, qualified))
+    }
+
+    fn member_owner(files: &[(&str, &str)], qualified: &str, member: &str) -> Owner {
+        on(files, |project| {
+            super::member_owner(project, qualified, member)
+        })
+    }
+
+    fn on<T>(files: &[(&str, &str)], ask: impl FnOnce(&super::Project) -> T) -> T {
+        let root = tempfile::tempdir().unwrap();
+        for (path, text) in files {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let main = root.path().join("pkg/main.py");
+        let roots = [root.path().to_path_buf(), root.path().join("site")];
+        ask(&super::Project::new(&main, "pkg.main", &roots))
+    }
+
+    const BASE: [(&str, &str); 2] = [("pkg/__init__.py", ""), ("pkg/main.py", "")];
+
+    fn with(extra: &[(&'static str, &'static str)]) -> Vec<(&'static str, &'static str)> {
+        BASE.iter().chain(extra).copied().collect()
+    }
+
+    #[test]
+    fn ancestors_follow_the_project_bases_and_their_mixins() {
+        let files = with(&[(
+            "pkg/a.py",
+            "class A: ...\nclass M: ...\nclass B(A): ...\nclass C(B, M): ...\n",
+        )]);
+        assert_eq!(
+            mro(&files, "pkg.a.C").unwrap(),
+            ["pkg.a.C", "pkg.a.B", "pkg.a.A", "pkg.a.M"]
+        );
+    }
+
+    #[test]
+    fn ancestors_read_a_base_of_the_installed_packages() {
+        let files = with(&[
+            ("site/lib/__init__.py", ""),
+            ("site/lib/base.py", "class Base: ...\n"),
+            (
+                "pkg/a.py",
+                "from lib.base import Base\nclass V(Base): ...\n",
+            ),
+        ]);
+        assert_eq!(
+            mro(&files, "pkg.a.V").unwrap(),
+            ["pkg.a.V", "lib.base.Base"]
+        );
+    }
+
+    #[test]
+    fn ancestors_leave_out_object_and_the_builtin_bases() {
+        let files = with(&[("pkg/a.py", "class B(dict): ...\nclass C(object): ...\n")]);
+        assert_eq!(mro(&files, "pkg.a.B").unwrap(), ["pkg.a.B"]);
+        assert_eq!(mro(&files, "pkg.a.C").unwrap(), ["pkg.a.C"]);
+    }
+
+    #[test]
+    fn ancestors_are_unknown_when_a_base_cannot_be_read() {
+        let files = with(&[(
+            "pkg/a.py",
+            "from nowhere import X\nclass B(X): ...\nclass C(B): ...\n",
+        )]);
+        assert_eq!(mro(&files, "pkg.a.B"), None);
+        assert_eq!(mro(&files, "pkg.a.C"), None);
+    }
+
+    #[test]
+    fn ancestors_are_unknown_when_a_base_names_nothing() {
+        // An undefined name and a call may stand for any class, as astroid
+        // cannot infer them: the other bases are not all of them.
+        let files = with(&[(
+            "pkg/a.py",
+            "class A: ...\nclass B(A, Gone): ...\nclass C(make()): ...\n",
+        )]);
+        assert_eq!(mro(&files, "pkg.a.B"), None);
+        assert_eq!(mro(&files, "pkg.a.C"), None);
+    }
+
+    #[test]
+    fn ancestors_are_unknown_for_a_class_the_project_does_not_hold() {
+        assert_eq!(mro(&with(&[]), "pkg.a.Gone"), None);
+    }
+
+    #[test]
+    fn the_member_owner_is_the_first_class_of_the_mro_that_binds_it() {
+        let files = with(&[(
+            "pkg/a.py",
+            "class A:\n    perm = 1\n    def run(self): ...\nclass M:\n    perm = 2\nclass B(A, M):\n    pass\n",
+        )]);
+        let owner = |member| member_owner(&files, "pkg.a.B", member);
+        assert_eq!(owner("perm"), Owner::Class("pkg.a.A".to_owned()));
+        assert_eq!(owner("run"), Owner::Class("pkg.a.A".to_owned()));
+        assert_eq!(owner("absent"), Owner::Nobody);
+    }
+
+    #[test]
+    fn a_bare_annotation_does_not_own_the_member() {
+        let files = with(&[(
+            "pkg/a.py",
+            "class A:\n    perm = 1\nclass B(A):\n    perm: int\n",
+        )]);
+        assert_eq!(
+            member_owner(&files, "pkg.a.B", "perm"),
+            Owner::Class("pkg.a.A".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_member_owner_is_unknown_when_a_base_cannot_be_read() {
+        let files = with(&[(
+            "pkg/a.py",
+            "from nowhere import X\nclass B(X):\n    perm = 1\n",
+        )]);
+        assert_eq!(member_owner(&files, "pkg.a.B", "perm"), Owner::Unknown);
     }
 }

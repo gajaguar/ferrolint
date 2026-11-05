@@ -10,6 +10,9 @@
 //! | PRB004 | each function definition, with a fix                       |
 //! | PRB005 | each class definition, without a fix                       |
 //! | PRB006 | the value of the `probe` option, when the config sets it   |
+//! | PRB007 | the class each name load is, or is an instance of          |
+//! | PRB008 | the MRO of each class defined at the module level          |
+//! | PRB009 | which class of that MRO binds a member called `perm`       |
 
 // The struct is only reachable through the WASM export.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -20,6 +23,7 @@ use ferrolint_plugin_sdk::Node;
 use ferrolint_plugin_sdk::bindings::exports::ferrolint::plugin::checker::{
     Ast, Diagnostic, File, Guest, PluginInfo,
 };
+use ferrolint_plugin_sdk::bindings::ferrolint::plugin::classes::{self, ClassRef};
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::semantic::{self, Binding};
 use ferrolint_plugin_sdk::bindings::ferrolint::plugin::types::{
     ExprContext, Fix, NodeKind, Position, Range, Rule, Severity,
@@ -76,6 +80,38 @@ fn describe(binding: &Binding) -> String {
     out
 }
 
+/// What the `classes` queries answer for a name load (PRB007) and for a class
+/// defined at the module level (PRB008, PRB009).
+fn class_findings(node: &Node<'_>, module: &str) -> Vec<Diagnostic> {
+    let name = node.name.unwrap_or_default();
+    let info = |code, message| diagnostic(code, message, node.range, Severity::Info);
+    match node.kind {
+        NodeKind::Name if node.context == ExprContext::Load => {
+            let class = match classes::class_of(node.id) {
+                Some(ClassRef::Class(class)) => format!("class {class}"),
+                Some(ClassRef::Instance(class)) => format!("instance of {class}"),
+                None => "unknown".to_owned(),
+            };
+            vec![info("PRB007", format!("{name} is {class}"))]
+        }
+        NodeKind::ClassDef if node.parent == Some(0) => {
+            let class = format!("{module}.{name}");
+            let mro = classes::ancestors(&class)
+                .map_or_else(|| "unknown".to_owned(), |mro| mro.join(" "));
+            let owner = match classes::member_owner(&class, "perm") {
+                None => "unknown".to_owned(),
+                Some(None) => "nobody".to_owned(),
+                Some(Some(owner)) => owner,
+            };
+            vec![
+                info("PRB008", format!("mro of {name}: {mro}")),
+                info("PRB009", format!("owner of perm in {name}: {owner}")),
+            ]
+        }
+        _ => Vec::new(),
+    }
+}
+
 struct Events {
     diagnostics: Vec<Diagnostic>,
     sequence: u32,
@@ -105,6 +141,9 @@ impl Guest for Probe {
                 rule("PRB004", "A function definition.", Severity::Warning),
                 rule("PRB005", "A class definition.", Severity::Error),
                 rule("PRB006", "The `probe` option.", Severity::Info),
+                rule("PRB007", "The class a name is.", Severity::Info),
+                rule("PRB008", "The MRO of a class.", Severity::Info),
+                rule("PRB009", "The owner of a member.", Severity::Info),
             ],
         }
     }
@@ -154,6 +193,7 @@ impl Guest for Probe {
             ));
         }
         for node in &nodes {
+            diagnostics.extend(class_findings(node, &file.module));
             let name = node.name.unwrap_or_default().to_owned();
             match node.kind {
                 NodeKind::Name if node.context == ExprContext::Load => {

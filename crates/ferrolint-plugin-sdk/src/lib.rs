@@ -32,10 +32,11 @@
 mod context;
 mod model;
 
-pub use context::{Comment, Context, Semantic};
+pub use context::{Comment, Context, Owner, Semantic};
 pub use model::{Diagnostic, Fix, Info, Node, Rule};
 
 /// The contract's data types, as the host sends them.
+pub use bindings::ferrolint::plugin::classes::ClassRef;
 pub use bindings::ferrolint::plugin::inference::{Inferred, Origin};
 pub use bindings::ferrolint::plugin::semantic::{Binding, BindingKind, Scope, ScopeKind};
 pub use bindings::ferrolint::plugin::types::{
@@ -45,9 +46,9 @@ pub use bindings::ferrolint::plugin::types::{
 /// Everything a checker needs, for a glob import.
 pub mod prelude {
     pub use crate::{
-        Binding, BindingKind, Checker, Comment, Context, Diagnostic, ExprContext, File, Fix,
-        Inferred, Info, Node, NodeKind, Origin, Position, Range, Rule, Scope, ScopeKind, Severity,
-        export_checker,
+        Binding, BindingKind, Checker, ClassRef, Comment, Context, Diagnostic, ExprContext, File,
+        Fix, Inferred, Info, Node, NodeKind, Origin, Owner, Position, Range, Rule, Scope,
+        ScopeKind, Severity, export_checker,
     };
 }
 

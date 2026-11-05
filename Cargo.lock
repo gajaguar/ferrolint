@@ -929,7 +929,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "ferrolint"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "clap",
  "criterion",
@@ -960,126 +960,126 @@ dependencies = [
 
 [[package]]
 name = "ferrolint-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ferrolint-plugin-bare-except"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-global-statement"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-not-callable"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-pointless-statement"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-redefined-builtin"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-sdk"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "ferrolint-plugin-self-assigning-variable"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-singleton-comparison"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-undefined-variable"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unnecessary-pass"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unused-import"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-plugin-unused-variable"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-augment"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-markers"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-probe"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-runaway"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]
 
 [[package]]
 name = "ferrolint-test-sandbox"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "ferrolint-plugin-sdk",
 ]

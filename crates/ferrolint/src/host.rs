@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -23,6 +23,7 @@ use wasmtime_wasi::{
 use crate::ast::Flat;
 use crate::cache::{Cache, PluginMeta};
 use crate::error::{Error, Result};
+use crate::native;
 use crate::semantic::Model;
 use crate::wit::ferrolint::plugin::inference::Inferred;
 use crate::wit::{self, Binding, Diagnostic, File, Plugin, PluginPre, Scope};
@@ -56,11 +57,24 @@ pub struct FileData {
     pub overridden: HashMap<u32, Vec<String>>,
     /// The names the module's `__all__` lists, for the `modules` query.
     pub all_names: Option<Vec<String>>,
-    /// The type engine and the file's path, for the inference queries ty completes.
+    /// The file's path, module name and the run's roots, for the `classes`
+    /// queries, which read the project's classes from disk.
+    pub path: PathBuf,
+    pub module: String,
+    pub roots: Vec<PathBuf>,
+    /// What the `classes` queries answered for this file, so a class asked
+    /// twice is read once.
+    pub classes: Mutex<Classes>,
+    /// The type engine, for the inference queries ty completes.
     #[cfg(feature = "ty")]
     pub types: Option<Arc<crate::ty::Types>>,
-    #[cfg(feature = "ty")]
-    pub path: std::path::PathBuf,
+}
+
+/// The answers of the `classes` queries for one file.
+#[derive(Default)]
+pub struct Classes {
+    ancestors: HashMap<String, Option<Vec<String>>>,
+    owners: HashMap<(String, String), native::Owner>,
 }
 
 /// Per-store host state.
@@ -210,6 +224,85 @@ impl wit::ferrolint::plugin::modules::Host for State {
 
     fn all_names(&mut self) -> wasmtime::Result<Option<Vec<String>>> {
         Ok(self.file()?.all_names.clone())
+    }
+}
+
+impl FileData {
+    /// A project over the file's roots and the installed packages.
+    ///
+    /// shortcut: one project per uncached query, which reads the modules
+    /// again; keep it for the file if a plugin asks about many classes.
+    fn project(&self) -> native::Project {
+        native::Project::with_packages(&self.path, &self.module, &self.roots)
+    }
+}
+
+impl wit::ferrolint::plugin::classes::Host for State {
+    fn class_of(
+        &mut self,
+        node: u32,
+    ) -> wasmtime::Result<Option<wit::ferrolint::plugin::classes::ClassRef>> {
+        let file = self.check_node(node)?;
+        let module = native::Project::named(&file.path, &file.module, &file.roots);
+        Ok(crate::infer::class_of(
+            &file.flat,
+            &file.model,
+            &file.source,
+            node,
+            &module,
+            &file.project(),
+        ))
+    }
+
+    fn ancestors(&mut self, class: String) -> wasmtime::Result<Option<Vec<String>>> {
+        let file = self.file()?;
+        let cached = file
+            .classes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .ancestors
+            .get(&class)
+            .cloned();
+        if let Some(found) = cached {
+            return Ok(found);
+        }
+        let found = native::ancestors(&file.project(), &class);
+        file.classes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .ancestors
+            .insert(class, found.clone());
+        Ok(found)
+    }
+
+    fn member_owner(
+        &mut self,
+        class: String,
+        member: String,
+    ) -> wasmtime::Result<Option<Option<String>>> {
+        let file = self.file()?;
+        let key = (class, member);
+        let cached = file
+            .classes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .owners
+            .get(&key)
+            .cloned();
+        let owner = cached.unwrap_or_else(|| {
+            let owner = native::member_owner(&file.project(), &key.0, &key.1);
+            file.classes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .owners
+                .insert(key, owner.clone());
+            owner
+        });
+        Ok(match owner {
+            native::Owner::Unknown => None,
+            native::Owner::Nobody => Some(None),
+            native::Owner::Class(name) => Some(Some(name)),
+        })
     }
 }
 

@@ -47,6 +47,7 @@ mod misc;
 pub use misc::GOOD_NAMES;
 mod names;
 mod overrides;
+pub use hierarchy::{Owner, ancestors, member_owner};
 pub use overrides::overridden_parameters;
 pub mod disk;
 mod environment;

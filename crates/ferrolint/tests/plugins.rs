@@ -416,12 +416,12 @@ fn unused_import_takes_the_first_package_of_a_dotted_import_in_a_function_for_th
     );
 }
 
-/// The unused-import component with every `@1.1.0` interface name spelled
+/// The unused-import component with every `@1.2.0` interface name spelled
 /// with `version` instead, as a build against that contract names them;
 /// the strings have one length, so the binary stays valid.
 fn respelled_plugin(version: [u8; 6]) -> Vec<u8> {
     let mut bytes = support::plugin_bytes("ferrolint-plugin-unused-import");
-    let (prefix, current) = (b"ferrolint:plugin/", b"@1.1.0");
+    let (prefix, current) = (b"ferrolint:plugin/", b"@1.2.0");
     let mut rewritten = 0;
     for start in 0..bytes.len() {
         if bytes[start..].starts_with(prefix)
@@ -454,13 +454,22 @@ fn lint_with(bytes: &[u8]) -> support::Run {
 
 #[test]
 fn a_plugin_built_against_an_older_contract_is_refused() {
-    // 1.1.0 is another major from the 0.x series, so it refuses every
+    // 1.2.0 is another major from the 0.x series, so it refuses every
     // build against them.
     for version in [*b"@0.2.1", *b"@0.3.1", *b"@0.4.3"] {
         let run = lint_with(&respelled_plugin(version));
         assert_eq!(run.code, 2, "{run:?}");
         assert!(run.stderr.contains("ferrolint:plugin"), "{run:?}");
     }
+}
+
+#[test]
+fn a_plugin_built_against_contract_1_1_still_loads() {
+    // 1.2.0 only adds the `classes` interface, which this plugin never
+    // imports, so a build against 1.1.0 names the other interfaces @1.1.0.
+    let run = lint_with(&respelled_plugin(*b"@1.1.0"));
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("Unused import os"), "{run:?}");
 }
 
 /// The report lines of `case.py` linted with the augment test plugin.

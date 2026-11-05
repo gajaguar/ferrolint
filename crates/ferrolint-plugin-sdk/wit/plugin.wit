@@ -1,4 +1,4 @@
-package ferrolint:plugin@1.1.0;
+package ferrolint:plugin@1.2.0;
 
 /// Data shared by the host and the plugin.
 interface types {
@@ -363,6 +363,31 @@ interface modules {
     all-names: func() -> option<list<string>>;
 }
 
+/// Classes and ancestors, by qualified name (1.2.0). Only ferrolint's own
+/// vocabulary crosses: no type of the type checker reaches a plugin, so an
+/// upgrade of it may turn a `none` into an answer, never change this
+/// interface. A plugin stays silent on `none`.
+interface classes {
+    variant class-ref {
+        /// The expression is the class itself: `type[m.C]`.
+        class(string),
+        /// The expression is an instance of the class.
+        instance(string),
+    }
+
+    /// The class the expression at `node` is, or is an instance of, by
+    /// qualified name (`app.models.Device`). None when not one concrete class.
+    class-of: func(node: u32) -> option<class-ref>;
+
+    /// The MRO of a class, by qualified name, the class first. None when
+    /// a base cannot be read.
+    ancestors: func(class: string) -> option<list<string>>;
+
+    /// The first class of the MRO of `class` whose body binds `member`.
+    /// None when the MRO is unknown; some(none) when no class binds it.
+    member-owner: func(class: string, member: string) -> option<option<string>>;
+}
+
 /// The plugin's exports.
 interface checker {
     use types.{ast, diagnostic, file, plugin-info};
@@ -405,6 +430,7 @@ world plugin {
     import comments;
     import settings;
     import modules;
+    import classes;
     export checker;
     export augment;
     export project;

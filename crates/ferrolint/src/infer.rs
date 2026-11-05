@@ -8,7 +8,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::{Flat, FlatNode};
+use crate::native::Project;
 use crate::semantic::Model;
+use crate::wit::ferrolint::plugin::classes::ClassRef;
 use crate::wit::ferrolint::plugin::inference::{Inferred, Origin};
 use crate::wit::{BindingKind, ExprContext, NodeKind};
 
@@ -47,8 +49,33 @@ pub fn infer(flat: &Flat, model: &Model, source: &str, node: u32) -> Inferred {
     .infer(node, DEPTH)
 }
 
+/// The class the expression at `node` is, or is an instance of, by qualified
+/// name: `module` is the name of the linted file, `project` finds the classes
+/// it imports. `None` unless the engine follows it to one class.
+///
+/// shortcut: a class of this file at module level, an imported name and a
+/// call of either; no `m.C` attribute and no class a function returns,
+/// upgrade with the type engine.
+pub fn class_of(
+    flat: &Flat,
+    model: &Model,
+    source: &str,
+    node: u32,
+    module: &str,
+    project: &Project,
+) -> Option<ClassRef> {
+    Engine {
+        flat,
+        model,
+        source,
+        memo: RefCell::new(HashMap::new()),
+    }
+    .class_of(node, module, project)
+}
+
 /// What ty infers for the expression at `range`, when the engine above gave up.
-/// shortcut: a class, a function, a method or a module only; ty names no more outside its crate.
+/// shortcut: a class, a function, a method or a module only, as the contract's `inferred.name` allows; the
+/// `classes` queries of contract 1.2 do not ask ty, which named no class the host missed on a Django codebase.
 #[cfg(feature = "ty")]
 pub fn from_ty(
     types: &crate::ty::Types,
@@ -348,6 +375,37 @@ impl Engine<'_> {
 }
 
 impl Engine<'_> {
+    fn class_of(&self, id: u32, module: &str, project: &Project) -> Option<ClassRef> {
+        // `C(...)` is an instance of `C`, also when `C` is imported.
+        if self.node(id)?.kind == NodeKind::Call {
+            let callee = *self.children(id).first()?;
+            return match self.class_of(callee, module, project)? {
+                ClassRef::Class(class) => Some(ClassRef::Instance(class)),
+                ClassRef::Instance(_) => None,
+            };
+        }
+        let answer = self.infer(id, DEPTH);
+        match (answer.origin, answer.resolved) {
+            (Origin::ClassDef(def), true) => {
+                // A class nested in another scope has no name from the module.
+                let name = class_name(&answer.name)?;
+                (self.node(def)?.parent == Some(0))
+                    .then(|| ClassRef::Class(format!("{module}.{name}")))
+            }
+            (Origin::Builtin(name), true) if class_name(&answer.name).is_some() => {
+                Some(ClassRef::Class(format!("builtins.{name}")))
+            }
+            (Origin::Literal, true) if BUILTIN_TYPES.contains(&answer.name.as_str()) => {
+                Some(ClassRef::Instance(format!("builtins.{}", answer.name)))
+            }
+            (Origin::CallReturn(call), true) => self.class_of(call, module, project),
+            (Origin::Import(origin), false) => project
+                .class(&project.absolute(&origin))
+                .map(|found| ClassRef::Class(found.qname())),
+            _ => None,
+        }
+    }
+
     /// A function neither `async` (a call returns a coroutine) nor
     /// decorated (a decorator may return anything).
     fn plain_function(&self, function: u32) -> bool {
@@ -360,6 +418,11 @@ impl Engine<'_> {
                     .is_some_and(|node| node.kind == NodeKind::Decorator)
             })
     }
+}
+
+/// `Widget` for the type `type[Widget]` of the class itself.
+fn class_name(name: &str) -> Option<&str> {
+    name.strip_prefix("type[")?.strip_suffix(']')
 }
 
 /// The type a number literal's text spells.
@@ -493,5 +556,119 @@ mod tests {
         assert_eq!(answer("y", "os.getcwd").as_deref(), Some("function"));
         assert_eq!(answer("z", "os").as_deref(), Some("module"));
         assert_eq!(answer("n", "1"), None);
+    }
+
+    /// The class of the first node `pick` takes in `main`, a file of a
+    /// project made of `files` besides it.
+    fn class_of_node(
+        files: &[(&str, &str)],
+        main: &str,
+        pick: impl Fn(&Flat, usize) -> bool,
+    ) -> Option<ClassRef> {
+        let root = tempfile::tempdir().unwrap();
+        for (path, text) in files.iter().chain(&[("pkg/main.py", main)]) {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let path = root.path().join("pkg/main.py");
+        let parsed = ruff_python_parser::parse_module(main).unwrap();
+        let index = LineIndex::new(main);
+        let flat = flatten(main, &index, parsed.syntax());
+        let model = Model::build(parsed.syntax(), &flat.nodes, main, &index, None);
+        let node = flat
+            .nodes
+            .iter()
+            .enumerate()
+            .position(|(id, _)| pick(&flat, id))
+            .map(|id| u32::try_from(id).unwrap())
+            .unwrap();
+        let roots = [root.path().to_path_buf()];
+        let project = Project::new(&path, "pkg.main", &roots);
+        class_of(&flat, &model, main, node, "pkg.main", &project)
+    }
+
+    /// The class of the `nth` load of `name`.
+    fn class_of_name(
+        files: &[(&str, &str)],
+        main: &str,
+        name: &str,
+        nth: usize,
+    ) -> Option<ClassRef> {
+        let seen = std::cell::Cell::new(0);
+        class_of_node(files, main, |flat, id| {
+            let node = &flat.nodes[id];
+            let hit = node.kind == NodeKind::Name
+                && node.context == ExprContext::Load
+                && flat.string(node.name) == Some(name);
+            let found = hit && seen.get() == nth;
+            seen.set(seen.get() + usize::from(hit));
+            found
+        })
+    }
+
+    const PKG: [(&str, &str); 2] = [("pkg/__init__.py", ""), ("pkg/a.py", "class Remote: ...\n")];
+
+    #[test]
+    fn a_class_of_the_file_is_the_class_and_its_call_an_instance() {
+        let main = "class Widget: ...\nw = Widget()\nprint(Widget, w)\n";
+        let class = |nth| class_of_name(&PKG, main, "Widget", nth);
+        assert_eq!(class(1), Some(ClassRef::Class("pkg.main.Widget".into())));
+        assert_eq!(
+            class_of_name(&PKG, main, "w", 0),
+            Some(ClassRef::Instance("pkg.main.Widget".into()))
+        );
+    }
+
+    #[test]
+    fn an_imported_class_is_named_where_the_project_defines_it() {
+        let main = "from pkg.a import Remote\nr = Remote()\nprint(Remote, r)\n";
+        assert_eq!(
+            class_of_name(&PKG, main, "Remote", 1),
+            Some(ClassRef::Class("pkg.a.Remote".into()))
+        );
+        // `r` follows the assignment to a call the engine cannot resolve.
+        assert_eq!(class_of_name(&PKG, main, "r", 0), None);
+    }
+
+    #[test]
+    fn a_call_of_an_imported_class_is_an_instance() {
+        let main = "from pkg.a import Remote\nprint(Remote())\n";
+        // The calls in pre-order: `print(...)`, then `Remote()`.
+        let call = |nth: usize| {
+            let seen = std::cell::Cell::new(0);
+            move |flat: &Flat, id: usize| {
+                let hit = flat.nodes[id].kind == NodeKind::Call;
+                let found = hit && seen.get() == nth;
+                seen.set(seen.get() + usize::from(hit));
+                found
+            }
+        };
+        assert_eq!(class_of_node(&PKG, main, call(0)), None);
+        assert_eq!(
+            class_of_node(&PKG, main, call(1)),
+            Some(ClassRef::Instance("pkg.a.Remote".into()))
+        );
+    }
+
+    #[test]
+    fn a_nested_class_and_a_function_are_no_class_of_the_module() {
+        let main =
+            "def make():\n    class Inner: ...\n    return Inner\n\ndef f(): ...\nprint(f)\n";
+        assert_eq!(class_of_name(&PKG, main, "Inner", 0), None);
+        assert_eq!(class_of_name(&PKG, main, "f", 0), None);
+    }
+
+    #[test]
+    fn a_literal_and_a_builtin_are_builtin_classes() {
+        let main = "x = 1\nprint(x, int)\n";
+        assert_eq!(
+            class_of_name(&PKG, main, "x", 0),
+            Some(ClassRef::Instance("builtins.int".into()))
+        );
+        assert_eq!(
+            class_of_name(&PKG, main, "int", 0),
+            Some(ClassRef::Class("builtins.int".into()))
+        );
     }
 }

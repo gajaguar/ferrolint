@@ -80,6 +80,11 @@ export_checker!(NoPrint);
   method that a `FunctionDef` overrides, or none; `plugins/redefined-builtin`
   uses it. `all_names()` gives the names the module's `__all__` makes Pylint
   take for used, or none; `plugins/unused-import` uses it.
+* `class_of(node)` gives a `ClassRef` (`Class` or `Instance` of a qualified
+  name), `class_ancestors(name)` the MRO of a class, and
+  `member_owner(name, member)` an `Owner` (`Unknown`, `Nobody` or
+  `Class(name)`). Stay silent on `None` and `Unknown`; `plugins/test-probe`
+  shows each.
 * A `Comment` also has `own_line`, true when only whitespace precedes it on
   its line, so a plugin can tell a comment-only line from a trailing comment.
 * A `Diagnostic` takes its rule's severity unless it sets one, and may

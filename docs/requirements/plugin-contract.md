@@ -70,6 +70,27 @@ in contract 0.3.1 as 0.2.1 added inference: they change no record, so a
 host of 0.3.1 still loads a plugin built against 0.3.0, which imports
 nothing of them.
 
+Contract 1.2.0 adds the `classes` interface: `class-of` gives the class an
+expression is, or is an instance of, by qualified name (`app.models.Device`);
+`ancestors` gives the MRO of a class, the class first; `member-owner` gives the
+first class of that MRO whose body binds a member. Only qualified names cross:
+no type of the type checker reaches a plugin. Each answer is none when the host
+cannot tell, and a plugin stays silent then. It only adds an interface, so a host
+of 1.2 still loads a plugin built against 1.1, which imports nothing of it.
+
+* `ancestors` leaves `object` and the builtin bases out, and is none when a base
+  names nothing the host can read (an undefined name, a call, a C class).
+* `member-owner` is none when the MRO is unknown, and some(none) when no class
+  binds the member; a bare annotation (`x: int`) does not bind it.
+* Both read the classes from disk (the project, the standard library and the
+  installed packages), so an unsaved edit of the linted file is not seen.
+* `class-of` does not ask ty. On a Django codebase (3523 files,
+  `django-stubs` installed) the host resolved no `.delay(...)`, `.apply_async(...)`
+  or `bulk_create(...)` receiver and 3 of 575 `.update(...)` receivers to a project
+  class, and ty named none of the others a class (`dict`, `module`, `function`).
+* `class-of` knows a module-level class, a call of one, a builtin or a literal
+  of a builtin type, and an imported class; a nested class gives none.
+
 Contract 1.1.0 adds the `augment` and `project` exports and three fields to
 `plugin-info`: `contributions` (values a plugin adds to a host option, such as
 `good-names`), `suppresses` and `checks-project`. `augment.suppress` returns
