@@ -478,6 +478,37 @@ fn ac_08_scope_and_binding_queries_resolve_names() {
 }
 
 #[test]
+fn the_class_queries_name_classes_ancestors_and_member_owners() {
+    let project = probe_project(&["PRB007", "PRB008", "PRB009"]);
+    project.write("pkg/__init__.py", "");
+    project.write(
+        "pkg/base.py",
+        "class Base:\n    perm = 1\n\nclass Mixin:\n    pass\n",
+    );
+    project.write(
+        "pkg/views.py",
+        "from pkg.base import Base, Mixin\n\nclass View(Mixin, Base):\n    pass\n\nclass Lost(Gone):\n    pass\n\nview = View()\nprint(View, view, Base, Lost)\n",
+    );
+    let run = project.run(&[]);
+    assert_eq!(run.code, 1, "{run:?}");
+    let lines = run.finding_lines();
+    let has = |text: &str| {
+        assert!(
+            lines.iter().any(|line| line.ends_with(text)),
+            "no `{text}`: {run:?}"
+        );
+    };
+    has("mro of View: pkg.views.View pkg.base.Mixin pkg.base.Base");
+    has("owner of perm in View: pkg.base.Base");
+    // A base no module defines leaves the MRO unknown.
+    has("mro of Lost: unknown");
+    has("owner of perm in Lost: unknown");
+    has("View is class pkg.views.View");
+    has("view is instance of pkg.views.View");
+    has("Base is class pkg.base.Base");
+}
+
+#[test]
 fn ac_09_diagnostic_records_full_field_set() {
     let project = probe_project(&["PRB004", "PRB005"]);
     let source = "class Box:\n    pass\n\ndef make():\n    return Box()\n";

@@ -463,6 +463,15 @@ fn a_plugin_built_against_an_older_contract_is_refused() {
     }
 }
 
+#[test]
+fn a_plugin_built_against_contract_1_1_still_loads() {
+    // 1.2.0 only adds the `classes` interface, which this plugin never
+    // imports, so a build against 1.1.0 names the other interfaces @1.1.0.
+    let run = lint_with(&respelled_plugin(*b"@1.1.0"));
+    assert_eq!(run.code, 1, "{run:?}");
+    assert!(run.stdout.contains("Unused import os"), "{run:?}");
+}
+
 /// The report lines of `case.py` linted with the augment test plugin.
 fn augmented(source: &str) -> Vec<String> {
     let project = Project::new();

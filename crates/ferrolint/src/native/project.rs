@@ -1441,16 +1441,23 @@ impl ClassRef {
     /// The classes that this one derives from and the project holds, and the
     /// qualified names of the rest.
     pub fn bases(&self, project: &Project) -> Vec<Result<ClassRef, String>> {
-        self.bases_by(project, false)
+        self.bases_by(project, false, false)
+    }
+
+    /// Like [`Self::bases`], but a base that names nothing the module binds
+    /// (a call, an undefined name) is an `Err` with an empty name instead of
+    /// being left out, so the caller cannot take the other bases for all.
+    pub fn bases_exact(&self, project: &Project) -> Vec<Result<ClassRef, String>> {
+        self.bases_by(project, false, true)
     }
 
     /// Like [`Self::bases`], but a base imported in several branches
     /// (`try: from a import B` / `except: from b import B`) stands for each import, as Pylint infers it.
     pub fn bases_all(&self, project: &Project) -> Vec<Result<ClassRef, String>> {
-        self.bases_by(project, true)
+        self.bases_by(project, true, false)
     }
 
-    fn bases_by(&self, project: &Project, all: bool) -> Vec<Result<ClassRef, String>> {
+    fn bases_by(&self, project: &Project, all: bool, exact: bool) -> Vec<Result<ClassRef, String>> {
         let Some(class) = self.class() else {
             return Vec::new();
         };
@@ -1471,7 +1478,11 @@ impl ClassRef {
                 });
                 // astroid infers `typing.X[...]` as an empty class.
                 let Some(found) = found else {
-                    return Vec::new();
+                    return if exact {
+                        vec![Err(String::new())]
+                    } else {
+                        Vec::new()
+                    };
                 };
                 if subscripted && found.as_ref().is_ok_and(Self::is_typing) {
                     return Vec::new();

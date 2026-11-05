@@ -265,7 +265,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                         })
                 })
                 .collect(),
-            Class::Remote(remote) => remote_entries(&self.project, remote),
+            Class::Remote(remote) => remote_entries(&self.project, remote, false),
         }
     }
 
@@ -394,9 +394,14 @@ impl<'a> Hierarchy<'a, '_> {
 }
 
 /// The bases of a class of the project as written, each as the MRO reads it.
-fn remote_entries(project: &Project, remote: &ClassRef) -> Vec<Entry<'static>> {
-    remote
-        .bases(project)
+/// With `exact`, a base that names nothing is `Unknown` instead of left out.
+fn remote_entries(project: &Project, remote: &ClassRef, exact: bool) -> Vec<Entry<'static>> {
+    let bases = if exact {
+        remote.bases_exact(project)
+    } else {
+        remote.bases(project)
+    };
+    bases
         .into_iter()
         .map(|base| match base {
             Ok(base) => Entry::Class(Class::Remote(base)),
@@ -460,7 +465,7 @@ fn remote_mro(project: &Project, class: &ClassRef, depth: u8) -> Option<Vec<Clas
     if depth >= 32 {
         return None;
     }
-    let bases = remote_entries(project, class)
+    let bases = remote_entries(project, class, true)
         .into_iter()
         .filter_map(|entry| match entry {
             Entry::Class(Class::Remote(base)) => Some(Some(base)),
@@ -835,6 +840,18 @@ mod tests {
         let files = with(&[(
             "pkg/a.py",
             "from nowhere import X\nclass B(X): ...\nclass C(B): ...\n",
+        )]);
+        assert_eq!(mro(&files, "pkg.a.B"), None);
+        assert_eq!(mro(&files, "pkg.a.C"), None);
+    }
+
+    #[test]
+    fn ancestors_are_unknown_when_a_base_names_nothing() {
+        // An undefined name and a call may stand for any class, as astroid
+        // cannot infer them: the other bases are not all of them.
+        let files = with(&[(
+            "pkg/a.py",
+            "class A: ...\nclass B(A, Gone): ...\nclass C(make()): ...\n",
         )]);
         assert_eq!(mro(&files, "pkg.a.B"), None);
         assert_eq!(mro(&files, "pkg.a.C"), None);
