@@ -4,6 +4,7 @@ wasmtime::component::bindgen!({
     path: "../ferrolint-plugin-sdk/wit",
     world: "plugin",
     imports: { default: trappable },
+    additional_derives: [PartialEq],
 });
 
 pub use exports::ferrolint::plugin::checker::{Ast, Diagnostic, File, PluginInfo};

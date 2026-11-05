@@ -240,9 +240,18 @@ impl FileData {
 impl wit::ferrolint::plugin::classes::Host for State {
     fn class_of(
         &mut self,
-        _node: u32,
+        node: u32,
     ) -> wasmtime::Result<Option<wit::ferrolint::plugin::classes::ClassRef>> {
-        Ok(None)
+        let file = self.check_node(node)?;
+        let module = native::Project::named(&file.path, &file.module, &file.roots);
+        Ok(crate::infer::class_of(
+            &file.flat,
+            &file.model,
+            &file.source,
+            node,
+            &module,
+            &file.project(),
+        ))
     }
 
     fn ancestors(&mut self, class: String) -> wasmtime::Result<Option<Vec<String>>> {
