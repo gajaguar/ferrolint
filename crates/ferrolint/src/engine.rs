@@ -890,8 +890,10 @@ impl Linter<'_> {
             all_names,
             #[cfg(feature = "ty")]
             types: context.types.cloned(),
-            #[cfg(feature = "ty")]
             path: context.path.to_owned(),
+            module: context.module.to_owned(),
+            roots: context.roots.to_vec(),
+            classes: Mutex::default(),
             stars: star_names(&flat, context),
             flat,
             ast,

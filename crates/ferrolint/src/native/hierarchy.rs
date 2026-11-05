@@ -425,7 +425,7 @@ pub fn ancestors(project: &Project, qualified: &str) -> Option<Vec<String>> {
 }
 
 /// Who binds a member of a class.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Owner {
     /// The MRO is unknown, as for [`ancestors`].
     Unknown,
