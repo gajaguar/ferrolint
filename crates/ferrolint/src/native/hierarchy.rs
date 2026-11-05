@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use ruff_python_ast::{Decorator, Expr, StmtClassDef};
 use ruff_text_size::TextSize;
 
-use super::classes::{Env, bases};
+use super::classes::{Env, Local, bases, locals};
 use super::project::{ClassRef, Project};
 use crate::class_methods;
 use crate::wit::BindingKind;
@@ -424,6 +424,38 @@ pub fn ancestors(project: &Project, qualified: &str) -> Option<Vec<String>> {
     Some(mro.iter().map(Class::key).collect())
 }
 
+/// Who binds a member of a class.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Owner {
+    /// The MRO is unknown, as for [`ancestors`].
+    Unknown,
+    /// No class of the MRO binds it (`object`, which the MRO leaves out, may).
+    Nobody,
+    /// The first class of the MRO that does, by qualified name.
+    Class(String),
+}
+
+/// The first class of the MRO of `qualified` whose body binds `member`. A
+/// bare annotation (`member: int`) binds nothing.
+pub fn member_owner(project: &Project, qualified: &str, member: &str) -> Owner {
+    let Some(mro) = project
+        .class(qualified)
+        .and_then(|class| remote_mro(project, &class, 0))
+    else {
+        return Owner::Unknown;
+    };
+    let binds = |class: &Class<'_>| {
+        class.def().is_some_and(|def| {
+            locals(&def.body)
+                .iter()
+                .any(|(name, kind)| name == member && !matches!(kind, Local::Bare))
+        })
+    };
+    mro.iter()
+        .find(|class| binds(class))
+        .map_or(Owner::Nobody, |class| Owner::Class(class.key()))
+}
+
 fn remote_mro(project: &Project, class: &ClassRef, depth: u8) -> Option<Vec<Class<'static>>> {
     if depth >= 32 {
         return None;
@@ -473,6 +505,7 @@ fn merge(mut seqs: Vec<Vec<Class<'_>>>) -> Option<Vec<Class<'_>>> {
 #[cfg(test)]
 mod tests {
     use super::super::classes::render_at;
+    use super::Owner;
 
     /// Lints `pkg/main.py` of a project made of `files`.
     fn run(files: &[(&str, &str)], ids: &[&str]) -> String {
@@ -735,6 +768,16 @@ mod tests {
     /// The MRO of `qualified` in a project made of `files`, with `site/` as
     /// a second root standing for the installed packages.
     fn mro(files: &[(&str, &str)], qualified: &str) -> Option<Vec<String>> {
+        on(files, |project| super::ancestors(project, qualified))
+    }
+
+    fn member_owner(files: &[(&str, &str)], qualified: &str, member: &str) -> Owner {
+        on(files, |project| {
+            super::member_owner(project, qualified, member)
+        })
+    }
+
+    fn on<T>(files: &[(&str, &str)], ask: impl FnOnce(&super::Project) -> T) -> T {
         let root = tempfile::tempdir().unwrap();
         for (path, text) in files {
             let path = root.path().join(path);
@@ -743,8 +786,7 @@ mod tests {
         }
         let main = root.path().join("pkg/main.py");
         let roots = [root.path().to_path_buf(), root.path().join("site")];
-        let project = super::Project::new(&main, "pkg.main", &roots);
-        super::ancestors(&project, qualified)
+        ask(&super::Project::new(&main, "pkg.main", &roots))
     }
 
     const BASE: [(&str, &str); 2] = [("pkg/__init__.py", ""), ("pkg/main.py", "")];
@@ -801,5 +843,38 @@ mod tests {
     #[test]
     fn ancestors_are_unknown_for_a_class_the_project_does_not_hold() {
         assert_eq!(mro(&with(&[]), "pkg.a.Gone"), None);
+    }
+
+    #[test]
+    fn the_member_owner_is_the_first_class_of_the_mro_that_binds_it() {
+        let files = with(&[(
+            "pkg/a.py",
+            "class A:\n    perm = 1\n    def run(self): ...\nclass M:\n    perm = 2\nclass B(A, M):\n    pass\n",
+        )]);
+        let owner = |member| member_owner(&files, "pkg.a.B", member);
+        assert_eq!(owner("perm"), Owner::Class("pkg.a.A".to_owned()));
+        assert_eq!(owner("run"), Owner::Class("pkg.a.A".to_owned()));
+        assert_eq!(owner("absent"), Owner::Nobody);
+    }
+
+    #[test]
+    fn a_bare_annotation_does_not_own_the_member() {
+        let files = with(&[(
+            "pkg/a.py",
+            "class A:\n    perm = 1\nclass B(A):\n    perm: int\n",
+        )]);
+        assert_eq!(
+            member_owner(&files, "pkg.a.B", "perm"),
+            Owner::Class("pkg.a.A".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_member_owner_is_unknown_when_a_base_cannot_be_read() {
+        let files = with(&[(
+            "pkg/a.py",
+            "from nowhere import X\nclass B(X):\n    perm = 1\n",
+        )]);
+        assert_eq!(member_owner(&files, "pkg.a.B", "perm"), Owner::Unknown);
     }
 }
