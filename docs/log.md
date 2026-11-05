@@ -1,5 +1,11 @@
 # Directory Update Log
 
+## 2026-11-05
+
+* **Plugin contract, plugin-contract.md**: contract 1.2.0 adds the `classes`
+  interface (`class-of`, `ancestors`, `member-owner`); a 1.1 plugin still loads.
+* **Writing a plugin, writing-a-plugin.md**: the class queries of `Context`.
+
 ## 2026-11-03
 
 * **Release builds, release-builds.md**: the `crates` job publishes the SDK
