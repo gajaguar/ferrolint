@@ -107,6 +107,8 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     let excludes = Excludes::new(&config)?;
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(workers)
+        // The parser and the visitors recurse once per nesting level, and a valid file nests thousands deep.
+        .stack_size(256 << 20)
         .build()
         .map_err(|err| Error::io(format!("cannot start worker threads: {err}")))?;
 
@@ -218,20 +220,22 @@ pub fn run(cwd: &Path, options: &Options) -> Result<Report> {
     } else {
         names
     };
-    findings.extend(project_run::run(
-        &project_run::Params {
-            cwd,
-            arguments: &options.paths,
-            registry: &registry,
-            selection: &selection,
-            options: &rule_options,
-            py_version,
-            cache: cache.as_ref(),
-            host: Some(&host),
-            changed: changed.is_some().then_some(&is_changed),
-        },
-        &names,
-    ));
+    findings.extend(pool.install(|| {
+        project_run::run(
+            &project_run::Params {
+                cwd,
+                arguments: &options.paths,
+                registry: &registry,
+                selection: &selection,
+                options: &rule_options,
+                py_version,
+                cache: cache.as_ref(),
+                host: Some(&host),
+                changed: changed.is_some().then_some(&is_changed),
+            },
+            &names,
+        )
+    }));
     sort_findings(&mut findings);
     // The same string order as the findings', which sort by path first.
     let mut displays = displays;
