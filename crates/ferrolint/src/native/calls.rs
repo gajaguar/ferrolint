@@ -219,7 +219,6 @@ impl Checker for Calls {
             classes: Vec::new(),
             defs: Vec::new(),
             annotated: HashSet::new(),
-            project: OnceCell::new(),
             hierarchy: OnceCell::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
@@ -245,8 +244,6 @@ struct Walk<'a, 'e> {
     defs: Vec<&'a StmtFunctionDef>,
     /// The values of the annotated assignments met, by address.
     annotated: HashSet<usize>,
-    /// The project around the file, read when a call builds a class of another module.
-    project: OnceCell<Project>,
     /// The class hierarchy around the file, read when a method comes from a base of another module.
     hierarchy: OnceCell<Hierarchy<'a, 'e>>,
 }
@@ -418,9 +415,7 @@ impl<'a> Walk<'a, '_> {
         let Some(qualified) = self.env.qualified(&call.func).filter(|q| q.contains('.')) else {
             return;
         };
-        let project = self.project.get_or_init(|| {
-            Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
-        });
+        let project = self.env.ctx.project();
         if let Some(function) = self.imported_function(project, &call.func, &qualified) {
             if let Some(func) = function.func() {
                 let callee = Callee {
@@ -606,11 +601,7 @@ impl<'a> Walk<'a, '_> {
     /// Whether the arity rules can trust `callee`: Pylint reads the
     /// constructor off the whole class, and a method off the instance.
     fn settled(&self, call: &ExprCall, callee: &Callee<'a>) -> bool {
-        let project = || {
-            self.project.get_or_init(|| {
-                Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
-            })
-        };
+        let project = || self.env.ctx.project();
         settled(self.env, &self.classes, call, callee, Some(&project))
     }
 
@@ -798,9 +789,7 @@ impl<'a> Walk<'a, '_> {
             return None;
         }
         let qualified = self.env.qualified(&call.func).filter(|q| q.contains('.'))?;
-        let project = self.project.get_or_init(|| {
-            Project::new(self.env.ctx.path, self.env.ctx.module, self.env.ctx.roots)
-        });
+        let project = self.env.ctx.project();
         let function = self.imported_function(project, &call.func, &qualified)?;
         self.judge(assign, call, function.func()?)
     }
