@@ -38,6 +38,8 @@ const EPOCHS_PER_FILE: u64 = 1_000;
 const KEEP_RESIDENT: usize = 4 << 20;
 /// Linear memory one plugin instance may grow to.
 const MEMORY_LIMIT: usize = 512 << 20;
+/// Linear memory the project call may grow to: it receives every file at once.
+const PROJECT_MEMORY_LIMIT: usize = 4 << 30;
 
 /// A file as the plugins see it: its node list and semantic model.
 pub struct FileData {
@@ -97,7 +99,7 @@ impl WasiView for State {
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(memory_limit: usize) -> Self {
         // An empty environment: no preopens, variables, arguments or
         // network; stdin closed and output discarded; clocks frozen and
         // randomness fixed, so a plugin learns nothing about the machine
@@ -115,7 +117,10 @@ impl State {
         Self {
             wasi,
             table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new().memory_size(MEMORY_LIMIT).build(),
+            limits: StoreLimitsBuilder::new()
+                .memory_size(memory_limit)
+                .trap_on_grow_failure(true)
+                .build(),
             file: None,
             options: Vec::new(),
         }
@@ -464,7 +469,7 @@ impl Host {
         };
         self.ticker
             .get_or_init(|| Ticker::start(self.engine.clone()));
-        let mut instance = match instantiate(&self.engine, pre) {
+        let mut instance = match instantiate(&self.engine, pre, MEMORY_LIMIT) {
             Ok(instance) => instance,
             Err(err) => return Outcome::Aborted(describe(&err)),
         };
@@ -503,8 +508,8 @@ impl Host {
         let pre = self.pre(loaded).map_err(Outcome::Broken)?;
         self.ticker
             .get_or_init(|| Ticker::start(self.engine.clone()));
-        let mut instance =
-            instantiate(&self.engine, pre).map_err(|e| Outcome::Aborted(describe(&e)))?;
+        let mut instance = instantiate(&self.engine, pre, MEMORY_LIMIT)
+            .map_err(|e| Outcome::Aborted(describe(&e)))?;
         arm(&mut instance.store)
             .and_then(|()| {
                 instance.plugin.ferrolint_plugin_augment().call_suppress(
@@ -528,8 +533,8 @@ impl Host {
         let pre = self.pre(loaded).map_err(Outcome::Broken)?;
         self.ticker
             .get_or_init(|| Ticker::start(self.engine.clone()));
-        let mut instance =
-            instantiate(&self.engine, pre).map_err(|e| Outcome::Aborted(describe(&e)))?;
+        let mut instance = instantiate(&self.engine, pre, PROJECT_MEMORY_LIMIT)
+            .map_err(|e| Outcome::Aborted(describe(&e)))?;
         instance
             .store
             .data_mut()
@@ -576,7 +581,7 @@ fn engine(workers: usize, plugins: usize) -> Result<Engine> {
         .total_stacks(slots)
         .max_memories_per_component(4)
         .max_tables_per_component(16)
-        .max_memory_size(MEMORY_LIMIT)
+        .max_memory_size(PROJECT_MEMORY_LIMIT)
         // Reset a recycled slot's first pages in place instead of handing
         // them back to the kernel, so the next file does not fault them in.
         .linear_memory_keep_resident(KEEP_RESIDENT)
@@ -611,7 +616,8 @@ fn load_one(engine: &Engine, linker: &Linker<State>, source: PluginSource) -> Re
     let fail = |what: &str, err: &dyn std::fmt::Display| {
         Error::plugin(format!("{}: {what}: {err:#}", source.path.display()))
     };
-    let mut instance = instantiate(engine, &pre).map_err(|err| fail("cannot instantiate", &err))?;
+    let mut instance =
+        instantiate(engine, &pre, MEMORY_LIMIT).map_err(|err| fail("cannot instantiate", &err))?;
     let info = arm(&mut instance.store)
         .and_then(|()| {
             instance
@@ -673,8 +679,12 @@ pub fn severity(severity: wit::Severity) -> Severity {
     }
 }
 
-fn instantiate(engine: &Engine, pre: &PluginPre<State>) -> wasmtime::Result<Live> {
-    let mut store = Store::new(engine, State::new());
+fn instantiate(
+    engine: &Engine,
+    pre: &PluginPre<State>,
+    memory_limit: usize,
+) -> wasmtime::Result<Live> {
+    let mut store = Store::new(engine, State::new(memory_limit));
     store.limiter(|state| &mut state.limits);
     arm(&mut store)?;
     let plugin = pre.instantiate(&mut store)?;
@@ -700,7 +710,7 @@ fn describe(err: &wasmtime::Error) -> String {
     if let Some(exit) = err.downcast_ref::<wasmtime_wasi::I32Exit>() {
         return format!("called the disabled builtin exit({})", exit.0);
     }
-    format!("failed: {err:#}")
+    format!("failed: {}", err.root_cause())
 }
 
 /// Advances the engine's epoch on a background thread.
