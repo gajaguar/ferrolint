@@ -881,6 +881,7 @@ impl Linter<'_> {
             path: context.path,
             roots: context.roots,
             types: None,
+            projects: &native::FileProjects::default(),
         });
         // `listed_in_all` answers for a file without `__all__` too, but costs a project.
         let all_names = if context.source.contains("__all__") {
@@ -978,6 +979,7 @@ fn native_findings(
         path: file.path,
         roots: &setup.roots,
         types: None,
+        projects: &native::FileProjects::default(),
     };
     #[cfg(feature = "ty")]
     let mut found = setup

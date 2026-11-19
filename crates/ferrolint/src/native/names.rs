@@ -2441,6 +2441,7 @@ mod tests {
             path,
             roots: &crate::native::Project::test_roots(path, module),
             types,
+            projects: &crate::native::FileProjects::default(),
         };
         let enabled = IDS.iter().map(|id| (*id).to_owned()).collect();
         let mut out = Vec::new();
