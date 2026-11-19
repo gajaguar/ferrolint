@@ -301,7 +301,7 @@ impl<'a> Walk<'a, '_> {
                 })
                 .collect(),
             Class::Remote(remote) => remote
-                .bases(&self.hierarchy.project)
+                .bases(self.hierarchy.project)
                 .into_iter()
                 .map(|base| match base {
                     Ok(found) => Parent::Class(Class::Remote(found)),
