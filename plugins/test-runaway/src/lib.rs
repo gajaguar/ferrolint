@@ -1,5 +1,6 @@
-//! Test plugin that loops forever on a file holding `RUNAWAY` and reports
-//! one RUN001 on every other file.
+//! Test plugin that loops forever on a file holding `RUNAWAY`, allocates
+//! memory without end on one holding `HOG`, and reports one RUN001 on every
+//! other file.
 
 // The struct is only reachable through the WASM export.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -35,6 +36,12 @@ impl Guest for Runaway {
             let mut spins: u64 = 0;
             loop {
                 spins = std::hint::black_box(spins.wrapping_add(ast.nodes.len() as u64));
+            }
+        }
+        if file.source.contains("HOG") {
+            let mut hoard: Vec<Vec<u8>> = Vec::new();
+            loop {
+                hoard.push(std::hint::black_box(vec![1; 64 << 20]));
             }
         }
         let origin = Position {

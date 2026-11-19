@@ -41,8 +41,10 @@ The host links WASI preview 2 and empties it:
   over the contract's wording of one instance per run. Instantiating costs
   under 0.1 ms per file and plugin.
 * Every check call gets its own budget: 2 billion units of fuel, a
-  ten-second epoch deadline and 512 MiB of linear memory. The plugin
-  cannot change them.
+  ten-second epoch deadline and 512 MiB of linear memory, except
+  `check-project`, which gets 4 GiB because it receives every file at once.
+  The plugin cannot change them. A call that outgrows its memory reports
+  the failed growth instead of a bare `unreachable`.
 * A trap, a cap or a diagnostic carrying a code the plugin did not declare
   aborts that plugin on that file only. The file reports an `FL001`
   finding naming the plugin and the reason, the other files still lint,

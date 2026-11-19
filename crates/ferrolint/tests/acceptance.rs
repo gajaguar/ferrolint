@@ -1339,6 +1339,29 @@ fn ac_30_runaway_plugin_aborts() {
     assert_eq!(run.summary(), "3 files linted, 3 findings.");
 }
 
+#[test]
+fn ac_30_memory_hog_plugin_names_the_memory_cap() {
+    let project = Project::new();
+    let plugin = project.plugin("ferrolint-test-runaway", "runaway.wasm");
+    project
+        .write("ferrolint.toml", plugin)
+        .write("a.py", CLEAN)
+        .write("b.py", "HOG = True\n");
+    let run = project.run(&[]);
+    assert_eq!(run.code, 2, "{run:?}");
+    let abort = run
+        .finding_lines()
+        .into_iter()
+        .find(|line| line.starts_with("b.py:"))
+        .unwrap();
+    assert!(
+        abort.contains("FL001 plugin runaway aborted on this file:")
+            && abort.contains("growing memory")
+            && !abort.contains("unreachable"),
+        "{abort}"
+    );
+}
+
 // Determinism (AC-31, NFR-04)
 
 #[test]
