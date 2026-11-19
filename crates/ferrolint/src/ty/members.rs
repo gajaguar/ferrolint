@@ -1,6 +1,6 @@
 //! `E1101` (`no-member`) for `self` and `cls`, answered by ty.
 //!
-//! The rule starts from ty's `unresolved-attribute` diagnostic on a read of
+//! The rule starts from ty's `missing-attribute` diagnostic on a read of
 //! `self.x` or `cls.x` and keeps it only where Pylint reports it. ty types
 //! `self` as a type variable, so the receiver is the enclosing class. The class
 //! must be closed: no ancestor defines `__getattr__` or `__getattribute__`,
@@ -59,7 +59,7 @@ fn scan(db: &ProjectDatabase, file: ProgramFile<'_>, ctx: &Ctx<'_>) -> Vec<Diagn
     };
     let found: HashSet<TextRange> = diagnostics
         .iter()
-        .filter(|d| d.id().as_str() == "unresolved-attribute")
+        .filter(|d| d.id().as_str() == "missing-attribute")
         .filter_map(|d| d.primary_span()?.range())
         .collect();
     if found.is_empty() {

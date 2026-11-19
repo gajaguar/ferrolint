@@ -80,9 +80,9 @@ enum Fail {
 
 pub struct Hierarchy<'a, 'e> {
     pub env: &'e Env<'a>,
-    pub project: Project,
+    pub project: &'a Project,
     /// The name Pylint gives the linted module.
-    module: String,
+    module: &'a str,
     /// The modules the file imports with `from m import *`.
     stars: Vec<String>,
     /// The MRO of each class met, by key; `None` when it cannot be built.
@@ -93,9 +93,9 @@ pub struct Hierarchy<'a, 'e> {
 
 impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn new(env: &'e Env<'a>) -> Self {
-        let project = Project::with_packages(env.ctx.path, env.ctx.module, env.ctx.roots);
+        let project = env.ctx.packages();
         Self {
-            module: Project::named(env.ctx.path, env.ctx.module, env.ctx.roots),
+            module: env.ctx.named(),
             env,
             stars: project.stars(&env.ctx.parsed.syntax().body),
             project,
@@ -127,7 +127,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     /// The dotted name of the module that defines `class`.
     pub fn module<'c>(&'c self, class: &'c Class<'a>) -> &'c str {
         match class {
-            Class::Local(_) => &self.module,
+            Class::Local(_) => self.module,
             Class::Remote(class) => class.module(),
         }
     }
@@ -145,7 +145,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
     pub fn resolve(&self, class: &Class<'a>, expr: &Expr) -> Option<Class<'a>> {
         match class {
             Class::Local(_) => self.resolve_here(expr),
-            Class::Remote(remote) => remote.resolve(&self.project, expr)?.ok().map(Class::Remote),
+            Class::Remote(remote) => remote.resolve(self.project, expr)?.ok().map(Class::Remote),
         }
     }
 
@@ -265,7 +265,7 @@ impl<'a, 'e> Hierarchy<'a, 'e> {
                         })
                 })
                 .collect(),
-            Class::Remote(remote) => remote_entries(&self.project, remote, false),
+            Class::Remote(remote) => remote_entries(self.project, remote, false),
         }
     }
 

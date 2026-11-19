@@ -85,6 +85,40 @@ pub struct Ctx<'a> {
     pub roots: &'a [std::path::PathBuf],
     /// What ty says an expression is, in a build with ty that started it.
     pub types: Option<&'a dyn TypeAt>,
+    /// The file's projects, built on the first ask and shared by every checker.
+    pub projects: &'a FileProjects,
+}
+
+/// The [`Project`]s of one file, from the `path`, `module` and `roots` of
+/// the [`Ctx`] that holds it; build a new one for each file.
+#[derive(Default)]
+pub struct FileProjects {
+    named: std::cell::OnceCell<String>,
+    project: std::cell::OnceCell<Project>,
+    packages: std::cell::OnceCell<Project>,
+}
+
+impl<'a> Ctx<'a> {
+    /// [`Project::named`] of the file.
+    pub fn named(&self) -> &'a str {
+        self.projects
+            .named
+            .get_or_init(|| Project::named(self.path, self.module, self.roots))
+    }
+
+    /// [`Project::new`] of the file.
+    pub fn project(&self) -> &'a Project {
+        self.projects
+            .project
+            .get_or_init(|| Project::new(self.path, self.module, self.roots))
+    }
+
+    /// [`Project::with_packages`] of the file.
+    pub fn packages(&self) -> &'a Project {
+        self.projects
+            .packages
+            .get_or_init(|| Project::with_packages(self.path, self.module, self.roots))
+    }
 }
 
 /// What ty says a value is, as far as the rules need: ty's own API names no
@@ -301,6 +335,7 @@ pub fn lint_with(source: &str, options: &[(&str, &str)]) -> Vec<(u32, String)> {
         path: std::path::Path::new("mod.py"),
         roots: &[],
         types: None,
+        projects: &FileProjects::default(),
     };
     let enabled = rules().into_iter().map(|rule| rule.code).collect();
     check(&ctx, &enabled)

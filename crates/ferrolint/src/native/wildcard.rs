@@ -1,7 +1,8 @@
 //! `W0401` wildcard-import and `W0614` unused-wildcard-import: a `from m
 //! import *`, and the names it binds that the file never reads. The module
-//! is found like a base class is (see [`Project`]); one that is not found is
-//! skipped by `W0614`, and an `__init__.py` by both, as Pylint does.
+//! is found like a base class is (see [`Project`](super::project::Project));
+//! one that is not found is skipped by `W0614`, and an `__init__.py` by both,
+//! as Pylint does.
 
 use std::collections::BTreeSet;
 
@@ -10,7 +11,6 @@ use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{self as ast, Expr, ExprContext, HasNodeIndex, Stmt};
 use ruff_text_size::{Ranged, TextSize};
 
-use super::project::Project;
 use super::{Checker, Ctx, rule};
 
 const WILDCARD: &str = "W0401";
@@ -50,7 +50,7 @@ impl Checker for Wildcard {
         if walk.stars.is_empty() {
             return;
         }
-        let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
+        let project = ctx.packages();
         // A `__all__` that cannot be read may take any name for used: no W0614 then.
         let listed = project.listed_in_all(&ctx.parsed.syntax().body);
         walk.read.extend(listed.iter().flatten().cloned());

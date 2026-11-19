@@ -77,7 +77,7 @@ impl Checker for Deprecated {
             out,
             enabled,
             tables: Tables::new(ctx),
-            project: Project::new(ctx.path, ctx.module, ctx.roots),
+            project: ctx.project(),
             guarded: HashSet::new(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
@@ -189,7 +189,7 @@ struct Walk<'a, 'c> {
     enabled: &'a BTreeSet<String>,
     tables: Tables,
     /// Resolves a relative import to the module it names.
-    project: Project,
+    project: &'c Project,
     /// The `from` imports directly under a version guard, by offset.
     guarded: HashSet<u32>,
 }
@@ -434,6 +434,7 @@ mod tests {
             path: std::path::Path::new("mod.py"),
             roots: &[],
             types: None,
+            projects: &crate::native::FileProjects::default(),
         };
         let enabled = Deprecated.rules().into_iter().map(|r| r.code).collect();
         let mut out = Vec::new();

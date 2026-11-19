@@ -1519,3 +1519,12 @@ fn ac_34_gate_green_whole_workspace() {
     let ci = repository_file(".github/workflows/rust.yml");
     assert!(ci.contains("make check") && ci.contains("make test"));
 }
+
+#[test]
+fn deeply_nested_expressions_do_not_overflow_the_stack() {
+    let project = Project::new();
+    project.write("sum.py", format!("x = {}\n", vec!["1"; 5000].join("+")));
+    project.write("chain.py", format!("a{}\n", ".f()".repeat(2000)));
+    let run = project.run(&["--no-cache", "--threads", "2"]);
+    assert!(matches!(run.code, 0 | 1), "{run:?}");
+}

@@ -13,7 +13,6 @@
 //! literal or of such a call) to one of those, all of the same type.
 //! Anything else stays silent; upgrade with an inference of values.
 
-use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap};
 
 use ferrolint_core::{Diagnostic, RuleInfo};
@@ -28,7 +27,6 @@ use super::astring::as_string;
 use super::calls::{function_called, imported_function};
 use super::classes::Env;
 use super::inferred::assigned_values;
-use super::project::Project;
 use super::returns::return_kind;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -85,7 +83,6 @@ impl Checker for Booleaness {
             env: Env::new(ctx),
             assigned: assigned_values(body),
             unpacked: unpacked_calls(body),
-            project: OnceCell::new(),
             on,
             boolean: false,
             out,
@@ -111,7 +108,6 @@ struct Walk<'a, 'o> {
     assigned: HashMap<u32, &'a Expr>,
     /// The call and the position of each name that a call's tuple is unpacked into.
     unpacked: HashMap<u32, (&'a ExprCall, usize)>,
-    project: OnceCell<Project>,
     on: Vec<&'a str>,
     /// Whether the expression visited next is used for its truth.
     boolean: bool,
@@ -255,12 +251,9 @@ impl<'a> Walk<'a, '_> {
         if let Some(func) = function_called(&self.env, &[], call) {
             return return_kind(func, &self.env.ctx.parsed.syntax().body, element);
         }
-        let ctx = self.env.ctx;
         let qualified = self.env.qualified(&call.func).filter(|q| q.contains('.'))?;
-        let project = self
-            .project
-            .get_or_init(|| Project::new(ctx.path, ctx.module, ctx.roots));
-        let function = imported_function(&self.env, project, &call.func, &qualified)?;
+        let function =
+            imported_function(&self.env, self.env.ctx.project(), &call.func, &qualified)?;
         return_kind(function.func()?, function.body(), element)
     }
 

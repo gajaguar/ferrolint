@@ -1157,7 +1157,7 @@ impl<'a> Walk<'a, '_> {
                         builtin(name.id.as_str(), &mut out);
                     }
                 }
-                for base in remote.bases(&self.hierarchy.project) {
+                for base in remote.bases(self.hierarchy.project) {
                     match base {
                         Ok(parent) => {
                             let parent = Class::Remote(parent);

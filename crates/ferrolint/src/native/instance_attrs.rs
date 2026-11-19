@@ -1315,6 +1315,7 @@ mod tests {
                     path: &path,
                     roots: &crate::native::Project::test_roots(&path, "use"),
                     types: Some(&values),
+                    projects: &crate::native::FileProjects::default(),
                 };
                 let enabled = ["W0201".to_owned()].into_iter().collect();
                 let mut out = Vec::new();

@@ -225,6 +225,7 @@ mod tests {
             path: std::path::Path::new("mod.py"),
             roots: &[],
             types: None,
+            projects: &crate::native::FileProjects::default(),
         };
         let enabled = Versions.rules().into_iter().map(|r| r.code).collect();
         let mut out = Vec::new();

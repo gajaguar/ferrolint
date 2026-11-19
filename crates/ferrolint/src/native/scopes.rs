@@ -23,7 +23,6 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::classes::{Env, is_classmethod, is_static, py_repr};
 use super::misc::py_match;
-use super::project::Project;
 use super::unassigned;
 use super::{Checker, Ctx, rule};
 use crate::wit::BindingKind;
@@ -992,7 +991,7 @@ fn globals(ctx: &Ctx<'_>, info: &Info<'_>, out: &mut Vec<Diagnostic>) {
 pub(super) fn starred(ctx: &Ctx<'_>, info: &Info<'_>) -> HashMap<String, u32> {
     let mut starred = HashMap::new();
     if !info.stars.is_empty() {
-        let project = Project::with_packages(ctx.path, ctx.module, ctx.roots);
+        let project = ctx.packages();
         for (origin, line) in &info.stars {
             let names = project.public_names(&project.absolute(origin));
             for name in names.into_iter().flatten() {
@@ -1092,7 +1091,7 @@ fn safe_iterable(ctx: &Ctx<'_>, info: &Info<'_>, scope: usize, iter: &Expr, dept
                 let Some(qualified) = Env::new(ctx).qualified(owner) else {
                     return false;
                 };
-                let project = Project::new(ctx.path, ctx.module, ctx.roots);
+                let project = ctx.project();
                 project
                     .class(&project.absolute(&qualified))
                     .and_then(|found| {
