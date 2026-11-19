@@ -241,7 +241,7 @@ impl<'a> SourceOrderVisitor<'a> for Scan<'_, '_> {
                 }
             }
             Expr::Call(call) => {
-                if self.reported("E1102", "call-non-callable", range)
+                if self.reported("E1102", "not-callable", range)
                     && self.single(&call.func).is_some()
                 {
                     let message = format!("{} is not callable", self.text(&call.func));
