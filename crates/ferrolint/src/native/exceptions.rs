@@ -106,7 +106,7 @@ impl Checker for Exceptions {
                 "overgeneral-exceptions",
                 "builtins.BaseException,builtins.Exception",
             ),
-            project: Project::new(ctx.path, ctx.module, ctx.roots),
+            project: ctx.project(),
         };
         walk.visit_body(&ctx.parsed.syntax().body);
     }
@@ -158,7 +158,7 @@ struct Walk<'a, 'c> {
     /// `Alias = Exception` at the top level or in a top-level `if`/`try`.
     aliases: HashMap<&'a str, &'a Expr>,
     overgeneral: Vec<String>,
-    project: Project,
+    project: &'a Project,
 }
 
 /// The builtin classes that are not exceptions.

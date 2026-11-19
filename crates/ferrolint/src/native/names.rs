@@ -98,8 +98,8 @@ impl Checker for Naming {
             path: Vec::new(),
             loops: 0,
             main: 0,
-            project: Project::new(ctx.path, ctx.module, ctx.roots),
-            packages: Project::with_packages(ctx.path, ctx.module, ctx.roots),
+            project: ctx.project(),
+            packages: ctx.packages(),
             cache: RefCell::default(),
             outside: std::cell::OnceCell::new(),
         };
@@ -709,9 +709,9 @@ struct Walk<'a, 'c> {
     loops: usize,
     /// The `if __name__ == "__main__":` bodies around.
     main: usize,
-    project: Project,
+    project: &'a Project,
     /// The same, reading the standard library and the installed packages, for the ancestors.
-    packages: Project,
+    packages: &'a Project,
     /// The known ancestors of each class, by the start of its name.
     cache: RefCell<HashMap<u32, Rc<Vec<Anc<'a>>>>>,
     /// The attributes that code outside a class gives its instances, by class address.
@@ -1763,7 +1763,7 @@ impl<'a> Walk<'a, '_> {
         if depth >= 16 {
             return;
         }
-        for base in class.bases_all(&self.packages) {
+        for base in class.bases_all(self.packages) {
             match base {
                 Ok(remote) => self.remote_ancestors(&remote, out, depth + 1),
                 Err(qualified) => self.external(qualified, out),
