@@ -1,5 +1,12 @@
 # Directory Update Log
 
+## 2026-11-20
+
+* **Configuration file, configuration-file.md**: the `per-file-good-names`
+  table adds `good-names-rgxs` entries for the files a glob matches.
+* **Native rules, native-rules.md**: `C0103` knows the Django and Django REST
+  framework test cases without an environment.
+
 ## 2026-11-05
 
 * **Plugin contract, plugin-contract.md**: contract 1.2.0 adds the `classes`

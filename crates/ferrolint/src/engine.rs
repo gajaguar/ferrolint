@@ -650,7 +650,7 @@ impl Linter<'_> {
                 .iter()
                 .map(|&position| &setup.host.plugins[position].options)
                 .collect();
-            let own = format!("{own:?}");
+            let own = format!("{own:?}{:?}", setup.selection.good_names(path));
             // A star import binds what the search path finds.
             let search = format!(
                 "{:?}{:?}{:?}",
@@ -967,13 +967,20 @@ fn native_findings(
         index,
         setup.py_version,
     );
+    let extra = setup.selection.good_names(file.path);
+    let mut own = None;
+    if !extra.is_empty() {
+        let mut options = setup.options.clone();
+        contribute(&mut options, "good-names-rgxs", &extra);
+        own = Some(options);
+    }
     let ctx = native::Ctx {
         source,
         index,
         parsed,
         flat: &flat,
         model: &model,
-        options: &setup.options,
+        options: own.as_deref().unwrap_or(&setup.options),
         py_version: setup.py_version,
         module: file.module,
         path: file.path,

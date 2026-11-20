@@ -27,6 +27,9 @@ options = { markers = "TODO, FIXME" }  # this plugin's own options, as text
 [per-file-ignores]
 "tests/*.py" = ["W0611"]
 
+[per-file-good-names]                # regexes added to good-names-rgxs
+"**/tests/**" = ["^setUp", "^tearDown"]
+
 [pylint-aliases]                     # who owns an alias two rules declare
 W0611 = "IMP001"
 
@@ -51,6 +54,11 @@ max-args = "3"
   a file named on the command line is always linted.
 * A `per-file-ignores` pattern is a glob over the path relative to that
   directory; a pattern without `/` also matches the file name alone.
+* `per-file-good-names` takes the same globs; its values are regular
+  expressions that `C0103` and `C0104` accept as `good-names-rgxs` does, only
+  for the files the glob matches. A regex that does not compile is an error.
+  A Pylint file cannot set it, so it needs a `ferrolint.toml` or
+  `[tool.ferrolint]`.
 * `select`, `ignore` and `per-file-ignores` accept a rule's code, its
   Pylint msg-id or its Pylint symbol. A spelling no rule answers to is an
   error, so a typo fails the run instead of disabling a check.

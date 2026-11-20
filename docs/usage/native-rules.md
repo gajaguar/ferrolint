@@ -488,18 +488,18 @@ Known divergences from Pylint, where Pylint infers a value or a class:
   `import` and `from` statements at the top level (see `native/project.rs`).
   `C0103` also reads the standard library and the installed packages when
   `VIRTUAL_ENV` names an environment, so a base from either is followed to
-  the class; without one only `unittest`'s test cases are known, by the names
-  of their members. The builtin and standard library classes in
-  `src/class_methods.rs` (the exceptions, `dict`, `logging.Handler`,
-  `threading.Thread`, `json.JSONEncoder`, `argparse.Action`, ...) are known
-  with every method of theirs and of their ancestors, from a table that
-  `tools/class-methods.py` dumps from Python 3.14 through astroid, whatever
-  the interpreter of the linted project is (Python 3.15 differs in a few
-  private helpers, `str.maketrans`, `logging.Filter.__repr__` and the
-  `pathlib` `__fspath__` and `is_reserved`); a class
-  missing from it counts as having no methods. Because the answer depends
-  on other files, a cached result is stale until the file changes or the
-  cache is cleared with `--no-cache`.
+  the class; without one only the test cases of `unittest`, Django and
+  Django REST framework are known, by the names of their members. The builtin
+  and standard library classes in `src/class_methods.rs` (the exceptions,
+  `dict`, `logging.Handler`, `threading.Thread`, `json.JSONEncoder`,
+  `argparse.Action`, ...) are known with every method of theirs and of their
+  ancestors, from a table that `tools/class-methods.py` dumps from Python 3.14
+  through astroid, whatever the interpreter of the linted project is (Python
+  3.15 differs in a few private helpers, `str.maketrans`,
+  `logging.Filter.__repr__` and the `pathlib` `__fspath__` and `is_reserved`); a
+  class missing from it counts as having no methods. Because the answer depends
+  on other files, a cached result is stale until the file changes or the cache
+  is cleared with `--no-cache`.
 * Left to the inference Pylint runs: a name bound to a class of the
   project is a class (and not judged) when the project binds it once, as
   astroid infers one value, also through `name = module.Class` in a package,
