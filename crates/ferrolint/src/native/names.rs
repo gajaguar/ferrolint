@@ -794,16 +794,50 @@ const TEST_CASE: [&str; 61] = [
     "tearDownClass",
 ];
 
+/// What Django's test cases add to `unittest.TestCase`, for when the package
+/// cannot be read.
+const DJANGO_TEST_CASE: [&str; 24] = [
+    "assertContains",
+    "assertFieldOutput",
+    "assertFormError",
+    "assertFormSetError",
+    "assertHTMLEqual",
+    "assertHTMLNotEqual",
+    "assertInHTML",
+    "assertJSONEqual",
+    "assertJSONNotEqual",
+    "assertNotContains",
+    "assertNotInHTML",
+    "assertNumQueries",
+    "assertQuerySetEqual",
+    "assertQuerysetEqual",
+    "assertRaisesMessage",
+    "assertRedirects",
+    "assertTemplateNotUsed",
+    "assertTemplateUsed",
+    "assertURLEqual",
+    "assertWarnsMessage",
+    "assertXMLEqual",
+    "assertXMLNotEqual",
+    "captureOnCommitCallbacks",
+    "setUpTestData",
+];
+
 /// Whether a class outside the project and the file defines `name`: the
 /// methods of the classes in `class_methods`, and the members of the
-/// `unittest` test cases. The rest are read from the environment.
+/// `unittest`, Django and DRF test cases. The rest are read from the environment.
 fn external_defines(qualified: &str, name: &str, method: bool) -> bool {
     if method && let Some(found) = class_methods::methods(qualified) {
         return found.binary_search(&name).is_ok();
     }
-    qualified.starts_with("unittest.")
-        && qualified.ends_with("TestCase")
+    if !qualified.ends_with("TestCase") {
+        return false;
+    }
+    let unittest = qualified.starts_with("unittest.");
+    let django = qualified.starts_with("django.") || qualified.starts_with("rest_framework.");
+    (unittest || django)
         && (TEST_CASE.contains(&name)
+            || (django && DJANGO_TEST_CASE.contains(&name))
             || (!method && matches!(name, "maxDiff" | "longMessage" | "failureException")))
 }
 
@@ -2608,6 +2642,18 @@ mod tests {
             ],
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn django_and_drf_test_cases_define_the_unittest_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "from django.test import SimpleTestCase, TestCase\nfrom rest_framework.test import APITestCase\n\n\nclass A(TestCase):\n    @classmethod\n    def setUpTestData(cls): pass\n    def setUp(self): pass\n    def assertContains(self): pass\n    def getOther(self): pass\n\n\nclass B(SimpleTestCase):\n    def tearDown(self): pass\n\n\nclass C(APITestCase):\n    def setUp(self): pass\n";
+        let found = lint_at(source, &dir.path().join("t.py"), "t");
+        let names: Vec<_> = found
+            .iter()
+            .map(|(line, message)| (*line, message.split('"').nth(1).unwrap().to_owned()))
+            .collect();
+        assert_eq!(names, [(10, "getOther".to_owned())], "{found:?}");
     }
 
     #[test]

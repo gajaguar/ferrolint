@@ -16,14 +16,31 @@ use crate::pylint::Toggle;
 pub struct Selection {
     root: PathBuf,
     enabled: BTreeSet<String>,
-    per_file: Vec<PerFile>,
+    per_file: Vec<PerFile<BTreeSet<String>>>,
+    good_names: Vec<PerFile<Vec<String>>>,
 }
 
-struct PerFile {
+struct PerFile<T> {
     matcher: GlobMatcher,
     /// Match the pattern against the file name alone: it has no `/`.
     name_only: bool,
-    codes: BTreeSet<String>,
+    value: T,
+}
+
+impl<T> PerFile<T> {
+    fn new(key: &str, pattern: &str, value: T) -> Result<Self> {
+        let glob = Glob::new(pattern)
+            .map_err(|err| Error::config(format!("{key} pattern {pattern:?}: {err}")))?;
+        Ok(Self {
+            matcher: glob.compile_matcher(),
+            name_only: !pattern.contains('/'),
+            value,
+        })
+    }
+
+    fn matches(&self, relative: &str, name: &str) -> bool {
+        self.matcher.is_match(relative) || self.name_only && self.matcher.is_match(name)
+    }
 }
 
 impl Selection {
@@ -49,19 +66,27 @@ impl Selection {
         }
         let mut per_file = Vec::new();
         for (pattern, codes) in &config.per_file_ignores {
-            let glob = Glob::new(pattern).map_err(|err| {
-                Error::config(format!("per-file-ignores pattern {pattern:?}: {err}"))
-            })?;
-            per_file.push(PerFile {
-                matcher: glob.compile_matcher(),
-                name_only: !pattern.contains('/'),
-                codes: resolve_all(registry, "per-file-ignores", codes)?,
-            });
+            let codes = resolve_all(registry, "per-file-ignores", codes)?;
+            per_file.push(PerFile::new("per-file-ignores", pattern, codes)?);
+        }
+        let mut good_names = Vec::new();
+        for (pattern, regexes) in &config.per_file_good_names {
+            for regex in regexes {
+                regex::Regex::new(regex).map_err(|err| {
+                    Error::config(format!("per-file-good-names regex {regex:?}: {err}"))
+                })?;
+            }
+            good_names.push(PerFile::new(
+                "per-file-good-names",
+                pattern,
+                regexes.clone(),
+            )?);
         }
         Ok(Self {
             root: config.root.clone(),
             enabled,
             per_file,
+            good_names,
         })
     }
 
@@ -73,23 +98,27 @@ impl Selection {
 
     /// The codes that report for the file at `path`.
     pub fn for_file(&self, path: &Path) -> BTreeSet<String> {
-        let relative = display_path(&self.root, path);
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy())
-            .unwrap_or_default();
+        let (relative, name) = self.subject(path);
         let mut codes = self.enabled.clone();
-        for entry in &self.per_file {
-            let subject = if entry.name_only && !entry.matcher.is_match(&relative) {
-                name.as_ref()
-            } else {
-                relative.as_str()
-            };
-            if entry.matcher.is_match(subject) {
-                codes.retain(|code| !entry.codes.contains(code));
-            }
+        for entry in self.per_file.iter().filter(|e| e.matches(&relative, &name)) {
+            codes.retain(|code| !entry.value.contains(code));
         }
         codes
+    }
+
+    /// The `good-names-rgxs` entries `per-file-good-names` adds for the file at `path`.
+    pub fn good_names(&self, path: &Path) -> Vec<String> {
+        let (relative, name) = self.subject(path);
+        self.good_names
+            .iter()
+            .filter(|e| e.matches(&relative, &name))
+            .flat_map(|e| e.value.iter().cloned())
+            .collect()
+    }
+
+    fn subject(&self, path: &Path) -> (String, String) {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+        (display_path(&self.root, path), name.unwrap_or_default())
     }
 }
 
@@ -157,6 +186,30 @@ mod tests {
         };
         let selection = Selection::new(&registry, &config).unwrap();
         selection.for_file(Path::new("x.py")).into_iter().collect()
+    }
+
+    #[test]
+    fn per_file_good_names_follow_the_per_file_ignores_globs() {
+        let registry = Registry::new([rule("A3", "C0103", "invalid-name")]).unwrap();
+        let names = |pattern: &str, regex: &str| {
+            let config = Config {
+                per_file_good_names: [(pattern.to_owned(), vec![regex.to_owned()])].into(),
+                ..Config::default()
+            };
+            Selection::new(&registry, &config)
+        };
+        let selection = names("tests/**", "^setUp").unwrap();
+        assert_eq!(selection.good_names(Path::new("tests/a/x.py")), ["^setUp"]);
+        assert_eq!(
+            selection.good_names(Path::new("src/x.py")),
+            Vec::<String>::new()
+        );
+        let selection = names("conftest.py", "^tearDown").unwrap();
+        assert_eq!(
+            selection.good_names(Path::new("a/conftest.py")),
+            ["^tearDown"]
+        );
+        assert!(names("tests/**", "(").is_err());
     }
 
     #[test]

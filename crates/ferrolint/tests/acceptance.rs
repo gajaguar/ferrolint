@@ -322,6 +322,24 @@ fn ac_03_plugin_sha_mismatch_is_config_error() {
 }
 
 #[test]
+fn ac_04b_per_file_good_names_exempt_a_name_by_path() {
+    let hook = "class Case:\n    def setUp(self):\n        pass\n";
+    let project = Project::new();
+    project
+        .write(
+            "ferrolint.toml",
+            "select = [\"C0103\"]\n\n[per-file-good-names]\n\"tests/**\" = [\"^setUp$\"]\n",
+        )
+        .write("tests/test_a.py", hook)
+        .write("src/a.py", hook);
+    assert_eq!(
+        every_format(&project, &[]),
+        [("src/a.py".to_owned(), 2, "C0103".to_owned())],
+        "the name is exempt under the glob only"
+    );
+}
+
+#[test]
 fn ac_04_select_and_ignore_filter_findings() {
     // Both host rules fire on one file: it does not parse and it has a bare noqa.
     let both = format!("{SYNTAX_ERROR}y = 2  # noqa\n");

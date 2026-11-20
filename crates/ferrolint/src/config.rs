@@ -22,6 +22,8 @@ pub struct Config {
     pub ignore: Vec<String>,
     pub exclude: Vec<String>,
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
+    /// Regexes added to `good-names-rgxs` for the files a glob matches.
+    pub per_file_good_names: BTreeMap<String, Vec<String>>,
     /// Which rule owns a Pylint alias several rules declare.
     pub pylint_aliases: BTreeMap<String, String>,
     /// The Python `(major, minor)` the code targets, from `py-version`.
@@ -57,6 +59,8 @@ struct RawConfig {
     exclude: Vec<String>,
     #[serde(default)]
     per_file_ignores: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    per_file_good_names: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pylint_aliases: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "version")]
@@ -245,6 +249,7 @@ fn resolve(raw: RawConfig, root: PathBuf) -> Config {
         ignore: raw.ignore,
         exclude: raw.exclude,
         per_file_ignores: raw.per_file_ignores,
+        per_file_good_names: raw.per_file_good_names,
         pylint_aliases: raw.pylint_aliases,
         py_version: raw.py_version,
         pylint_disable: Vec::new(),
