@@ -14,7 +14,7 @@ The workspace pins every Ruff crate it uses (`ruff_python_parser`,
 fails when two tags appear or `Cargo.lock` resolves a Ruff package
 through anything else.
 
-Current tag: `0.17.5`.
+Current tag: `0.17.6`.
 
 ## Procedure
 
